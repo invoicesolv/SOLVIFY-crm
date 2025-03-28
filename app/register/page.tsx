@@ -1,0 +1,233 @@
+"use client"
+
+import { useState, useEffect } from 'react';
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
+
+
+export default function Register() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const token = searchParams.get('token');
+  
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [company, setCompany] = useState('');
+  const [agreed, setAgreed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isInvite, setIsInvite] = useState(false);
+  const [inviteDetails, setInviteDetails] = useState<{
+    email: string;
+    workspace_name: string;
+    workspace_id: string;
+    is_admin: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (token) {
+      verifyInvitation(token);
+    }
+  }, [token]);
+
+  const verifyInvitation = async (token: string) => {
+    try {
+      setLoading(true);
+      
+      const { data: invitation, error } = await supabase
+        .from('invitations')
+        .select('*')
+        .eq('token', token)
+        .single();
+      
+      if (error) throw error;
+      
+      setIsInvite(true);
+      setInviteDetails({
+        email: invitation.email,
+        workspace_name: invitation.workspace_name,
+        workspace_id: invitation.workspace_id,
+        is_admin: invitation.is_admin
+      });
+      
+      setEmail(invitation.email);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error verifying invitation:', error);
+      toast.error('Invalid or expired invitation');
+      setLoading(false);
+    }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (password !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    if (!agreed) {
+      toast.error('Please agree to the terms and conditions');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // 1. Create the user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            company
+          }
+        }
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('No user data returned');
+
+      // The profile and team member will be created automatically by the trigger
+      // Just need to show success message and redirect
+      toast.success(
+        isInvite 
+          ? 'Registration successful! You can now access the workspace.' 
+          : 'Registration successful! Please check your email to verify your account.'
+      );
+      
+      router.push('/login');
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error(error instanceof Error ? error.message : 'An error occurred during registration');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">
+      <Card className="w-full max-w-md border-neutral-800 bg-neutral-900">
+        <div className="space-y-1 p-6 border-b border-neutral-800">
+          <h2 className="text-2xl font-bold text-white">
+            {isInvite ? `Join ${inviteDetails?.workspace_name || 'Team'}` : 'Create an account'}
+          </h2>
+          <p className="text-neutral-400">
+            {isInvite 
+              ? `You've been invited to join as a ${inviteDetails?.is_admin ? 'Administrator' : 'Team Member'}`
+              : 'Enter your details to create your account'
+            }
+          </p>
+        </div>
+        <form onSubmit={handleSignUp}>
+          <div className="space-y-4 p-6">
+            <div className="space-y-2">
+              <label htmlFor="name" className="text-sm font-medium text-neutral-200">Name</label>
+              <Input
+                id="name"
+                placeholder="John Doe"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-neutral-200">Email</label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="john@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isInvite} // Disable email field for invites
+                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-neutral-200">Password</label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="confirmPassword" className="text-sm font-medium text-neutral-200">Confirm Password</label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+              />
+            </div>
+            
+            {!isInvite && (
+              <div className="space-y-2">
+                <label htmlFor="company" className="text-sm font-medium text-neutral-200">Company (Optional)</label>
+                <Input
+                  id="company"
+                  placeholder="Acme Inc."
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                />
+              </div>
+            )}
+            
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="terms" 
+                checked={agreed}
+                onCheckedChange={(checked) => setAgreed(checked as boolean)}
+                className="border-neutral-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+              />
+              <label htmlFor="terms" className="text-sm text-neutral-400">
+                I agree to the <Link href="/terms" className="text-blue-500 hover:underline">terms of service</Link> and <Link href="/privacy" className="text-blue-500 hover:underline">privacy policy</Link>
+              </label>
+            </div>
+          </div>
+          <div className="flex flex-col space-y-4 p-6 border-t border-neutral-800">
+            <Button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white"
+              disabled={loading}
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white mr-2" />
+                  {isInvite ? 'Joining...' : 'Creating account...'}
+                </div>
+              ) : (
+                isInvite ? 'Accept Invitation' : 'Create Account'
+              )}
+            </Button>
+            <div className="text-center text-sm text-neutral-400">
+              Already have an account?{" "}
+              <Link href="/login" className="text-blue-500 hover:underline">
+                Log in
+              </Link>
+            </div>
+          </div>
+        </form>
+      </Card>
+    </div>
+  );
+} 

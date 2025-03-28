@@ -1,0 +1,163 @@
+"use client"
+
+import { Check } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { useState } from "react"
+import { loadStripe } from "@stripe/stripe-js"
+import { useSession } from 'next-auth/react'
+
+// Initialize Stripe
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+
+export interface PricingTier {
+  id: string
+  name: string
+  description: string
+  price: {
+    monthly: number | string
+    yearly: number | string
+  }
+  features: string[]
+  cta: {
+    text: string
+    href: string
+  }
+  trial?: string
+  stripePriceId?: {
+    monthly: string | null
+    yearly: string | null
+  }
+  popular?: boolean
+  highlighted?: boolean
+}
+
+interface PricingCardProps {
+  tier: PricingTier
+  paymentFrequency: string
+}
+
+export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
+  const { data: session, status } = useSession()
+  const [loading, setLoading] = useState(false)
+  const isMonthly = paymentFrequency?.toLowerCase().includes("month") || paymentFrequency?.toLowerCase().includes("månad")
+  const frequency = isMonthly ? "monthly" : "yearly"
+  
+  const price =
+    typeof tier.price[frequency] === "number"
+      ? `${tier.price[frequency]} kr`
+      : tier.price[frequency]
+
+  const handleSubscribe = async () => {
+    try {
+      setLoading(true)
+
+      // For free tier or if the user wants to try a paid plan first
+      if (tier.id === 'free' || tier.cta.text.toLowerCase().includes('test') || tier.cta.text.toLowerCase().includes('try')) {
+        // Redirect to register page with plan parameter
+        window.location.href = `/register?plan=${tier.id}`;
+        return;
+      }
+
+      if (status === "unauthenticated") {
+        // Redirect to register page with plan parameter instead of login
+        window.location.href = `/register?plan=${tier.id}`;
+        return;
+      }
+
+      const priceId = tier.stripePriceId?.[frequency]
+      
+      if (!priceId) {
+        console.error('No Stripe price ID found for this tier')
+        return
+      }
+
+      const response = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceId,
+        }),
+      })
+
+      const { sessionId } = await response.json()
+      const stripe = await stripePromise
+
+      if (!stripe) {
+        console.error('Stripe not initialized')
+        return
+      }
+
+      // Redirect to Stripe checkout
+      const { error } = await stripe.redirectToCheckout({ sessionId })
+
+      if (error) {
+        console.error('Stripe checkout error:', error)
+      }
+    } catch (error) {
+      console.error('Error creating checkout session:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        "relative rounded-2xl border border-white/10 bg-background/5 backdrop-blur-sm p-6 shadow-lg",
+        tier.highlighted && "border-primary shadow-primary/10",
+      )}
+    >
+      {tier.popular && (
+        <div className="absolute -top-3 left-0 right-0 mx-auto w-fit rounded-full bg-primary px-3 py-1 text-xs text-white">
+          Popular
+        </div>
+      )}
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <h3 className="font-semibold text-white">{tier.name}</h3>
+          <p className="text-sm text-white/60">{tier.description}</p>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-3xl font-bold text-white">{price}</div>
+          {typeof tier.price[frequency] === "number" && (
+            <div className="text-sm font-medium text-white/60">
+              per {isMonthly ? "month" : "year"}
+            </div>
+          )}
+          {tier.trial && (
+            <div className="text-sm text-primary mt-1">
+              {tier.trial}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2 text-sm text-white/60">
+          {tier.features.map((feature) => (
+            <div key={feature} className="flex items-center gap-2">
+              <Check className="h-4 w-4 text-primary" />
+              <span>{feature}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-6">
+          <button
+            onClick={handleSubscribe}
+            disabled={loading || status === "loading"}
+            className={cn(
+              "w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              tier.highlighted
+                ? "bg-gradient-to-r from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600"
+                : "bg-white/5 text-white hover:bg-white/10"
+            )}
+          >
+            {loading ? "Loading..." : tier.cta.text}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+} 
