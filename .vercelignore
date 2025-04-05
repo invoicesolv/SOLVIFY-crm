@@ -1,5 +1,7 @@
 venv
 receipt_processing.log
 public/receipts/invoices
+public/receipts
 .next/cache
-*.zip 
+*.zip
+middleware.ts 
