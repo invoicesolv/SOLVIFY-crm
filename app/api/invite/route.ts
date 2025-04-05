@@ -83,7 +83,7 @@ async function sendInvitationEmail(email: string, inviterName: string, token: st
               <p>Click the button below to accept this invitation and set up your account:</p>
               
               <div style="margin-top: 30px;">
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/register?token=${token}" 
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.solvify.se'}/register?token=${token}" 
                    style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
                    Accept Invitation
                 </a>

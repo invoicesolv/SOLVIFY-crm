@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Send reports for each setting
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
     const sendPromises = settings.map(async (setting) => {
       try {
         // Get user's Google Analytics token

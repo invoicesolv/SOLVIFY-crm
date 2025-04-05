@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { getActiveWorkspaceId } from "@/lib/permission";
 
 interface Customer {
   id: string;
@@ -23,7 +24,7 @@ interface ProjectData {
   end_date: string | null;
   description: string | null;
   user_id: string;
-  customer_id?: string;
+  workspace_id: string;
 }
 
 export default function NewProjectPage() {
@@ -32,12 +33,33 @@ export default function NewProjectPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { data: session } = useSession();
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (session?.user?.id) {
-      fetchCustomers();
+      fetchWorkspaceId();
     }
   }, [session?.user?.id]);
+
+  // Fetch customers when workspace ID is available
+  useEffect(() => {
+    if (workspaceId) {
+      fetchCustomers();
+    }
+  }, [workspaceId]);
+
+  const fetchWorkspaceId = async () => {
+    if (!session?.user?.id) return;
+    
+    try {
+      const wsId = await getActiveWorkspaceId(session.user.id);
+      console.log('Active workspace ID:', wsId);
+      setWorkspaceId(wsId);
+    } catch (error) {
+      console.error('Error fetching workspace ID:', error);
+      setError('Failed to fetch workspace ID');
+    }
+  };
 
   const fetchCustomers = async () => {
     if (!session?.user?.id) {
@@ -45,13 +67,18 @@ export default function NewProjectPage() {
       return;
     }
 
+    if (!workspaceId) {
+      console.log('Waiting for workspace ID before fetching customers');
+      return;
+    }
+
     try {
-      console.log('Fetching customers for user ID:', session.user.id);
+      console.log('Fetching customers for workspace:', workspaceId);
       
       const { data: customers, error } = await supabase
         .from('customers')
         .select('*')
-        .eq('user_id', session.user.id)
+        .eq('workspace_id', workspaceId)
         .order('name');
 
       if (error) {
@@ -60,7 +87,7 @@ export default function NewProjectPage() {
         return;
       }
 
-      console.log(`Fetched ${customers?.length || 0} customers`);
+      console.log(`Fetched ${customers?.length || 0} customers for workspace`);
       setCustomers(customers || []);
     } catch (error) {
       console.error('Error in fetchCustomers:', error);
@@ -78,6 +105,12 @@ export default function NewProjectPage() {
       return;
     }
 
+    if (!workspaceId) {
+      toast.error('No active workspace found. Please ensure you belong to a workspace.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const formData = new FormData(e.currentTarget);
       const customerId = formData.get('customer_id') as string;
@@ -86,15 +119,19 @@ export default function NewProjectPage() {
       const projectData: ProjectData = {
         name: formData.get('name') as string,
         customer_name: selectedCustomer?.name || '',
-        customer_id: customerId,
         status: (formData.get('status') as 'active' | 'on-hold' | 'completed') || 'active',
         start_date: formData.get('start_date') as string || null,
         end_date: formData.get('end_date') as string || null,
         description: formData.get('description') as string || null,
-        user_id: session.user.id
+        user_id: session.user.id,
+        workspace_id: workspaceId
       };
 
-      console.log('Creating project:', projectData.name);
+      console.log('Creating project in database:', {
+        name: projectData.name,
+        workspace_id: workspaceId,
+        customer: selectedCustomer?.name
+      });
       
       const { data, error } = await supabase
         .from('projects')
@@ -135,6 +172,11 @@ export default function NewProjectPage() {
 
         <Card className="bg-neutral-800 border-neutral-700 p-6">
           <h1 className="text-2xl font-semibold text-white mb-6">New Project</h1>
+          {error && (
+            <div className="mb-6 p-3 bg-red-500/20 border border-red-500/50 text-red-200 rounded-md">
+              {error}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
@@ -228,7 +270,7 @@ export default function NewProjectPage() {
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !workspaceId}
                 className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 disabled:bg-neutral-800 disabled:cursor-not-allowed border border-neutral-600 rounded-md text-sm text-white transition-colors"
               >
                 {loading ? "Creating..." : "Create Project"}

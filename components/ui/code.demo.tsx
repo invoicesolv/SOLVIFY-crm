@@ -36,11 +36,6 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
 
   const links = [
     {
-      label: "Today's Agenda",
-      href: "/?view=agenda",
-      icon: <Star className="h-5 w-5 text-neutral-400" />,
-    },
-    {
       label: "Dashboard",
       href: "/",
       icon: <LayoutDashboard className="h-5 w-5 text-neutral-400" />,
@@ -59,16 +54,6 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
       label: "Invoices",
       href: "/invoices",
       icon: <Receipt className="h-5 w-5 text-neutral-400" />,
-    },
-    {
-      label: "Receipts",
-      href: "/receipts",
-      icon: <Receipt className="h-5 w-5 text-neutral-400" />,
-    },
-    {
-      label: "Transactions",
-      href: "/transactions",
-      icon: <Calculator className="h-5 w-5 text-neutral-400" />,
     },
     {
       label: "Domains",

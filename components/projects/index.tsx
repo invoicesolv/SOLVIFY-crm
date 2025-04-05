@@ -2,7 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Plus, Search, Trash2, X, Mail, Settings2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Search, Trash2, X, Mail, Settings2, LinkIcon, Users } from "lucide-react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { TaskExpanded } from "./TaskExpanded";
@@ -12,11 +12,14 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import React from "react";
 import { useSession } from "next-auth/react";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogHeader, DialogFooter } from "@/components/ui/dialog"
 import { TaskManager } from "@/components/projects/TaskManager";
 import { Switch } from "@/components/ui/switch";
 import { EmailSettings } from "./EmailSettings";
 import { Squares } from "@/components/ui/squares-background";
+import { Loader2 } from "lucide-react";
+import { AlertOctagon } from "lucide-react";
+import { checkPermission, getActiveWorkspaceId } from '@/lib/permission';
 
 interface ChecklistItem {
   id: number;
@@ -41,6 +44,7 @@ interface Project {
   endDate?: string;
   description?: string;
   tasks: Task[];
+  customer_name?: string;
 }
 
 interface ProjectsViewProps {
@@ -59,6 +63,12 @@ const PROJECT_DISPLAY_NAMES: { [key: string]: string } = {
   'templar': 'Templar'
 };
 
+interface Customer {
+  id: string;
+  name: string;
+  workspace_id: string;
+}
+
 export function ProjectsView({ className }: ProjectsViewProps) {
   const [search, setSearch] = useState("");
   const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
@@ -71,6 +81,14 @@ export function ProjectsView({ className }: ProjectsViewProps) {
   const { data: session } = useSession();
   const [loading, setLoading] = useState(true);
   const [showEmailSettings, setShowEmailSettings] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
 
   // Calculate progress for a task
   const calculateTaskProgress = (task: Task): Task => {
@@ -91,72 +109,169 @@ export function ProjectsView({ className }: ProjectsViewProps) {
     };
   };
 
-  // Initialize with empty projects array
-  const [projects, setProjects] = useState<Project[]>([]);
+  // Initial fetch of projects
+  useEffect(() => {
+    if (session?.user?.id) {
+      // Check if user has permission to view projects
+      const checkProjectPermission = async () => {
+        try {
+          console.log('[Projects] Checking permission for user:', session.user.email);
+          
+          // Get team memberships by user ID first
+          const { data: teamMemberships, error: teamError } = await supabase
+            .from('team_members')
+            .select('workspace_id, is_admin, permissions')
+            .eq('user_id', session.user.id);
+            
+          if (teamError) {
+            console.error('[Projects] Error fetching team memberships:', teamError);
+            // Don't fail immediately, try by email as fallback
+          }
+          
+          // If we didn't find memberships by user ID, try by email (especially for kevin@amptron.com)
+          if (!teamMemberships || teamMemberships.length === 0) {
+            console.log('[Projects] No workspaces found by user_id, trying email fallback');
+            
+            if (session.user?.email) {
+              // Try to fetch by email instead (to handle ID mismatches)
+              const { data: emailMemberships, error: emailError } = await supabase
+                .from('team_members')
+                .select('workspace_id, is_admin, permissions, user_id')
+                .eq('email', session.user.email);
+                
+              if (emailError) {
+                console.error('[Projects] Error fetching team memberships by email:', emailError);
+                setPermissionDenied(true);
+                setLoading(false);
+                return;
+              }
+              
+              if (!emailMemberships || emailMemberships.length === 0) {
+                console.log('[Projects] No workspaces found by email either');
+                setPermissionDenied(true);
+                setLoading(false);
+                return;
+              }
+              
+              console.log('[Projects] Found workspace by email:', emailMemberships);
+              
+              // Use these memberships instead
+              // Check if user has permission to view projects
+              const hasPermission = emailMemberships.some(membership => 
+                membership.is_admin || 
+                (membership.permissions && 
+                  (membership.permissions.view_projects || 
+                  membership.permissions.admin))
+              );
+              
+              if (!hasPermission) {
+                console.log('[Projects] User does not have view_projects permission (via email check)');
+                setPermissionDenied(true);
+                setLoading(false);
+                return;
+              }
+              
+              // User has permission via email check, call fetchProjects with the email-based memberships
+              fetchProjectsWithMemberships(emailMemberships);
+              
+              // Also fetch customers
+              fetchCustomers();
+              
+              return;
+            } else {
+              // No email to try with, so just deny permission
+              setPermissionDenied(true);
+              setLoading(false);
+              return;
+            }
+          }
+          
+          // If we get here, we found memberships by user_id
+          // Check if user has permission to view projects
+          const hasPermission = teamMemberships.some(membership => 
+            membership.is_admin || 
+            (membership.permissions && 
+              (membership.permissions.view_projects || 
+              membership.permissions.admin))
+          );
+          
+          if (!hasPermission) {
+            console.log('[Projects] User does not have view_projects permission');
+            setPermissionDenied(true);
+            setLoading(false);
+            return;
+          }
+          
+          // User has permission, fetch projects
+          fetchProjectsWithMemberships(teamMemberships);
+          
+          // Also fetch customers
+          fetchCustomers();
+          
+        } catch (error) {
+          console.error('[Projects] Error checking permissions:', error);
+          setPermissionDenied(true);
+          setLoading(false);
+        }
+      };
+      
+      checkProjectPermission();
+    }
+  }, [session?.user?.id]);
 
-  // Fetch projects from Supabase
-  const fetchProjects = async () => {
+  // New helper function to fetch projects with known team memberships
+  const fetchProjectsWithMemberships = async (teamMemberships: any[]) => {
     try {
-      if (!session?.user?.id) {
-        console.log('[Projects] No user session found, cannot fetch projects');
-        return;
-      }
-
-      console.log('[Projects] Starting fetch for user:', session.user.email);
-
-      // First get the user's workspaces
-      const { data: teamMemberships, error: teamError } = await supabase
-        .from('team_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id);
-
-      if (teamError) {
-        console.error('[Projects] Error fetching team memberships:', teamError);
-        toast.error('Failed to load team memberships');
-        return;
-      }
-
-      console.log('[Projects] Team memberships:', teamMemberships);
-
-      if (!teamMemberships?.length) {
-        console.log('[Projects] No workspaces found for user');
-        setProjects([]);
-        setLoading(false);
-        return;
-      }
-
+      // Get workspace IDs for this user
       const workspaceIds = teamMemberships.map(tm => tm.workspace_id);
       console.log('[Projects] Workspace IDs:', workspaceIds);
 
+      // Fetch projects first (no nested query)
       const { data: projectsData, error } = await supabase
         .from('projects')
-        .select(`
-          *,
-          tasks:project_tasks(*)
-        `)
+        .select('*')
         .in('workspace_id', workspaceIds);
 
       if (error) {
         console.error('[Projects] Error fetching projects:', error);
         toast.error('Failed to load projects');
+        setLoading(false);
         return;
       }
 
-      console.log('[Projects] Raw projects data:', projectsData);
-
-      if (projectsData) {
-        const formattedProjects = projectsData.map(project => {
-          console.log('[Projects] Formatting project:', project.name, 'Tasks:', project.tasks?.length || 0);
-          return {
-            ...project,
-            tasks: project.tasks || [],
-            status: (project.status?.toLowerCase() || 'active') as 'active' | 'completed' | 'on-hold'
-          };
-        });
-
-        console.log('[Projects] Formatted projects:', formattedProjects.length, 'projects');
-        setProjects(formattedProjects.map(calculateProjectProgress));
+      if (!projectsData || projectsData.length === 0) {
+        console.log('[Projects] No projects found for user workspaces');
+        setProjects([]);
+        setLoading(false);
+        return;
       }
+
+      // Get all project IDs for a second query
+      const projectIds = projectsData.map(project => project.id);
+      
+      // Fetch tasks separately
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('project_tasks')
+        .select('*')
+        .in('project_id', projectIds);
+        
+      if (tasksError) {
+        console.error('[Projects] Error fetching project tasks:', tasksError);
+        toast.error('Failed to load project tasks');
+      }
+      
+      // Associate tasks with their projects manually
+      const projectsWithTasks = projectsData.map(project => {
+        const projectTasks = tasksData ? tasksData.filter(task => task.project_id === project.id) : [];
+        return {
+          ...project,
+          tasks: projectTasks || [],
+          status: (project.status?.toLowerCase() || 'active') as 'active' | 'completed' | 'on-hold'
+        };
+      });
+
+      console.log('[Projects] Formatted projects:', projectsWithTasks.length, 'projects');
+      setProjects(projectsWithTasks.map(calculateProjectProgress));
       setLoading(false);
     } catch (error) {
       console.error('[Projects] Error in fetchProjects:', error);
@@ -165,12 +280,61 @@ export function ProjectsView({ className }: ProjectsViewProps) {
     }
   };
 
-  // Initial fetch of projects
-  useEffect(() => {
-    if (session?.user?.id) {
-      fetchProjects();
+  // Fetch projects from Supabase
+  const fetchProjects = async () => {
+    try {
+      if (!session?.user?.id) {
+        console.log('[Projects] No user session found, cannot fetch projects');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[Projects] Starting fetch for user:', session.user.email);
+      
+      // Get team memberships to find workspaces
+      const { data: teamMemberships, error: teamError } = await supabase
+        .from('team_members')
+        .select('workspace_id')
+        .eq('user_id', session.user.id);
+
+      if (teamError) {
+        console.error('[Projects] Error fetching team memberships:', teamError);
+        toast.error('Failed to load team memberships');
+        setLoading(false);
+        return;
+      }
+
+      // Handle case where user has no memberships
+      if (!teamMemberships || teamMemberships.length === 0) {
+        console.log('[Projects] No workspaces found for user');
+        
+        // Try by email as fallback
+        if (session.user?.email) {
+          console.log('[Projects] Trying to fetch by email:', session.user.email);
+          const { data: emailMemberships, error: emailError } = await supabase
+            .from('team_members')
+            .select('workspace_id')
+            .eq('email', session.user.email);
+            
+          if (!emailError && emailMemberships && emailMemberships.length > 0) {
+            // Continue with email-based memberships
+            return fetchProjectsWithMemberships(emailMemberships);
+          }
+        }
+        
+        setProjects([]);
+        setLoading(false);
+        return;
+      }
+
+      // Continue with standard fetch using the memberships
+      fetchProjectsWithMemberships(teamMemberships);
+    } catch (error) {
+      console.error('[Projects] Error in fetchProjects:', error);
+      toast.error('Failed to load projects');
+      setLoading(false);
     }
-  }, [session?.user?.id]);
+  };
 
   // Update task in Supabase
   const updateTaskInSupabase = async (projectId: string, taskId: string, updates: any) => {
@@ -210,6 +374,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
         return null;
       }
 
+      // Create task with correct workspace_id and user_id
       const task = {
         ...taskData,
         project_id: projectId,
@@ -509,20 +674,18 @@ export function ProjectsView({ className }: ProjectsViewProps) {
       const { error: tasksError } = await supabase
         .from('project_tasks')
         .delete()
-        .eq('project_id', projectId)
-        .eq('user_id', session.user.id);
+        .eq('project_id', projectId);
 
       if (tasksError) {
         console.error('Error deleting project tasks:', tasksError);
         throw tasksError;
       }
 
-      // Then delete the project
+      // Then delete the project - no need to filter by user_id since RLS will handle permissions
       const { error } = await supabase
         .from('projects')
         .delete()
-        .eq('id', projectId)
-        .eq('user_id', session.user.id);
+        .eq('id', projectId);
 
       if (error) throw error;
 
@@ -626,6 +789,106 @@ export function ProjectsView({ className }: ProjectsViewProps) {
     return displayName.toLowerCase().includes(search.toLowerCase());
   });
 
+  // New function to fetch customers
+  const fetchCustomers = async () => {
+    if (!session?.user?.id) return;
+    
+    setLoadingCustomers(true);
+    try {
+      // Get the active workspace ID
+      const workspaceId = await getActiveWorkspaceId(session.user.id);
+      
+      if (!workspaceId) {
+        console.log('[Projects] No active workspace found');
+        setLoadingCustomers(false);
+        return;
+      }
+      
+      // Fetch customers for this workspace
+      const { data, error } = await supabase
+        .from('customers')
+        .select('id, name, workspace_id')
+        .eq('workspace_id', workspaceId)
+        .order('name');
+      
+      if (error) {
+        console.error('[Projects] Error fetching customers:', error);
+        setLoadingCustomers(false);
+        return;
+      }
+      
+      console.log(`[Projects] Fetched ${data?.length || 0} customers`);
+      setCustomers(data || []);
+    } catch (error) {
+      console.error('[Projects] Error in fetchCustomers:', error);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
+
+  // Open the customer assignment dialog
+  const openCustomerDialog = (project: Project) => {
+    setProjectToEdit(project);
+    setSelectedCustomerId('');
+    setCustomerSearch('');
+    
+    // Find the customer ID if this project already has a customer_name
+    if (project.customer_name) {
+      const customer = customers.find(c => c.name === project.customer_name);
+      if (customer) {
+        setSelectedCustomerId(customer.id);
+      }
+    }
+    
+    setCustomerDialogOpen(true);
+  };
+
+  // Update the project's customer association
+  const updateProjectCustomer = async () => {
+    if (!projectToEdit || !selectedCustomerId) return;
+    
+    try {
+      // Find the selected customer
+      const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+      if (!selectedCustomer) {
+        toast.error('Selected customer not found');
+        return;
+      }
+      
+      // Update the project
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          customer_name: selectedCustomer.name
+        })
+        .eq('id', projectToEdit.id);
+      
+      if (error) {
+        console.error('[Projects] Error updating project customer:', error);
+        toast.error('Failed to update project customer');
+        return;
+      }
+      
+      // Update local state
+      setProjects(projects.map(p => 
+        p.id === projectToEdit.id 
+          ? { ...p, customer_name: selectedCustomer.name } 
+          : p
+      ));
+      
+      toast.success(`Project linked to ${selectedCustomer.name}`);
+      setCustomerDialogOpen(false);
+    } catch (error) {
+      console.error('[Projects] Error in updateProjectCustomer:', error);
+      toast.error('Failed to update project customer');
+    }
+  };
+
+  // Filter customers by search term
+  const filteredCustomers = customers.filter(customer => 
+    customer.name.toLowerCase().includes(customerSearch.toLowerCase())
+  );
+
   return (
     <div className={cn("relative min-h-screen", className)}>
       <div className="absolute inset-0 -z-10 bg-[#0A0A0A]" />
@@ -653,141 +916,187 @@ export function ProjectsView({ className }: ProjectsViewProps) {
           </div>
         </div>
 
-        <Card className="bg-neutral-800/90 backdrop-blur-sm border-neutral-700">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-neutral-700">
-                  <th className="w-8 py-4 px-4"></th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Company</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Status</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Tasks</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Progress</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-700">
-                {filteredProjects.length === 0 ? (
-                  <tr key="no-projects">
-                    <td colSpan={5} className="py-8 text-center text-neutral-400">
-                      {search ? "No projects found matching your search." : "No projects found. Create your first project to get started."}
-                    </td>
+        <Card className="bg-neutral-800/50 backdrop-blur-sm border-neutral-700">
+          {loading ? (
+            <div className="py-12 text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-neutral-400 mx-auto" />
+              <p className="mt-4 text-neutral-400">Loading projects...</p>
+            </div>
+          ) : permissionDenied ? (
+            <div className="py-12 text-center">
+              <AlertOctagon className="h-8 w-8 text-red-500 mx-auto" />
+              <p className="mt-4 text-neutral-400">You don't have permission to view projects.</p>
+              <p className="text-sm text-neutral-500">Please contact your workspace administrator.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-neutral-700">
+                    <th className="w-8 py-4 px-4"></th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Company</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Status</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Tasks</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Progress</th>
                   </tr>
-                ) : (
-                  filteredProjects.map((project) => {
-                    const totalTasks = project.tasks.length;
-                    const completedTasks = project.tasks.reduce((acc, task) => {
-                      const completedItems = task.checklist.filter(item => item.done).length;
-                      const totalItems = task.checklist.length;
-                      return acc + (totalItems > 0 ? completedItems / totalItems : 0);
-                    }, 0);
-                    const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-                    const isExpanded = expandedProjects.includes(project.name);
+                </thead>
+                <tbody className="divide-y divide-neutral-700">
+                  {filteredProjects.length === 0 ? (
+                    <tr key="no-projects">
+                      <td colSpan={5} className="py-8 text-center text-neutral-400">
+                        {search ? "No projects found matching your search." : "No projects found. Create your first project to get started."}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredProjects.map((project) => {
+                      const totalTasks = project.tasks.length;
+                      const completedTasks = project.tasks.reduce((acc, task) => {
+                        const completedItems = task.checklist.filter(item => item.done).length;
+                        const totalItems = task.checklist.length;
+                        return acc + (totalItems > 0 ? completedItems / totalItems : 0);
+                      }, 0);
+                      const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                      const isExpanded = expandedProjects.includes(project.name);
 
-                    return (
-                      <React.Fragment key={project.id || project.name}>
-                        <tr
-                          className={cn(
-                            "transition-colors cursor-pointer",
-                            isExpanded ? "bg-neutral-750" : "hover:bg-neutral-750"
-                          )}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            const clickedProject = project;
-                            setSelectedProject(clickedProject);
-                          }}
-                        >
-                          <td className="py-4 px-4">
-                            {isExpanded ? (
-                              <ChevronDown className="h-4 w-4 text-neutral-400" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4 text-neutral-400" />
+                      return (
+                        <React.Fragment key={project.id || project.name}>
+                          <tr
+                            className={cn(
+                              "transition-colors cursor-pointer",
+                              isExpanded ? "bg-neutral-750" : "hover:bg-neutral-750"
                             )}
-                          </td>
-                          <td className="py-4 px-6 text-sm text-white">
-                            {PROJECT_DISPLAY_NAMES[project.name] || project.name}
-                          </td>
-                          <td className="py-4 px-6 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className={cn(
-                                "px-2 py-1 rounded-full text-xs font-medium",
-                                {
-                                  "bg-green-900/20 text-green-400": project.status.toLowerCase() === "active",
-                                  "bg-neutral-900/20 text-neutral-400": project.status.toLowerCase() === "completed",
-                                  "bg-yellow-900/20 text-yellow-400": project.status.toLowerCase() === "on-hold"
-                                }
-                              )}>
-                                {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-                              </span>
-                              {project.id && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-                                      deleteProject(project.id);
-                                    }
-                                  }}
-                                  className="p-1.5 text-neutral-400 hover:text-red-400 transition-colors rounded-md hover:bg-neutral-700/50"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const clickedProject = project;
+                              setSelectedProject(clickedProject);
+                            }}
+                          >
+                            <td className="py-4 px-4">
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-neutral-400" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-neutral-400" />
                               )}
-                            </div>
-                          </td>
-                          <td className="py-4 px-6 text-sm text-white">{totalTasks} tasks</td>
-                          <td className="py-4 px-6 text-sm text-white">
-                            <div className="flex items-center gap-2">
-                              <div className="w-24 h-2 bg-neutral-700 rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-green-500 rounded-full"
-                                  style={{ width: `${progress}%` }}
-                                />
-                              </div>
-                              <span className="text-xs text-neutral-400">{progress}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={5} className="p-0">
-                              <div className="p-6 bg-neutral-800/50 space-y-4">
-                                <div className="flex items-center gap-4">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setIsAddingTask(project.name);
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md text-sm transition-colors"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                    Add Task
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setIsBulkAdding(project.name);
-                                    }}
-                                    className="flex items-center gap-2 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-md text-sm transition-colors"
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                    Bulk Add Checklist
-                                  </button>
-                                </div>
-
-                                {isAddingTask === project.name && (
-                                  <TaskForm
-                                    onSubmit={(task) => handleAddTask(project.name, task)}
-                                    onCancel={() => setIsAddingTask(null)}
-                                  />
+                            </td>
+                            <td className="py-4 px-6 text-sm text-white">
+                              <div className="flex flex-col">
+                                <span>{PROJECT_DISPLAY_NAMES[project.name] || project.name}</span>
+                                {project.customer_name && (
+                                  <span className="text-xs text-neutral-400 mt-1 flex items-center">
+                                    <Users className="h-3 w-3 mr-1" />
+                                    {project.customer_name}
+                                  </span>
                                 )}
+                                {!project.customer_name && (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openCustomerDialog(project);
+                                    }}
+                                    className="text-xs text-blue-400 hover:text-blue-300 mt-1 flex items-center"
+                                  >
+                                    <LinkIcon className="h-3 w-3 mr-1" />
+                                    Link to customer
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-4 px-6 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className={cn(
+                                  "px-2 py-1 rounded-full text-xs font-medium",
+                                  {
+                                    "bg-green-900/20 text-green-400": project.status.toLowerCase() === "active",
+                                    "bg-neutral-900/20 text-neutral-400": project.status.toLowerCase() === "completed",
+                                    "bg-yellow-900/20 text-yellow-400": project.status.toLowerCase() === "on-hold"
+                                  }
+                                )}>
+                                  {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                                </span>
+                                <div className="flex items-center">
+                                  {project.customer_name && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openCustomerDialog(project);
+                                      }}
+                                      className="p-1.5 text-neutral-400 hover:text-blue-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                      title="Change customer"
+                                    >
+                                      <LinkIcon className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                  {project.id && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+                                          deleteProject(project.id);
+                                        }
+                                      }}
+                                      className="p-1.5 text-neutral-400 hover:text-red-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-4 px-6 text-sm text-white">{totalTasks} tasks</td>
+                            <td className="py-4 px-6 text-sm text-white">
+                              <div className="flex items-center gap-2">
+                                <div className="w-24 h-2 bg-neutral-700 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-green-500 rounded-full"
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-neutral-400">{progress}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan={5} className="p-0">
+                                <div className="p-6 bg-neutral-800/50 space-y-4">
+                                  <div className="flex items-center gap-4">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsAddingTask(project.name);
+                                      }}
+                                      className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md text-sm transition-colors"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                      Add Task
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsBulkAdding(project.name);
+                                      }}
+                                      className="flex items-center gap-2 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-md text-sm transition-colors"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                      Bulk Add Checklist
+                                    </button>
+                                  </div>
 
-                                {isBulkAdding === project.name && (
-                                  <div className="space-y-4 bg-neutral-850 rounded-lg p-6">
-                                    <div className="mb-4">
-                                      <textarea
-                                        value={bulkTaskInput}
-                                        onChange={(e) => setBulkTaskInput(e.target.value)}
-                                        placeholder={`Enter tasks and subtasks (indent subtasks with spaces or tab):
+                                  {isAddingTask === project.name && (
+                                    <TaskForm
+                                      onSubmit={(task) => handleAddTask(project.name, task)}
+                                      onCancel={() => setIsAddingTask(null)}
+                                    />
+                                  )}
+
+                                  {isBulkAdding === project.name && (
+                                    <div className="space-y-4 bg-neutral-850 rounded-lg p-6">
+                                      <div className="mb-4">
+                                        <textarea
+                                          value={bulkTaskInput}
+                                          onChange={(e) => setBulkTaskInput(e.target.value)}
+                                          placeholder={`Enter tasks and subtasks (indent subtasks with spaces or tab):
 
 Task 1
   Subtask 1.1
@@ -796,97 +1105,98 @@ Task 2
   Subtask 2.1
   Subtask 2.2
   Subtask 2.3`}
-                                        className="w-full h-40 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
-                                        autoFocus
-                                      />
-                                    </div>
-                                    <div className="flex justify-end gap-3">
-                                      <button
-                                        onClick={() => {
-                                          setIsBulkAdding(null);
-                                          setBulkTaskInput("");
-                                        }}
-                                        className="px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
-                                      >
-                                        Cancel
-                                      </button>
-                                      <button
-                                        onClick={() => handleBulkAddTasks(project.name)}
-                                        className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-md text-sm transition-colors"
-                                      >
-                                        Add Tasks
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div className="grid gap-4">
-                                  {project.tasks.length === 0 ? (
-                                    <div className="text-center py-8">
-                                      <p className="text-neutral-400 mb-4">No tasks yet</p>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setIsAddingTask(project.name);
-                                        }}
-                                        className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md text-sm transition-colors mx-auto"
-                                      >
-                                        <Plus className="h-4 w-4" />
-                                        Add Your First Task
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    project.tasks.map((task) => (
-                                      editingTask?.projectName === project.name && editingTask?.taskId === task.id ? (
-                                        <TaskForm
-                                          key={task.id}
-                                          task={task}
-                                          onSubmit={(updates) => handleEditTask(project.name, task.id, updates)}
-                                          onCancel={() => setEditingTask(null)}
-                                          onDelete={() => handleDeleteTask(project.name, task.id)}
+                                          className="w-full h-40 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                                          autoFocus
                                         />
-                                      ) : (
-                                        <div
-                                          key={task.id}
-                                          className="group relative"
-                                          onClick={(e) => e.stopPropagation()}
+                                      </div>
+                                      <div className="flex justify-end gap-3">
+                                        <button
+                                          onClick={() => {
+                                            setIsBulkAdding(null);
+                                            setBulkTaskInput("");
+                                          }}
+                                          className="px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
                                         >
-                                          <div className="absolute right-4 top-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                              onClick={() => setEditingTask({ projectName: project.name, taskId: task.id })}
-                                              className="p-1.5 text-neutral-400 hover:text-white transition-colors rounded-md hover:bg-neutral-700/50"
-                                            >
-                                              Edit
-                                            </button>
-                                            <button
-                                              onClick={() => handleDeleteTask(project.name, task.id)}
-                                              className="p-1.5 text-neutral-400 hover:text-red-400 transition-colors rounded-md hover:bg-neutral-700/50"
-                                            >
-                                              <Trash2 className="h-4 w-4" />
-                                            </button>
-                                          </div>
-                                          <TaskExpanded
-                                            task={task}
-                                            onChecklistItemToggle={(taskId, itemId, done) => 
-                                              handleChecklistItemToggle(taskId, itemId, done)
-                                            }
-                                          />
-                                        </div>
-                                      )
-                                    ))
+                                          Cancel
+                                        </button>
+                                        <button
+                                          onClick={() => handleBulkAddTasks(project.name)}
+                                          className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 text-white rounded-md text-sm transition-colors"
+                                        >
+                                          Add Tasks
+                                        </button>
+                                      </div>
+                                    </div>
                                   )}
+
+                                  <div className="grid gap-4">
+                                    {project.tasks.length === 0 ? (
+                                      <div className="text-center py-8">
+                                        <p className="text-neutral-400 mb-4">No tasks yet</p>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsAddingTask(project.name);
+                                          }}
+                                          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md text-sm transition-colors mx-auto"
+                                        >
+                                          <Plus className="h-4 w-4" />
+                                          Add Your First Task
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      project.tasks.map((task) => (
+                                        editingTask?.projectName === project.name && editingTask?.taskId === task.id ? (
+                                          <TaskForm
+                                            key={task.id}
+                                            task={task}
+                                            onSubmit={(updates) => handleEditTask(project.name, task.id, updates)}
+                                            onCancel={() => setEditingTask(null)}
+                                            onDelete={() => handleDeleteTask(project.name, task.id)}
+                                          />
+                                        ) : (
+                                          <div
+                                            key={task.id}
+                                            className="group relative"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <div className="absolute right-4 top-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <button
+                                                onClick={() => setEditingTask({ projectName: project.name, taskId: task.id })}
+                                                className="p-1.5 text-neutral-400 hover:text-white transition-colors rounded-md hover:bg-neutral-700/50"
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteTask(project.name, task.id)}
+                                                className="p-1.5 text-neutral-400 hover:text-red-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                              >
+                                                <Trash2 className="h-4 w-4" />
+                                              </button>
+                                            </div>
+                                            <TaskExpanded
+                                              task={task}
+                                              onChecklistItemToggle={(taskId, itemId, done) => 
+                                                handleChecklistItemToggle(taskId, itemId, done)
+                                              }
+                                            />
+                                          </div>
+                                        )
+                                      ))
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       </div>
 
@@ -981,6 +1291,99 @@ Task 2
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Customer assignment dialog */}
+      <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
+        <DialogContent className="bg-neutral-800 border-neutral-700 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">
+              Link Project to Customer
+            </DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              Select a customer to associate with the project "{projectToEdit?.name}"
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            {loadingCustomers ? (
+              <div className="py-4 flex justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+              </div>
+            ) : customers.length === 0 ? (
+              <div className="py-4 text-center text-neutral-400">
+                <p>No customers found</p>
+                <p className="text-sm text-neutral-500 mt-1">Create customers first</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-500" />
+                  <input
+                    type="text"
+                    placeholder="Search customers..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                  />
+                </div>
+                
+                <div className="max-h-[300px] overflow-y-auto space-y-2 custom-scrollbar">
+                  {filteredCustomers.length === 0 ? (
+                    <div className="text-center py-3 text-neutral-400">
+                      No customers matching "{customerSearch}"
+                    </div>
+                  ) : (
+                    filteredCustomers.map(customer => (
+                      <div 
+                        key={customer.id}
+                        className={cn(
+                          "p-3 border rounded-md cursor-pointer transition-colors",
+                          selectedCustomerId === customer.id 
+                            ? "bg-blue-900/20 border-blue-600" 
+                            : "bg-neutral-700 border-neutral-600 hover:bg-neutral-650"
+                        )}
+                        onClick={() => setSelectedCustomerId(customer.id)}
+                      >
+                        <div className="font-medium">{customer.name}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="flex justify-between items-center">
+            <div>
+              {projectToEdit?.customer_name && (
+                <span className="text-sm text-neutral-400">
+                  Currently assigned: {projectToEdit.customer_name}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCustomerDialogOpen(false)}
+                className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={updateProjectCustomer}
+                disabled={!selectedCustomerId}
+                className={cn(
+                  "px-4 py-2 rounded text-sm",
+                  selectedCustomerId 
+                    ? "bg-blue-600 hover:bg-blue-500 text-white" 
+                    : "bg-neutral-700 text-neutral-400 cursor-not-allowed"
+                )}
+              >
+                Save
+              </button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

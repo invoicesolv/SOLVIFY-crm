@@ -24,6 +24,32 @@ import {
   Mail,
   Settings2
 } from "lucide-react"
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ArcElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ChartOptions
+} from 'chart.js';
+import { Line, Pie, Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ArcElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 interface AnalyticsStats {
   totalUsers: number;
@@ -292,8 +318,20 @@ export default function AnalyticsPage() {
     hasAnalyticsData: !!analyticsData,
     selectedProperty,
     propertiesCount: properties.length,
-    analyticsOverview: analyticsData?.overview
+    analyticsOverview: analyticsData?.overview,
+    hasDateData: analyticsData?.byDate && analyticsData.byDate.length > 0,
+    hasDeviceData: analyticsData?.byDevice && Object.keys(analyticsData.byDevice || {}).length > 0,
+    hasSourceData: analyticsData?.bySource && Object.keys(analyticsData.bySource || {}).length > 0
   });
+
+  // Debug data structure
+  if (analyticsData) {
+    console.log('[Analytics] Data structure:', {
+      byDate: analyticsData.byDate?.slice(0, 2), // Show first two entries
+      byDevice: analyticsData.byDevice || {},
+      bySource: analyticsData.bySource || {}
+    });
+  }
 
   // Debug device data
   if (analyticsData?.byDevice) {
@@ -434,11 +472,17 @@ export default function AnalyticsPage() {
     return nextRun;
   };
 
-  // Update property selection handler to not trigger loadData automatically
-  const handlePropertyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  // Update property selection handler to load data immediately
+  const handlePropertyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const propertyId = e.target.value;
     const selectedProp = properties.find((p: { id: string; name: string }) => p.id === propertyId);
     setSelectedProperty(selectedProp || null);
+    
+    // Load data when property changes
+    if (selectedProp) {
+      console.log('[Analytics] Loading data for property:', selectedProp);
+      await loadData(true);
+    }
   };
 
   return (
@@ -830,6 +874,195 @@ export default function AnalyticsPage() {
                       value={analyticsData.overview.avgSessionDuration}
                       icon={<Clock className="h-4 w-4" />}
                     />
+                  </div>
+
+                  {/* Charts Section */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                    {/* User Trends Chart */}
+                    <Card className="bg-neutral-900 border-neutral-800">
+                      <div className="p-6">
+                        <h3 className="text-lg font-medium text-white mb-4">User Trends</h3>
+                        <div className="h-[300px]">
+                          {analyticsData.byDate && analyticsData.byDate.length > 0 && (
+                            <Line
+                              data={{
+                                labels: analyticsData.byDate.map(d => new Date(d.date).toLocaleDateString()),
+                                datasets: [
+                                  {
+                                    label: 'Total Users',
+                                    data: analyticsData.byDate.map(d => d.totalUsers),
+                                    borderColor: 'hsl(var(--chart-1))',
+                                    backgroundColor: 'hsl(var(--chart-1) / 0.1)',
+                                    tension: 0.4,
+                                    fill: true
+                                  },
+                                  {
+                                    label: 'Active Users',
+                                    data: analyticsData.byDate.map(d => d.activeUsers),
+                                    borderColor: 'hsl(var(--chart-2))',
+                                    backgroundColor: 'hsl(var(--chart-2) / 0.1)',
+                                    tension: 0.4,
+                                    fill: true
+                                  }
+                                ]
+                              }}
+                              options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                  legend: {
+                                    position: 'top' as const,
+                                    labels: {
+                                      color: 'rgb(156 163 175)'
+                                    }
+                                  }
+                                },
+                                scales: {
+                                  x: {
+                                    grid: {
+                                      color: 'rgb(64 64 64 / 0.2)'
+                                    },
+                                    ticks: {
+                                      color: 'rgb(156 163 175)'
+                                    }
+                                  },
+                                  y: {
+                                    grid: {
+                                      color: 'rgb(64 64 64 / 0.2)'
+                                    },
+                                    ticks: {
+                                      color: 'rgb(156 163 175)',
+                                      callback: (value) => {
+                                        if (typeof value === 'number') {
+                                          return new Intl.NumberFormat().format(value);
+                                        }
+                                        return value;
+                                      }
+                                    }
+                                  }
+                                }
+                              }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Device Distribution Chart */}
+                    <Card className="bg-neutral-900 border-neutral-800">
+                      <div className="p-6">
+                        <h3 className="text-lg font-medium text-white mb-4">Device Distribution</h3>
+                        <div className="h-[300px] flex items-center justify-center">
+                          {analyticsData.byDevice && Object.keys(analyticsData.byDevice).length > 0 && (
+                            <div style={{ width: '80%', height: '100%' }}>
+                              <Pie
+                                data={{
+                                  labels: Object.keys(analyticsData.byDevice).map(device => 
+                                    device.charAt(0).toUpperCase() + device.slice(1)
+                                  ),
+                                  datasets: [{
+                                    data: Object.values(analyticsData.byDevice).map(stats => stats.users),
+                                    backgroundColor: [
+                                      'hsl(var(--chart-1))',
+                                      'hsl(var(--chart-2))',
+                                      'hsl(var(--chart-3))'
+                                    ],
+                                    borderColor: 'rgb(17 17 17)',
+                                    borderWidth: 2
+                                  }]
+                                }}
+                                options={{
+                                  responsive: true,
+                                  maintainAspectRatio: false,
+                                  plugins: {
+                                    legend: {
+                                      position: 'bottom' as const,
+                                      labels: {
+                                        color: 'rgb(156 163 175)',
+                                        padding: 20,
+                                        font: {
+                                          size: 12
+                                        }
+                                      }
+                                    }
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+
+                    {/* Traffic Sources Chart */}
+                    <Card className="bg-neutral-900 border-neutral-800 lg:col-span-2">
+                      <div className="p-6">
+                        <h3 className="text-lg font-medium text-white mb-4">Traffic by Source</h3>
+                        <div className="h-[300px]">
+                          {analyticsData.bySource && Object.keys(analyticsData.bySource).length > 0 && (
+                            <Bar
+                              data={{
+                                labels: Object.keys(analyticsData.bySource).map(source => 
+                                  source.charAt(0).toUpperCase() + source.slice(1)
+                                ),
+                                datasets: [{
+                                  label: 'Sessions',
+                                  data: Object.values(analyticsData.bySource).map((source: any) => source.sessions || 0),
+                                  backgroundColor: [
+                                    'hsl(var(--chart-1))',
+                                    'hsl(var(--chart-2))',
+                                    'hsl(var(--chart-3))',
+                                    'hsl(var(--chart-4))',
+                                    'hsl(var(--chart-5))'
+                                  ]
+                                }]
+                              }}
+                              options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                  legend: {
+                                    display: false
+                                  },
+                                  tooltip: {
+                                    callbacks: {
+                                      label: (context) => {
+                                        const value = context.parsed.y;
+                                        return `Sessions: ${new Intl.NumberFormat().format(value)}`;
+                                      }
+                                    }
+                                  }
+                                },
+                                scales: {
+                                  x: {
+                                    grid: {
+                                      display: false
+                                    },
+                                    ticks: {
+                                      color: 'rgb(156 163 175)'
+                                    }
+                                  },
+                                  y: {
+                                    grid: {
+                                      color: 'rgb(64 64 64 / 0.2)'
+                                    },
+                                    ticks: {
+                                      color: 'rgb(156 163 175)',
+                                      callback: (value) => {
+                                        if (typeof value === 'number') {
+                                          return new Intl.NumberFormat().format(value);
+                                        }
+                                        return value;
+                                      }
+                                    }
+                                  }
+                                }
+                              }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </Card>
                   </div>
                 </div>
               </Card>

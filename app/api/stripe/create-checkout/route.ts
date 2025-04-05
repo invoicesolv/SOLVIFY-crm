@@ -41,8 +41,8 @@ export async function POST(req: Request) {
             quantity: 1,
           },
         ],
-        success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001'}/dashboard?payment=success`,
-        cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001'}/dashboard?payment=canceled`,
+        success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/dashboard?payment=success`,
+        cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/dashboard?payment=canceled`,
         customer_email: session.user.email || undefined,
         metadata: {
           userId: session.user.id,

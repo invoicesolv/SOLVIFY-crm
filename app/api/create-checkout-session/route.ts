@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       )
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({

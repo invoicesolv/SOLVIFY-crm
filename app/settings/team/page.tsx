@@ -12,9 +12,30 @@ import { supabase } from '@/lib/supabase';
 import { useSession } from "next-auth/react";
 import { Users, UserPlus, Building, Plus, Trash2, MailPlus, ShieldCheck, Shield } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 
-// Add type for permission keys
-type PermissionKey = 'view_projects' | 'edit_projects' | 'view_customers' | 'edit_customers' | 'view_invoices' | 'view_calendar' | 'view_analytics';
+// Permission keys type
+export type PermissionKey = 
+  | 'view_projects' 
+  | 'edit_projects' 
+  | 'view_customers' 
+  | 'edit_customers' 
+  | 'view_invoices' 
+  | 'view_calendar' 
+  | 'view_analytics'
+  | 'view_domains'
+  | 'edit_domains'
+  | 'admin'
+  | 'canInviteUsers'
+  | 'canManageWorkspace';
 
 // Add role types at the top with other types
 type Role = 'admin' | 'editor' | 'reader';
@@ -37,7 +58,12 @@ const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
       edit_customers: true,
       view_invoices: true,
       view_calendar: true,
-      view_analytics: true
+      view_analytics: true,
+      view_domains: true,
+      edit_domains: true,
+      admin: true,
+      canInviteUsers: true,
+      canManageWorkspace: true
     }
   },
   editor: {
@@ -50,7 +76,12 @@ const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
       edit_customers: true,
       view_invoices: true,
       view_calendar: true,
-      view_analytics: false
+      view_analytics: false,
+      view_domains: true,
+      edit_domains: false,
+      admin: false,
+      canInviteUsers: false,
+      canManageWorkspace: false
     }
   },
   reader: {
@@ -63,7 +94,12 @@ const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
       edit_customers: false,
       view_invoices: true,
       view_calendar: true,
-      view_analytics: false
+      view_analytics: false,
+      view_domains: false,
+      edit_domains: false,
+      admin: false,
+      canInviteUsers: false,
+      canManageWorkspace: false
     }
   }
 };
@@ -116,7 +152,12 @@ export default function TeamPage() {
     edit_customers: false,
     view_invoices: false,
     view_calendar: true,
-    view_analytics: false
+    view_analytics: false,
+    view_domains: false,
+    edit_domains: false,
+    admin: false,
+    canInviteUsers: false,
+    canManageWorkspace: false
   });
 
   useEffect(() => {
@@ -176,10 +217,16 @@ export default function TeamPage() {
   const loadWorkspaces = async () => {
     try {
       console.log('Loading workspaces for user:', session?.user?.id);
-      console.log('Full session object:', session);
+      console.log('Full session object:', {
+        id: session?.user?.id,
+        email: session?.user?.email,
+        hasAccessToken: !!session?.access_token,
+        status
+      });
 
       // Set the Supabase auth session
       if (session?.access_token) {
+        console.log('Setting Supabase auth session with access token');
         const { error: authError } = await supabase.auth.setSession({
           access_token: session.access_token,
           refresh_token: session.refresh_token || '',
@@ -189,18 +236,35 @@ export default function TeamPage() {
           toast.error('Failed to authenticate with Supabase');
           return;
         }
+        console.log('Successfully set Supabase auth session');
       } else {
         console.warn('No access token found in session');
+        toast.error('Authentication information missing');
+        return;
       }
 
       // Verify the Supabase auth user
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      console.log('Supabase auth user:', user);
-      if (authError) {
-        console.error('Supabase auth error:', authError);
+      const { data: { user }, error: getUserError } = await supabase.auth.getUser();
+      console.log('Supabase auth user:', {
+        id: user?.id,
+        email: user?.email,
+        role: user?.role,
+      });
+      
+      if (getUserError) {
+        console.error('Supabase auth error:', getUserError);
+        toast.error('Failed to verify your authentication');
+        return;
+      }
+      
+      if (!user) {
+        console.error('No user found in Supabase session');
+        toast.error('Unable to authenticate with Supabase');
+        return;
       }
 
       // First, get user's workspace memberships without joining workspaces
+      console.log('Fetching team memberships for user:', user.id);
       const { data: memberships, error: membershipError } = await supabase
         .from('team_members')
         .select(`
@@ -213,29 +277,31 @@ export default function TeamPage() {
           is_admin,
           permissions
         `)
-        .eq('user_id', session?.user?.id)
+        .eq('user_id', user.id)
         .returns<TeamMember[]>();
 
       console.log('Team memberships query result:', {
-        memberships,
+        membershipCount: memberships?.length,
+        hasData: !!memberships?.length,
         error: membershipError?.message,
         errorCode: membershipError?.code
       });
 
       if (membershipError) {
         console.error('Error fetching team memberships:', membershipError);
+        toast.error('Error loading team memberships');
         return;
       }
 
       if (!memberships?.length) {
-        console.log('No team memberships found for user');
+        console.log('No team memberships found for user, creating default workspace');
         // Create a default workspace for the user
         const { data: newWorkspace, error: createError } = await supabase
           .from('workspaces')
           .insert([
             { 
               name: 'My Workspace',
-              owner_id: session?.user?.id
+              owner_id: user.id
             }
           ])
           .select()
@@ -246,13 +312,19 @@ export default function TeamPage() {
           error: createError?.message
         });
 
+        if (createError) {
+          console.error('Error creating default workspace:', createError);
+          toast.error('Failed to create default workspace');
+          return;
+        }
+
         if (newWorkspace) {
           // Add user as admin of the new workspace
           const { error: memberError } = await supabase
             .from('team_members')
             .insert([
               {
-                user_id: session?.user?.id,
+                user_id: user.id,
                 workspace_id: newWorkspace.id,
                 role: 'admin',
                 name: session?.user?.name || 'Admin User',
@@ -266,109 +338,50 @@ export default function TeamPage() {
             error: memberError?.message
           });
 
-          if (!memberError) {
-            setWorkspaces([newWorkspace]);
+          if (memberError) {
+            console.error('Error adding user to workspace:', memberError);
+            toast.error('Failed to add you to workspace');
+            return;
           }
+
+          setWorkspaces([newWorkspace]);
+          setActiveWorkspace(newWorkspace.id);
         }
         return;
       }
 
-      // Fetch workspaces separately with a direct HTTP request
-      const workspaceIds = memberships.map(m => m.workspace_id);
+      // Get workspace IDs from memberships
+      const workspaceIds: string[] = memberships.map(m => m.workspace_id);
       console.log('Workspace IDs to fetch:', workspaceIds);
-      console.log('First membership for reference:', memberships[0]);
 
-      let workspacesData = [];
-      let workspacesError = null;
-      const maxRetries = 3;
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          console.log(`Attempt ${attempt} to fetch workspaces via direct HTTP...`);
-          const workspaceId = workspaceIds[0]; // We know there's only one ID
-          
-          if (!session?.access_token) {
-            throw new Error('No access token available');
-          }
-
-          const headers: HeadersInit = {
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-            'Content-Type': 'application/json',
-          };
-
-          const response = await fetch(
-            `https://jbspiufukrifntnwlrts.supabase.co/rest/v1/workspaces?select=id,name,created_at,owner_id&id=eq.${workspaceId}`,
-            {
-              method: 'GET',
-              headers,
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-          }
-
-          const data = await response.json();
-          console.log('Fetched workspaces via direct HTTP:', {
-            workspacesData: data,
-            status: response.status,
-            query: `SELECT id, name, created_at, owner_id FROM workspaces WHERE id = '${workspaceId}'`
-          });
-
-          workspacesData = data;
-          workspacesError = null;
-          break; // Success, exit the retry loop
-        } catch (error) {
-          console.error(`Attempt ${attempt} failed:`, error);
-          workspacesError = error;
-          if (attempt === maxRetries) {
-            console.error('Max retries reached. Final error:', {
-              error,
-              message: error instanceof Error ? error.message : String(error)
-            });
-            break;
-          }
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        }
-      }
-
+      // Fetch workspaces directly using the Supabase client with in operator
+      const { data: workspacesData, error: workspacesError } = await supabase
+        .from('workspaces')
+        .select('id, name, created_at, owner_id')
+        .in('id', workspaceIds);
+        
       if (workspacesError) {
-        console.error('Error fetching workspaces after retries:', workspacesError);
-
-        // Fallback query: fetch all workspaces to debug
-        if (!session?.access_token) {
-          throw new Error('No access token available');
-        }
-
-        const headers: HeadersInit = {
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
-          'Content-Type': 'application/json',
-        };
-
-        const response = await fetch(
-          `https://jbspiufukrifntnwlrts.supabase.co/rest/v1/workspaces?select=id,name,created_at,owner_id`,
-          {
-            method: 'GET',
-            headers,
-          }
-        );
-
-        const allWorkspaces = await response.json();
-        console.log('Fallback query - all workspaces (direct HTTP):', {
-          allWorkspaces,
-          status: response.status
-        });
-
+        console.error('Error fetching workspaces:', workspacesError);
+        toast.error('Failed to load workspaces');
         return;
       }
 
-      console.log('Processed workspaces:', workspacesData);
+      console.log('Fetched workspaces:', {
+        count: workspacesData?.length,
+        workspaces: workspacesData
+      });
+      
+      // Set workspaces and select the first one as active
       setWorkspaces(workspacesData || []);
-
+      
+      if (workspacesData?.length > 0 && !activeWorkspace) {
+        setActiveWorkspace(workspacesData[0].id);
+      }
+      
+      // Log if we're missing any workspaces
       if (workspacesData.length !== workspaceIds.length) {
         console.log('Some workspace IDs were not found:', {
-          missing: workspaceIds.filter(id => !workspacesData.some((w: Workspace) => w.id === id)),
+          missing: workspaceIds.filter((id: string) => !workspacesData.some((w: Workspace) => w.id === id)),
           found: workspacesData.map((w: Workspace) => w.id)
         });
       }
@@ -811,60 +824,84 @@ export default function TeamPage() {
                               </Button>
                             </div>
                           ) : (
-                            <div className="space-y-4">
-                              {teamMembers.map((member) => (
-                                <div
-                                  key={member.id}
-                                  className="p-4 rounded-lg bg-neutral-800/50 flex items-center justify-between"
-                                >
-                                  <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
-                                      {((member.name || member.email || 'U').charAt(0) || 'U').toUpperCase()}
-                                    </div>
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-medium">{member.name || 'Unknown User'}</span>
-                                        {member.is_admin && (
-                                          <span className="text-xs bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">Admin</span>
-                                        )}
-                                      </div>
-                                      <div className="text-sm text-gray-500">{member.email || 'No email'}</div>
-                                    </div>
-                                  </div>
-                                  
-                                  {(isAdmin || isWorkspaceOwner()) && member.user_id !== session?.user?.id && (
-                                    <div className="flex items-center gap-2">
-                                      <Button
-                                        onClick={() => handleToggleAdmin(member.id, member.is_admin)}
-                                        variant="outline"
-                                        size="sm"
-                                        className="bg-neutral-800 border-neutral-700 text-white hover:bg-neutral-700"
-                                      >
-                                        {member.is_admin ? (
-                                          <>
-                                            <Shield className="h-4 w-4 mr-1" />
-                                            Remove Admin
-                                          </>
-                                        ) : (
-                                          <>
-                                            <ShieldCheck className="h-4 w-4 mr-1" />
-                                            Make Admin
-                                          </>
-                                        )}
-                                      </Button>
-                                      
-                                      <Button
-                                        onClick={() => handleRemoveMember(member.id)}
-                                        variant="outline"
-                                        size="sm"
-                                        className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
+                            <div className="relative">
+                              <div className="flex items-center py-4">
+                                <Input
+                                  placeholder="Filter members..."
+                                  className="max-w-sm bg-neutral-800 border-neutral-700 text-white"
+                                />
+                              </div>
+                              <div className="rounded-md border border-neutral-800">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow className="hover:bg-neutral-800/50 border-neutral-800">
+                                      <TableHead className="text-neutral-400">Status</TableHead>
+                                      <TableHead className="text-neutral-400">Email</TableHead>
+                                      <TableHead className="text-neutral-400 text-right">Amount</TableHead>
+                                      <TableHead className="text-neutral-400"></TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {teamMembers.map((member) => (
+                                      <TableRow key={member.id} className="hover:bg-neutral-800/50 border-neutral-800">
+                                        <TableCell className="font-medium text-white">
+                                          {member.is_admin ? (
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                              Admin
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-800">
+                                              Member
+                                            </span>
+                                          )}
+                                        </TableCell>
+                                        <TableCell className="text-neutral-300">{member.email}</TableCell>
+                                        <TableCell className="text-right text-neutral-300">
+                                          {/* Add any relevant member data here */}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                          {(isAdmin || isWorkspaceOwner()) && member.user_id !== session?.user?.id && (
+                                            <div className="flex items-center justify-end gap-2">
+                                              <Button
+                                                onClick={() => handleToggleAdmin(member.id, member.is_admin)}
+                                                variant="outline"
+                                                size="sm"
+                                                className="bg-neutral-800 border-neutral-700 text-white hover:bg-neutral-700"
+                                              >
+                                                {member.is_admin ? (
+                                                  <>
+                                                    <Shield className="h-4 w-4 mr-1" />
+                                                    Remove Admin
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <ShieldCheck className="h-4 w-4 mr-1" />
+                                                    Make Admin
+                                                  </>
+                                                )}
+                                              </Button>
+                                              
+                                              <Button
+                                                onClick={() => handleRemoveMember(member.id)}
+                                                variant="outline"
+                                                size="sm"
+                                                className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20"
+                                              >
+                                                <Trash2 className="h-4 w-4" />
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                              <div className="flex items-center justify-between py-4">
+                                <p className="text-sm text-neutral-400">
+                                  {teamMembers.length} member{teamMembers.length === 1 ? '' : 's'}
+                                </p>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -906,32 +943,64 @@ export default function TeamPage() {
                                     edit_customers: 'Edit Customers',
                                     view_invoices: 'View Invoices',
                                     view_calendar: 'View Calendar',
-                                    view_analytics: 'View Analytics'
+                                    view_analytics: 'View Analytics',
+                                    view_domains: 'View Domains',
+                                    edit_domains: 'Edit Domains'
                                   }) as [PermissionKey, string][]).map(([key, label]) => (
                                     <div key={key} className="flex items-center justify-between p-3 rounded-md bg-neutral-800 border border-neutral-700">
                                       <div className="flex items-center space-x-3">
                                         <Checkbox
                                           id={`${member.id}-${key}`}
                                           checked={member.permissions?.[key] ?? false}
-                                          onCheckedChange={(checked) => {
+                                          onCheckedChange={async (checked) => {
                                             if (!isAdmin) {
                                               toast.error('You must be an admin to update permissions');
                                               return;
                                             }
-                                            console.log('Updating permission:', {
-                                              memberId: member.id,
-                                              key,
-                                              currentValue: member.permissions?.[key],
-                                              newValue: checked,
-                                              isAdmin
-                                            });
-                                            const updatedPermissions = {
-                                              ...member.permissions,
-                                              [key]: checked
-                                            };
-                                            handleUpdatePermissions(member.id, updatedPermissions);
+                                            
+                                            // Show toast for immediate feedback
+                                            toast.promise(
+                                              (async () => {
+                                                console.log('Updating permission:', {
+                                                  memberId: member.id,
+                                                  key,
+                                                  currentValue: member.permissions?.[key],
+                                                  newValue: checked,
+                                                  isAdmin
+                                                });
+                                                
+                                                // Create updated permissions object
+                                                const updatedPermissions = {
+                                                  ...member.permissions,
+                                                  [key]: checked
+                                                };
+                                                
+                                                // Immediately update the database
+                                                const { error } = await supabase
+                                                  .from('team_members')
+                                                  .update({ permissions: updatedPermissions })
+                                                  .eq('id', member.id);
+                                                
+                                                if (error) throw error;
+                                                
+                                                // Update local state to avoid refetching
+                                                const updatedMembers = teamMembers.map(m => 
+                                                  m.id === member.id 
+                                                    ? { ...m, permissions: updatedPermissions } 
+                                                    : m
+                                                );
+                                                setTeamMembers(updatedMembers);
+                                                
+                                                return 'Permissions updated';
+                                              })(),
+                                              {
+                                                loading: 'Updating permission...',
+                                                success: 'Permission updated successfully',
+                                                error: 'Failed to update permission'
+                                              }
+                                            );
                                           }}
-                                          disabled={!isAdmin}
+                                          disabled={!isAdmin || member.is_admin}
                                         />
                                         <label 
                                           htmlFor={`${member.id}-${key}`}
@@ -1145,6 +1214,39 @@ export default function TeamPage() {
                       }}
                     />
                     <label htmlFor="view_invoices" className="text-sm text-neutral-300">View Invoices</label>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-md bg-neutral-800/50">
+                  <h4 className="text-sm font-medium text-white mb-3">Domains</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="view_domains"
+                        checked={customPermissions.view_domains}
+                        onCheckedChange={(checked) => {
+                          setCustomPermissions(prev => ({
+                            ...prev,
+                            view_domains: checked === true
+                          }));
+                        }}
+                      />
+                      <label htmlFor="view_domains" className="text-sm text-neutral-300">View Domains</label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="edit_domains"
+                        checked={customPermissions.edit_domains}
+                        onCheckedChange={(checked) => {
+                          setCustomPermissions(prev => ({
+                            ...prev,
+                            edit_domains: checked === true
+                          }));
+                        }}
+                        disabled={!customPermissions.view_domains}
+                      />
+                      <label htmlFor="edit_domains" className="text-sm text-neutral-300">Edit Domains</label>
+                    </div>
                   </div>
                 </div>
               </div>

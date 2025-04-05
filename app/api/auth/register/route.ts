@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-02-24.acacia",
+  apiVersion: "2023-10-16",
 })
 
 const transporter = nodemailer.createTransport({
@@ -23,8 +23,6 @@ const transporter = nodemailer.createTransport({
 
 async function sendWelcomeEmail(email: string, name: string, planId: string = 'free') {
   try {
-    console.log('Attempting to send welcome email to:', email);
-    
     // Get plan details
     const planNames = {
       'free': 'Privatpersoner (Free)',
@@ -85,10 +83,8 @@ async function sendWelcomeEmail(email: string, name: string, planId: string = 'f
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log('Welcome email sent successfully:', result.response);
     return true;
   } catch (error) {
-    console.error('Error sending welcome email:', error);
     return false;
   }
 }
@@ -97,8 +93,6 @@ async function sendAdminNotificationEmail(userData: { name: string, email: strin
   try {
     const { name, email, company, planId } = userData;
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@solvify.se'; // Admin email address
-    
-    console.log('Sending admin notification email about new user:', email);
     
     const mailOptions = {
       from: process.env.EMAIL_USER || 'noreply@solvify.se',
@@ -140,24 +134,18 @@ async function sendAdminNotificationEmail(userData: { name: string, email: strin
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log('Admin notification email sent successfully:', result.response);
     return true;
   } catch (error) {
-    console.error('Error sending admin notification email:', error);
     return false;
   }
 }
 
 export async function POST(req: Request) {
   try {
-    console.log('Registration API called');
-    
     const { name, email, password, company, sessionId, planId = 'free' } = await req.json()
-    console.log('Registration data received:', { name, email, company, sessionId: !!sessionId, planId });
 
     // Basic validation
     if (!name || !email || !password) {
-      console.error('Missing required fields:', { name: !!name, email: !!email, password: !!password });
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -169,12 +157,10 @@ export async function POST(req: Request) {
     try {
       if (sessionId) {
         // For paid subscriptions, retrieve the session and customer
-        console.log('Processing paid subscription with session ID:', sessionId);
         const session = await stripe.checkout.sessions.retrieve(sessionId)
         stripeCustomerId = session.customer as string
       } else {
         // For free trial, create a new customer in Stripe
-        console.log('Creating free trial customer in Stripe');
         const customer = await stripe.customers.create({
           name,
           email,
@@ -184,10 +170,8 @@ export async function POST(req: Request) {
           },
         })
         stripeCustomerId = customer.id
-        console.log('Stripe customer created:', stripeCustomerId);
       }
     } catch (stripeError) {
-      console.error('Stripe error:', stripeError);
       return NextResponse.json(
         { error: "Failed to create Stripe customer" },
         { status: 500 }
@@ -196,9 +180,7 @@ export async function POST(req: Request) {
 
     // Send welcome email to user BEFORE creating the Supabase user
     // This ensures our welcome email arrives before the Supabase confirmation email
-    console.log('Sending welcome email before user creation');
     const welcomeEmailSent = await sendWelcomeEmail(email, name, planId)
-    console.log('Welcome email sent:', welcomeEmailSent);
     
     // Send notification email to admin
     const adminEmailSent = await sendAdminNotificationEmail({ 
@@ -207,10 +189,8 @@ export async function POST(req: Request) {
       company,
       planId 
     })
-    console.log('Admin notification email sent:', adminEmailSent);
 
     // Create user in Supabase
-    console.log('Creating user in Supabase');
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -225,7 +205,6 @@ export async function POST(req: Request) {
     })
 
     if (authError) {
-      console.error('Supabase auth error:', authError);
       return NextResponse.json(
         { error: authError.message },
         { status: 500 }
@@ -233,17 +212,13 @@ export async function POST(req: Request) {
     }
 
     if (!authData.user) {
-      console.error('No user returned from Supabase');
       return NextResponse.json(
         { error: "Failed to create user" },
         { status: 500 }
       )
     }
 
-    console.log('User created in Supabase:', authData.user.id);
-
     // Create user preferences with trial start date
-    console.log('Creating user preferences');
     const { error: prefError } = await supabase
       .from('user_preferences')
       .insert({
@@ -258,16 +233,8 @@ export async function POST(req: Request) {
         trial_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() // 14 days from now
       })
 
-    if (prefError) {
-      console.error('Error creating user preferences:', prefError);
-      // Continue with registration even if preferences creation fails
-    } else {
-      console.log('User preferences created successfully');
-    }
-
     // Track the registration event
     try {
-      console.log('Tracking registration event');
       await supabase
         .from('event_tracking')
         .insert({
@@ -282,9 +249,7 @@ export async function POST(req: Request) {
             stripe_customer_id: stripeCustomerId
           }
         });
-      console.log('Registration event tracked successfully');
     } catch (error) {
-      console.error('Error tracking registration event:', error);
       // Continue with registration even if tracking fails
     }
 
@@ -295,7 +260,6 @@ export async function POST(req: Request) {
       planId
     })
   } catch (error) {
-    console.error("Registration error:", error)
     return NextResponse.json(
       { error: "Failed to create account", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
