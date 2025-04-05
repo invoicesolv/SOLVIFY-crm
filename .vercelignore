@@ -1,0 +1,5 @@
+venv
+receipt_processing.log
+public/receipts/invoices
+.next/cache
+*.zip 

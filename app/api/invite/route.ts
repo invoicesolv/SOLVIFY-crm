@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from "uuid"
 import { supabase } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"
+import { authOptions } from "@/app/api/auth/[...nextauth]/auth-options"
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
