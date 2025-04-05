@@ -1,15 +1,14 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'assets.aceternity.com',
-        port: '',
-        pathname: '/**',
-      },
-    ],
+module.exports = {
+  output: 'standalone',
+  experimental: {
+    // This will allow us to deploy with dynamic API routes
+    serverComponentsExternalPackages: ['nodemailer'],
   },
-}
-
-module.exports = nextConfig 
+  images: {
+    domains: ['avatars.githubusercontent.com', 'lh3.googleusercontent.com'],
+  },
+  // These routes should be treated as dynamic and not pre-rendered
+  excludeDefaultMomentLocales: true,
+  transpilePackages: ['lucide-react'],
+} 
