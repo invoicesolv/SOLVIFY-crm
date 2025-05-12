@@ -13,7 +13,13 @@ export default function SupabaseSessionSync({
 
   useEffect(() => {
     const syncSession = async () => {
-      if (status === "authenticated" && session?.access_token) {
+      // Explicitly handle each status case
+      if (status === "loading") {
+        console.log("Session status: loading - waiting for session to resolve");
+        return;
+      }
+      
+      if (status === "authenticated" && session?.user?.id) {
         console.log("[Debug] Session sync starting with user details:", { 
           userId: session.user?.id,
           email: session.user?.email,
@@ -25,134 +31,103 @@ export default function SupabaseSessionSync({
         if (typeof window !== 'undefined' && session.user?.email) {
           localStorage.setItem('current_user_email', session.user.email);
           localStorage.setItem('current_user_id', session.user.id || '');
-          
-          // Special case for known problematic users
-          if (session.user.email === 'kevin@amptron.com') {
-            console.log("[Debug] Special handling for kevin@amptron.com");
-            localStorage.setItem('is_special_user', 'true');
-          }
         }
         
         try {
-          // Check if this is kevin@amptron.com and handle the user ID mapping issue
-          if (session.user?.email === 'kevin@amptron.com') {
-            console.log("[Debug] Detected kevin@amptron.com login, checking ID mapping");
-            const { data, error } = await supabase.rpc('check_user_match', {
-              input_nextauth_id: session.user.id,
-              input_email: 'kevin@amptron.com'
+          try {
+            // Skip JWT validation for Google OAuth
+            // Google OAuth tokens have a different structure than Supabase tokens
+            // and will always cause "Invalid JWT structure" errors
+            const isGoogleAuth = !!session.access_token && !(session as any).supabaseAccessToken;
+            
+            if (isGoogleAuth) {
+              // For Google OAuth logins, use anonymous auth with RLS
+              console.log("[Debug] Detected Google OAuth. Using anonymous auth with RLS policies");
+              await supabase.auth.signInAnonymously();
+            } 
+            else if ((session as any).supabaseAccessToken) {
+              // For credential logins, we have proper Supabase tokens
+              console.log("[Debug] Using Supabase token from session");
+              try {
+            const { error } = await supabase.auth.setSession({
+                  access_token: (session as any).supabaseAccessToken,
+                  refresh_token: "",
             });
             
             if (error) {
-              console.error("[Debug] Error checking user match:", error);
-            } else {
-              console.log("[Debug] ID mapping check result:", data);
-              
-              // If there's a mismatch between NextAuth ID and Supabase ID
-              if (data && data[0] && data[0].nextauth_id !== data[0].supabase_id) {
-                console.log("[Debug] DETECTED ID MISMATCH:", {
-                  nextAuthId: data[0].nextauth_id,
-                  supabaseId: data[0].supabase_id
-                });
-                
-                // Store the mismatch in localStorage for debugging
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem('id_mismatch_data', JSON.stringify({
-                    nextAuthId: data[0].nextauth_id,
-                    supabaseId: data[0].supabase_id,
-                    email: 'kevin@amptron.com',
-                    timestamp: new Date().toISOString()
-                  }));
-                }
-              }
-            }
-          }
-        
-          const { error } = await supabase.auth.setSession({
-            access_token: session.access_token,
-            refresh_token: session.refresh_token || "",
-          });
-          
-          if (error) {
-            console.error("Error setting Supabase session:", error);
-          } else {
-            console.log("Supabase session successfully synchronized");
-            
-            // Verify the session worked by getting the user
-            const { data, error: userError } = await supabase.auth.getUser();
-            if (userError) {
-              console.error("Failed to get user after session sync:", userError);
-              
-              // If we can't get the user, try to refresh the session
-              try {
-                const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-                if (refreshError) {
-                  console.error("Failed to refresh Supabase session:", refreshError);
+                  console.error("[Debug] Error setting Supabase session:", error);
+                  // Fall back to anonymous auth
+                  await supabase.auth.signInAnonymously();
                 } else {
-                  console.log("Successfully refreshed Supabase session:", refreshData.session?.user?.email);
+                  console.log("[Debug] Successfully set Supabase session");
                 }
-              } catch (refreshErr) {
-                console.error("Exception during session refresh:", refreshErr);
+              } catch (err) {
+                console.error("[Debug] Exception setting Supabase session:", err);
+                // Fall back to anonymous auth
+                await supabase.auth.signInAnonymously();
               }
-            } else {
-              console.log("Supabase session verified, user:", {
-                id: data.user?.id,
-                email: data.user?.email,
-                role: data.user?.role
-              });
-              
-              console.log("[Debug] Session/Database user comparison:", {
-                nextAuthId: session.user?.id,
-                nextAuthEmail: session.user?.email,
-                supabaseId: data.user?.id,
-                supabaseEmail: data.user?.email,
-                emailMatch: session.user?.email === data.user?.email,
-                idMatch: session.user?.id === data.user?.id
-              });
-              
-              // Test query to verify permissions with authenticated user ID
-              try {
-                const { data: testMemberships, error: testError } = await supabase
-                  .from('team_members')
-                  .select('workspace_id, email')
-                  .eq('user_id', session.user.id)
-                  .limit(1);
-                  
-                if (testError) {
-                  console.log("Initial database access test failed:", testError);
-                  console.log("This could be due to RLS policies. This is normal.");
-                  
-                  // Try querying by email as fallback
-                  if (session.user?.email) {
-                    console.log("[Debug] Trying to query team_members by email instead");
-                    const { data: emailMemberships, error: emailError } = await supabase
-                      .from('team_members')
-                      .select('workspace_id, user_id, email')
-                      .eq('email', session.user.email)
-                      .limit(1);
-                      
-                    console.log("[Debug] Email-based query result:", {
-                      success: !emailError,
-                      hasData: !!emailMemberships?.length,
-                      data: emailMemberships,
-                      error: emailError
-                    });
-                    
-                    // If we found the user by email but not by ID, there's a mismatch
-                    if (emailMemberships?.length && session.user.id) {
-                      console.log("[Debug] ID MISMATCH CONFIRMED: NextAuth ID doesn't match team_members.user_id");
-                    }
+            } 
+            else {
+              // No valid tokens, use anonymous auth
+              console.log("[Debug] No valid tokens found. Using anonymous auth with RLS");
+              await supabase.auth.signInAnonymously();
                   }
-                } else {
-                  console.log("Test query result:", {
-                    success: !testError,
-                    hasData: !!testMemberships?.length,
-                    data: testMemberships,
-                    error: testError
-                  });
-                }
-              } catch (queryErr) {
-                console.error("Error during test query:", queryErr);
-              }
+            
+            // Test queries to verify access with our RLS policies
+            try {
+              // Test team members access
+              const { data: teamMembers, error: teamError } = await supabase
+                    .from('team_members')
+                    .select('workspace_id, email')
+                    .eq('user_id', session.user.id)
+                    .limit(1);
+                    
+              console.log("Team members table check:", {
+                hasData: !!teamMembers?.length,
+                error: teamError?.message,
+                errorCode: teamError?.code
+              });
+              
+              // Test workspaces access
+              const { data: workspaces, error: workspacesError } = await supabase
+                .from('workspaces')
+                .select('id, name')
+                .limit(5);
+                
+              console.log("Workspaces table check:", {
+                hasData: !!workspaces?.length,
+                error: workspacesError?.message,
+                errorCode: workspacesError?.code
+              });
+              
+              if (teamError || (!teamMembers?.length && session.user?.email)) {
+                    // Try querying by email as fallback
+                      console.log("[Debug] Trying to query team_members by email instead");
+                      const { data: emailMemberships, error: emailError } = await supabase
+                        .from('team_members')
+                        .select('workspace_id, user_id, email')
+                        .eq('email', session.user.email)
+                        .limit(1);
+                        
+                      console.log("[Debug] Email-based query result:", {
+                        success: !emailError,
+                        hasData: !!emailMemberships?.length,
+                        data: emailMemberships,
+                        error: emailError
+                      });
+                    }
+            } catch (queryErr) {
+              console.error("Error during test queries:", queryErr);
+            }
+          } catch (sessionError) {
+            console.error("Exception during auth:", sessionError);
+            
+            // Final fallback
+            try {
+              await supabase.auth.signInAnonymously();
+              console.log("[Debug] Fallback: Using anonymous auth after error");
+            } catch (anonErr) {
+              console.error("Failed to use anonymous auth:", anonErr);
             }
           }
         } catch (error) {
@@ -167,10 +142,11 @@ export default function SupabaseSessionSync({
         if (typeof window !== 'undefined') {
           localStorage.removeItem('current_user_email');
           localStorage.removeItem('current_user_id');
-          localStorage.removeItem('is_special_user');
         }
       } else {
-        console.log("Session status:", status);
+        // This handles the "authenticated" case without an access token
+        // or any other unexpected state
+        console.log("Session status:", status, "but missing access token or unexpected state");
       }
     };
 

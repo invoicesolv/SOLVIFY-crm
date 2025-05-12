@@ -1,6 +1,6 @@
 export const OAUTH_CONFIG = {
   // Base URL for the application
-  baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://crm.solvify.se',
+  baseUrl: process.env.NEXT_PUBLIC_SITE_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://crm.solvify.se'),
   
   // Google OAuth endpoints
   google: {

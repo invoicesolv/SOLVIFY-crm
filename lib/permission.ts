@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { supabaseAdmin } from './supabase';
 
 // Cache permissions for 5 minutes to avoid excessive DB queries
 const permissionCache = new Map<string, {
@@ -25,7 +26,17 @@ export type PermissionKey =
   | 'edit_domains'
   | 'admin'
   | 'canInviteUsers'
-  | 'canManageWorkspace';
+  | 'canManageWorkspace'
+  | 'edit_calendar'
+  | 'view_sales'
+  | 'edit_sales'
+  | 'view_leads'
+  | 'edit_leads'
+  | 'use_chatbot';
+
+/**
+ * NOTE: Uses supabaseAdmin client to bypass RLS for internal checks.
+ */
 
 /**
  * Check if a user has a specific permission in their workspace
@@ -50,8 +61,8 @@ export async function checkPermission(
   }
   
   try {
-    // First check if user is a workspace owner (owners have all permissions)
-    const { data: workspace, error: workspaceError } = await supabase
+    // First check if user is a workspace owner (owners have all permissions) - Use admin client
+    const { data: workspace, error: workspaceError } = await supabaseAdmin
       .from('workspaces')
       .select('owner_id')
       .eq('id', workspaceId)
@@ -77,7 +88,13 @@ export async function checkPermission(
         edit_domains: true,
         admin: true,
         canInviteUsers: true,
-        canManageWorkspace: true
+        canManageWorkspace: true,
+        edit_calendar: true,
+        view_sales: true,
+        edit_sales: true,
+        view_leads: true,
+        edit_leads: true,
+        use_chatbot: true
       };
       
       permissionCache.set(cacheKey, {
@@ -88,12 +105,15 @@ export async function checkPermission(
       return true;
     }
     
-    // Get the user's email for additional lookup
-    const { data: authUser } = await supabase.auth.getUser();
+    // Getting the user's email might still need the context of the original request's auth?
+    // Let's assume this part is okay for now, but might need review depending on auth flow.
+    // If using admin client for auth, it might not represent the calling user.
+    // Sticking with the default client *just* for getUser might be safer if needed.
+    const { data: authUser } = await supabase.auth.getUser(); // Keep default client for user context?
     const userEmail = authUser?.user?.email;
     
-    // First try direct team membership lookup by user ID
-    const { data: teamMember, error: memberError } = await supabase
+    // First try direct team membership lookup by user ID - Use admin client
+    const { data: teamMember, error: memberError } = await supabaseAdmin
       .from('team_members')
       .select('permissions, is_admin, email')
       .eq('user_id', userId)
@@ -117,7 +137,13 @@ export async function checkPermission(
           edit_domains: true,
           admin: true,
           canInviteUsers: true,
-          canManageWorkspace: true
+          canManageWorkspace: true,
+          edit_calendar: true,
+          view_sales: true,
+          edit_sales: true,
+          view_leads: true,
+          edit_leads: true,
+          use_chatbot: true
         };
         
         permissionCache.set(cacheKey, {
@@ -142,7 +168,7 @@ export async function checkPermission(
     
     // If we didn't find a direct match and we have an email, try by email
     if (userEmail) {
-      const { data: emailMember, error: emailError } = await supabase
+      const { data: emailMember, error: emailError } = await supabaseAdmin // Use admin client
         .from('team_members')
         .select('permissions, is_admin, email')
         .eq('email', userEmail)
@@ -165,7 +191,13 @@ export async function checkPermission(
             edit_domains: true,
             admin: true,
             canInviteUsers: true,
-            canManageWorkspace: true
+            canManageWorkspace: true,
+            edit_calendar: true,
+            view_sales: true,
+            edit_sales: true,
+            view_leads: true,
+            edit_leads: true,
+            use_chatbot: true
           };
           
           permissionCache.set(cacheKey, {
@@ -208,21 +240,30 @@ export async function getUserPermissions(
   userId: string,
   workspaceId: string
 ): Promise<Record<PermissionKey, boolean>> {
-  if (!userId || !workspaceId) {
-    return {
+  // Define default permissions at the function scope
+  const defaultPermissions: Record<PermissionKey, boolean> = {
       view_projects: false,
       edit_projects: false,
       view_customers: false,
       edit_customers: false,
       view_invoices: false,
       view_calendar: false,
+    edit_calendar: false,
       view_analytics: false,
       view_domains: false,
       edit_domains: false,
+    view_sales: false,
+    edit_sales: false,
+    view_leads: false,
+    edit_leads: false,
+    use_chatbot: false,
       admin: false,
       canInviteUsers: false,
       canManageWorkspace: false
     };
+
+  if (!userId || !workspaceId) {
+    return defaultPermissions;
   }
   
   // Check cache first
@@ -236,8 +277,8 @@ export async function getUserPermissions(
   }
   
   try {
-    // First check if user is a workspace owner
-    const { data: workspace, error: workspaceError } = await supabase
+    // First check if user is a workspace owner - Use admin client
+    const { data: workspace, error: workspaceError } = await supabaseAdmin
       .from('workspaces')
       .select('owner_id')
       .eq('id', workspaceId)
@@ -245,20 +286,9 @@ export async function getUserPermissions(
       
     if (workspace?.owner_id === userId) {
       // Owners have all permissions
-      const ownerPermissions = {
-        view_projects: true,
-        edit_projects: true,
-        view_customers: true,
-        edit_customers: true,
-        view_invoices: true,
-        view_calendar: true,
-        view_analytics: true,
-        view_domains: true,
-        edit_domains: true,
-        admin: true,
-        canInviteUsers: true,
-        canManageWorkspace: true
-      };
+      const ownerPermissions = Object.fromEntries(
+        Object.keys(defaultPermissions).map(key => [key, true])
+      ) as Record<PermissionKey, boolean>;
       
       permissionCache.set(cacheKey, {
         permissions: ownerPermissions,
@@ -269,7 +299,7 @@ export async function getUserPermissions(
     }
     
     // Check team membership and permissions
-    const { data: teamMember, error: memberError } = await supabase
+    const { data: teamMember, error: memberError } = await supabaseAdmin // Use admin client
       .from('team_members')
       .select('permissions, is_admin')
       .eq('user_id', userId)
@@ -278,45 +308,19 @@ export async function getUserPermissions(
       
     if (memberError) {
       // Return no permissions
-      const noPermissions = {
-        view_projects: false,
-        edit_projects: false,
-        view_customers: false,
-        edit_customers: false,
-        view_invoices: false,
-        view_calendar: false,
-        view_analytics: false,
-        view_domains: false,
-        edit_domains: false,
-        admin: false,
-        canInviteUsers: false,
-        canManageWorkspace: false
-      };
-      
       permissionCache.set(cacheKey, {
-        permissions: noPermissions,
+        permissions: defaultPermissions,
         timestamp: now
       });
       
-      return noPermissions;
+      return defaultPermissions;
     }
     
     // If user is admin, they have all permissions
     if (teamMember?.is_admin) {
-      const adminPermissions = {
-        view_projects: true,
-        edit_projects: true,
-        view_customers: true,
-        edit_customers: true,
-        view_invoices: true,
-        view_calendar: true,
-        view_analytics: true,
-        view_domains: true,
-        edit_domains: true,
-        admin: true,
-        canInviteUsers: true,
-        canManageWorkspace: true
-      };
+      const adminPermissions = Object.fromEntries(
+        Object.keys(defaultPermissions).map(key => [key, true])
+      ) as Record<PermissionKey, boolean>;
       
       permissionCache.set(cacheKey, {
         permissions: adminPermissions,
@@ -327,21 +331,6 @@ export async function getUserPermissions(
     }
     
     // Use team member permissions, defaulting to false for any missing permissions
-    const defaultPermissions = {
-      view_projects: false,
-      edit_projects: false,
-      view_customers: false,
-      edit_customers: false,
-      view_invoices: false,
-      view_calendar: false,
-      view_analytics: false,
-      view_domains: false,
-      edit_domains: false,
-      admin: false,
-      canInviteUsers: false,
-      canManageWorkspace: false
-    };
-    
     const permissions = {
       ...defaultPermissions,
       ...(teamMember?.permissions || {})
@@ -357,74 +346,112 @@ export async function getUserPermissions(
   } catch (error) {
     // Return no permissions on error
     return {
-      view_projects: false,
-      edit_projects: false,
-      view_customers: false,
-      edit_customers: false,
-      view_invoices: false,
-      view_calendar: false,
-      view_analytics: false,
-      view_domains: false,
-      edit_domains: false,
-      admin: false,
-      canInviteUsers: false,
-      canManageWorkspace: false
+      ...defaultPermissions
     };
   }
 }
 
 /**
+ * NOTE: Added extensive logging to debug workspace resolution issues.
+ */
+
+/**
  * Get the active workspace ID for a user
  */
 export async function getActiveWorkspaceId(userId: string): Promise<string | null> {
+  console.log(`[getActiveWorkspaceId] Called for userId: ${userId}`);
   if (!userId) {
+    console.log(`[getActiveWorkspaceId] No userId provided, returning null.`);
     return null;
   }
   
   try {
     // Get user's most recently used workspace or default
-    const { data: teamMembership, error } = await supabase
+    console.log(`[getActiveWorkspaceId] Trying to fetch most recent team membership for userId: ${userId}`);
+    const { data: teamMembership, error } = await supabaseAdmin // Use admin client
       .from('team_members')
       .select('workspace_id, is_admin')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(1);
       
+    console.log(`[getActiveWorkspaceId] Recent membership query result:`, { data: teamMembership, error: error?.message });
+      
     if (error) {
+      console.log(`[getActiveWorkspaceId] Error in recent membership query. Falling back to admin check.`);
       // Fallback: try to get any workspace where user is an admin
-      const { data: adminMembership, error: adminError } = await supabase
+      const { data: adminMembership, error: adminError } = await supabaseAdmin // Use admin client
         .from('team_members')
         .select('workspace_id')
         .eq('user_id', userId)
         .eq('is_admin', true)
         .limit(1);
         
+        console.log(`[getActiveWorkspaceId] Admin membership query result:`, { data: adminMembership, error: adminError?.message });
+        
       if (!adminError && adminMembership && adminMembership.length > 0) {
+        console.log(`[getActiveWorkspaceId] Found admin membership, returning workspace ID: ${adminMembership[0].workspace_id}`);
         return adminMembership[0].workspace_id;
       }
       
+      console.log(`[getActiveWorkspaceId] No admin membership found or error occurred. Returning null from error block.`);
       return null;
     }
     
     // If no team membership found, return null
     if (!teamMembership || teamMembership.length === 0) {
+      console.log(`[getActiveWorkspaceId] No recent membership found. Falling back to any membership check.`);
       // Fallback: try to find any workspace for this user
-      const { data: anyMembership, error: anyError } = await supabase
+      const { data: anyMembership, error: anyError } = await supabaseAdmin // Use admin client
         .from('team_members')
         .select('workspace_id')
         .eq('user_id', userId)
         .limit(1);
         
+        console.log(`[getActiveWorkspaceId] Any membership query result:`, { data: anyMembership, error: anyError?.message });
+        
       if (!anyError && anyMembership && anyMembership.length > 0) {
+        console.log(`[getActiveWorkspaceId] Found any membership, returning workspace ID: ${anyMembership[0].workspace_id}`);
         return anyMembership[0].workspace_id;
       }
       
+      console.log(`[getActiveWorkspaceId] No membership found at all for user. Returning null.`);
       return null;
     }
     
+    console.log(`[getActiveWorkspaceId] Found recent membership, returning workspace ID: ${teamMembership[0]?.workspace_id}`);
     return teamMembership[0]?.workspace_id || null;
     
   } catch (error) {
+    console.error(`[getActiveWorkspaceId] Uncaught error for userId ${userId}:`, error);
     return null;
+  }
+} 
+
+/**
+ * Set the active workspace ID for a user
+ * This persists the selection to localStorage for future sessions
+ */
+export function setActiveWorkspaceId(userId: string, workspaceId: string): boolean {
+  console.log(`[setActiveWorkspaceId] Setting active workspace for userId: ${userId} to: ${workspaceId}`);
+  
+  if (!userId || !workspaceId) {
+    console.log(`[setActiveWorkspaceId] Missing parameters, cannot set active workspace.`);
+    return false;
+  }
+  
+  try {
+    // Store in localStorage for persistence
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`workspace_${userId}`, workspaceId);
+      console.log(`[setActiveWorkspaceId] Successfully set active workspace ID in localStorage.`);
+      return true;
+    } else {
+      console.log(`[setActiveWorkspaceId] Window not defined, cannot access localStorage.`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`[setActiveWorkspaceId] Error setting active workspace:`, error);
+    return false;
   }
 } 

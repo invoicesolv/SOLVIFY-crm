@@ -1,0 +1,110 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import authOptions from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+// Create Supabase admin client with service role key
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+export async function POST(req: Request) {
+  try {
+    // Get the user session
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Get the request body
+    const body = await req.json();
+    const { workspaceId, batchId, title = 'Content Generation' } = body;
+
+    if (!workspaceId) {
+      return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 });
+    }
+
+    if (!batchId) {
+      return NextResponse.json({ error: 'Batch ID is required' }, { status: 400 });
+    }
+
+    console.log(`Initializing content generation batch ${batchId} for workspace ${workspaceId}`);
+    
+    // Use admin client to bypass RLS
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      console.error('Failed to initialize Supabase admin client');
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
+    // Check if a record already exists for this batch
+    const { data: existingRecord, error: checkError } = await supabaseAdmin
+      .from('generated_content')
+      .select('id')
+      .eq('batch_id', batchId)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error('Error checking for existing record:', checkError);
+    }
+
+    if (existingRecord?.id) {
+      console.log('Record already exists with ID:', existingRecord.id);
+      return NextResponse.json({ 
+        success: true, 
+        recordId: existingRecord.id,
+        batchId,
+        message: 'Record already exists'
+      });
+    }
+
+    // Create a complete record with appropriate status and title
+    const { data: initialRecord, error: insertError } = await supabaseAdmin
+      .from('generated_content')
+      .insert({
+        workspace_id: workspaceId,
+        user_id: session.user.id,
+        title: title,
+        content: '',
+        status: 'generating',
+        generation_progress: 0,
+        batch_id: batchId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select('id')
+      .single();
+
+    if (insertError) {
+      console.error('Error creating initial record:', insertError);
+      return NextResponse.json({ 
+        error: 'Failed to initialize content generation',
+        details: insertError.message
+      }, { status: 500 });
+    }
+
+    console.log('Created initial record with ID:', initialRecord.id);
+    return NextResponse.json({ 
+      success: true, 
+      recordId: initialRecord.id,
+      batchId,
+      message: 'Record created successfully'
+    });
+
+  } catch (error) {
+    console.error('Unexpected error initializing content generation:', error);
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : 'An unexpected error occurred',
+      success: false
+    }, { status: 500 });
+  }
+} 

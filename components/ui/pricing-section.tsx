@@ -24,7 +24,7 @@ export function PricingSection({
       <div className="space-y-7 text-center">
         <div className="space-y-4">
           <h1 className="text-4xl font-medium text-white md:text-5xl">{title}</h1>
-          <p className="text-white/60">{subtitle}</p>
+          <p className="text-white">{subtitle}</p>
         </div>
         <div className="mx-auto flex w-fit rounded-full bg-white/5 border border-white/10 backdrop-blur-sm p-1">
           {frequencies.map((freq) => (

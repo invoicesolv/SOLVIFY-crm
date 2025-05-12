@@ -1,7 +1,24 @@
 import { NextResponse } from 'next/server';
 import { getStripeInstance } from '@/lib/stripe';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/auth-options';
+import authOptions from "@/lib/auth";
+
+// Define the Session user type with expected properties
+interface SessionUser {
+  id?: string;
+  name?: string;
+  email?: string;
+  image?: string;
+}
+
+// Extend the Session type
+declare module "next-auth" {
+  interface Session {
+    user: SessionUser;
+    access_token: string;
+    refresh_token: string;
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -30,7 +47,7 @@ export async function POST(req: Request) {
       currency,
       metadata: {
         plan,
-        userId: session.user.id,
+        userId: session.user.id || 'guest', // Provide a fallback for undefined
       },
       receipt_email: session.user.email || undefined,
     });

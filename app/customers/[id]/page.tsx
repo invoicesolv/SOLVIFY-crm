@@ -3,14 +3,15 @@
 import { useEffect, useState } from "react";
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Edit2, Trash2, AlertOctagon, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Edit2 } from "lucide-react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 interface CustomerDetails {
   id: string;
@@ -18,10 +19,13 @@ interface CustomerDetails {
   CustomerName: string;
   Email?: string;
   Phone?: string;
-  Birthday?: string;
   Address?: string;
+  Address2?: string;
+  City?: string;
+  ZipCode?: string;
   ContactPerson?: string;
-  Position?: string;
+  OrganizationNumber?: string;
+  Country?: string;
   Total: number;
   InvoiceCount: number;
   LastInvoiceDate: string;
@@ -36,121 +40,94 @@ interface CustomerDetails {
 }
 
 export default function CustomerPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const { data: session } = useSession();
   const [customer, setCustomer] = useState<CustomerDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<{
-    name: string;
-    email: string;
-    phone: string;
-    birthday: string;
-    address: string;
-    contactPerson: string;
-    position: string;
-  }>({
-    name: '',
-    email: '',
-    phone: '',
-    birthday: '',
-    address: '',
-    contactPerson: '',
-    position: ''
-  });
+  const [editForm, setEditForm] = useState({ name: '' });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
+  const [isFindingByName, setIsFindingByName] = useState(false);
+
+  // Define fetchCustomerDetails at component scope so it can be accessed by other functions
+  const fetchCustomerDetails = async () => {
+    if (!session?.user?.id) return;
+
+    try {
+      setLoading(true);
+      // Fetch customer data from our database
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', params.id)
+        .single();
+
+      if (customerError) throw customerError;
+      if (!customerData) throw new Error('Customer not found');
+
+      // Fetch invoices for this customer
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from('invoices')
+        .select('*, currencies(*)')
+        .eq('customer_id', params.id);
+
+      if (invoicesError) throw invoicesError;
+
+      // Calculate total revenue
+      const total = invoicesData.reduce((acc, invoice) => {
+        return acc + (invoice.total || 0);
+      }, 0);
+
+      const lastInvoice = invoicesData.sort((a, b) => 
+        new Date(b.invoice_date).getTime() - new Date(a.invoice_date).getTime()
+      )[0];
+
+      // Transform the data to match the expected format
+      const customerDetails: CustomerDetails = {
+        id: customerData.id,
+        CustomerNumber: customerData.customer_number || customerData.id,
+        CustomerName: customerData.name,
+        Email: customerData.email || '',
+        Phone: customerData.phone || '',
+        Address: customerData.address || '',
+        Address2: customerData.address2 || '',
+        City: customerData.city || '',
+        ZipCode: customerData.zip_code || '',
+        ContactPerson: customerData.contact_person || '',
+        OrganizationNumber: customerData.organization_number || '',
+        Country: customerData.country || '',
+        Total: total,
+        InvoiceCount: invoicesData.length,
+        LastInvoiceDate: lastInvoice ? lastInvoice.invoice_date : customerData.created_at,
+        Invoices: invoicesData.map(invoice => ({
+          DocumentNumber: invoice.document_number,
+          InvoiceDate: invoice.invoice_date,
+          Total: invoice.total,
+          Currency: invoice.currencies?.code || 'SEK',
+          DueDate: invoice.due_date,
+          Balance: invoice.balance
+        }))
+      };
+
+      setCustomer(customerDetails);
+    } catch (err) {
+      console.error('Error in fetchCustomerDetails:', err);
+      setError(err instanceof Error ? err : new Error('Failed to fetch customer details'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchCustomerDetails() {
-      if (!session?.user?.id) return;
-      
-      try {
-        // Log the user ID for debugging
-        console.log('Fetching customer details for user ID:', session.user.id);
-        console.log('Customer ID:', params.id);
-        
-        // Fetch customer from Supabase
-        const { data: customerData, error: customerError } = await supabase
-          .from('customers')
-          .select('*')
-          .eq('id', params.id)
-          .eq('user_id', session.user.id)
-          .single();
-
-        if (customerError) {
-          console.error('Error fetching customer:', customerError);
-          throw customerError;
-        }
-
-        console.log('Fetched customer data:', customerData);
-
-        // Fetch customer's invoices
-        const { data: invoicesData, error: invoicesError } = await supabase
-          .from('invoices')
-          .select(`
-            *,
-            currencies(code)
-          `)
-          .eq('customer_id', params.id)
-          .eq('user_id', session.user.id);
-
-        if (invoicesError) {
-          console.error('Error fetching customer invoices:', invoicesError);
-          throw invoicesError;
-        }
-
-        console.log('Fetched customer invoices:', invoicesData?.length || 0);
-
-        // Calculate totals and process data
-        const total = invoicesData.reduce((sum, invoice) => sum + invoice.total, 0);
-        const lastInvoice = invoicesData.sort((a, b) => 
-          new Date(b.invoice_date).getTime() - new Date(a.invoice_date).getTime()
-        )[0];
-
-        // Transform the data to match the expected format
-        const customerDetails: CustomerDetails = {
-          id: customerData.id,
-          CustomerNumber: customerData.id,
-          CustomerName: customerData.name,
-          Email: customerData.email,
-          Phone: customerData.phone,
-          Birthday: customerData.birthday,
-          Address: customerData.address,
-          ContactPerson: customerData.contact_person,
-          Position: customerData.position,
-          Total: total,
-          InvoiceCount: invoicesData.length,
-          LastInvoiceDate: lastInvoice ? lastInvoice.invoice_date : customerData.created_at,
-          Invoices: invoicesData.map(invoice => ({
-            DocumentNumber: invoice.document_number,
-            InvoiceDate: invoice.invoice_date,
-            Total: invoice.total,
-            Currency: invoice.currencies?.code || 'SEK',
-            DueDate: invoice.due_date,
-            Balance: invoice.balance
-          }))
-        };
-
-        setCustomer(customerDetails);
-      } catch (err) {
-        console.error('Error in fetchCustomerDetails:', err);
-        setError(err instanceof Error ? err : new Error('Failed to fetch customer details'));
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchCustomerDetails();
   }, [params.id, session]);
 
   const handleEdit = () => {
     setEditForm({
-      name: customer?.CustomerName || '',
-      email: customer?.Email || '',
-      phone: customer?.Phone || '',
-      birthday: customer?.Birthday || '',
-      address: customer?.Address || '',
-      contactPerson: customer?.ContactPerson || '',
-      position: customer?.Position || ''
+      name: customer?.CustomerName || ''
     });
     setIsEditing(true);
   };
@@ -162,13 +139,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
       const { error: updateError } = await supabase
         .from('customers')
         .update({
-          name: editForm.name,
-          email: editForm.email,
-          phone: editForm.phone,
-          birthday: editForm.birthday,
-          address: editForm.address,
-          contact_person: editForm.contactPerson,
-          position: editForm.position
+          name: editForm.name
         })
         .eq('id', customer.id)
         .eq('user_id', session.user.id);
@@ -178,13 +149,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
       // Update local state
       setCustomer({
         ...customer,
-        CustomerName: editForm.name,
-        Email: editForm.email,
-        Phone: editForm.phone,
-        Birthday: editForm.birthday,
-        Address: editForm.address,
-        ContactPerson: editForm.contactPerson,
-        Position: editForm.position
+        CustomerName: editForm.name
       });
 
       setIsEditing(false);
@@ -192,6 +157,108 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
     } catch (err) {
       console.error('Error updating customer:', err);
       toast.error('Failed to update customer details');
+    }
+  };
+
+  const handleDelete = () => {
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!session?.user?.id || !customer) return;
+    
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/customers/delete?id=${customer.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete customer');
+      }
+
+      toast.success(`Successfully deleted customer: ${customer.CustomerName}`);
+      // Redirect back to customers list
+      router.push('/customers');
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete customer');
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
+  };
+
+  // Add function to fetch email from Fortnox
+  const fetchEmailFromFortnox = async () => {
+    if (!customer?.CustomerNumber || !session?.user?.id) return;
+    
+    try {
+      setIsUpdatingEmail(true);
+      const response = await fetch(`/api/fortnox/customers/${customer.CustomerNumber}`, {
+        headers: {
+          'user-id': session.user.id
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch customer data from Fortnox');
+      }
+      
+      const data = await response.json();
+      
+      if (data.Customer && data.Customer.Email) {
+        // Update customer with email
+        toast.success('Customer email updated from Fortnox');
+        
+        // Refresh customer details
+        fetchCustomerDetails();
+      } else {
+        toast.error('No email found in Fortnox for this customer');
+      }
+    } catch (error) {
+      console.error('Error fetching email:', error);
+      toast.error('Failed to fetch email from Fortnox');
+    } finally {
+      setIsUpdatingEmail(false);
+    }
+  };
+
+  // Add function to search by name and update the mapping
+  const findCustomerByName = async () => {
+    if (!customer?.CustomerName || !session?.user?.id) return;
+    
+    try {
+      setIsFindingByName(true);
+      const encodedName = encodeURIComponent(customer.CustomerName);
+      const response = await fetch(`/api/fortnox/customers/search?name=${encodedName}&id=${params.id}`, {
+        headers: {
+          'user-id': session.user.id
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to search for customer in Fortnox');
+      }
+      
+      const data = await response.json();
+      
+      if (data.total > 0) {
+        toast.success(`Found ${data.total} matching customer(s) in Fortnox. Database updated.`);
+        // Refresh customer details to show the updated mapping
+        fetchCustomerDetails();
+      } else {
+        toast.error('No matching customers found in Fortnox');
+      }
+    } catch (error) {
+      console.error('Error searching customer by name:', error);
+      toast.error('Failed to search for customer in Fortnox');
+    } finally {
+      setIsFindingByName(false);
     }
   };
 
@@ -219,121 +286,124 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
         ) : customer ? (
           <>
             <Card className="bg-neutral-800 border-neutral-700 p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="flex justify-between items-start mb-6">
                 <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h1 className="text-2xl font-semibold text-white">{customer.CustomerName}</h1>
-                    <Button
-                      onClick={handleEdit}
-                      className="flex items-center gap-2 px-3 py-2 bg-neutral-700 hover:bg-neutral-600"
-                      disabled={isEditing}
-                    >
-                      <Edit2 className="h-4 w-4" />
-                      Edit
-                    </Button>
-                  </div>
-                  {isEditing ? (
+                  <h1 className="text-2xl font-bold text-white">{customer.CustomerName}</h1>
+                  <p className="text-neutral-400 mt-1">
+                    Customer #{customer.CustomerNumber}
+                    {!customer.CustomerNumber.includes('-') ? null : (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={findCustomerByName}
+                        disabled={isFindingByName}
+                        className="ml-2 h-7 px-2 bg-transparent border-neutral-600 text-amber-400 hover:bg-neutral-700"
+                      >
+                        {isFindingByName ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          'Find in Fortnox'
+                        )}
+                      </Button>
+                    )}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEdit}
+                    className="bg-transparent border-neutral-600 text-neutral-300 hover:bg-neutral-700"
+                  >
+                    <Edit2 className="h-4 w-4 mr-2" /> Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                    className="bg-transparent border-neutral-600 text-red-400 hover:bg-red-900/30 hover:text-red-300"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" /> Delete
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white mb-4">Customer Information</h2>
                     <div className="space-y-4">
                       <div>
-                        <label className="text-sm text-neutral-300">Name</label>
-                        <Input
-                          value={editForm.name}
-                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          className="mt-1 bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 focus:border-neutral-500"
-                        />
+                        <p className="text-sm text-neutral-400">Email</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="text-white">{customer.Email || 'No email on record'}</p>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={fetchEmailFromFortnox}
+                            disabled={isUpdatingEmail}
+                            className="ml-2 h-7 px-2 bg-transparent border-neutral-600 text-neutral-300 hover:bg-neutral-700"
+                          >
+                            {isUpdatingEmail ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              'Update from Fortnox'
+                            )}
+                          </Button>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-sm text-neutral-300">Contact Person</label>
-                        <Input
-                          value={editForm.contactPerson}
-                          onChange={(e) => setEditForm({ ...editForm, contactPerson: e.target.value })}
-                          className="mt-1 bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 focus:border-neutral-500"
-                          placeholder="Primary contact person"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm text-neutral-300">Position</label>
-                        <Input
-                          value={editForm.position}
-                          onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
-                          className="mt-1 bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 focus:border-neutral-500"
-                          placeholder="Contact person's position"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm text-neutral-300">Email</label>
-                        <Input
-                          type="email"
-                          value={editForm.email}
-                          onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                          className="mt-1 bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 focus:border-neutral-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm text-neutral-300">Phone</label>
-                        <Input
-                          value={editForm.phone}
-                          onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                          className="mt-1 bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 focus:border-neutral-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm text-neutral-300">Birthday</label>
-                        <Input
-                          type="date"
-                          value={editForm.birthday}
-                          onChange={(e) => setEditForm({ ...editForm, birthday: e.target.value })}
-                          className="mt-1 bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 focus:border-neutral-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm text-neutral-300">Address</label>
-                        <Input
-                          value={editForm.address}
-                          onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                          className="mt-1 bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500 focus:border-neutral-500"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={handleSave}
-                          className="bg-blue-600 hover:bg-blue-500"
-                        >
-                          Save Changes
-                        </Button>
-                        <Button
-                          onClick={() => setIsEditing(false)}
-                          className="bg-neutral-700 hover:bg-neutral-600"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
+
+                      {customer.Phone && (
+                        <div>
+                          <p className="text-sm text-neutral-400">Phone</p>
+                          <p className="text-white">{customer.Phone}</p>
+                        </div>
+                      )}
+
+                      {(customer.Address || customer.Address2 || customer.City || customer.ZipCode || customer.Country) && (
+                        <div>
+                          <p className="text-sm text-neutral-400">Address</p>
+                          <div className="text-white">
+                            {customer.Address && <p>{customer.Address}</p>}
+                            {customer.Address2 && <p>{customer.Address2}</p>}
+                            {(customer.ZipCode || customer.City) && (
+                              <p>{customer.ZipCode} {customer.City}</p>
+                            )}
+                            {customer.Country && <p>{customer.Country}</p>}
+                          </div>
+                        </div>
+                      )}
+
+                      {customer.ContactPerson && (
+                        <div>
+                          <p className="text-sm text-neutral-400">Contact Person</p>
+                          <p className="text-white">{customer.ContactPerson}</p>
+                        </div>
+                      )}
+
+                      {customer.OrganizationNumber && (
+                        <div>
+                          <p className="text-sm text-neutral-400">Organization Number</p>
+                          <p className="text-white">{customer.OrganizationNumber}</p>
+                        </div>
+                      )}
                     </div>
-                  ) : (
-                    <div className="space-y-2 text-sm">
-                      <p className="text-neutral-400">Customer Number: <span className="text-white">{customer.CustomerNumber}</span></p>
-                      {customer.ContactPerson && <p className="text-neutral-400">Contact Person: <span className="text-white">{customer.ContactPerson}</span></p>}
-                      {customer.Position && <p className="text-neutral-400">Position: <span className="text-white">{customer.Position}</span></p>}
-                      {customer.Email && <p className="text-neutral-400">Email: <span className="text-white">{customer.Email}</span></p>}
-                      {customer.Phone && <p className="text-neutral-400">Phone: <span className="text-white">{customer.Phone}</span></p>}
-                      {customer.Birthday && <p className="text-neutral-400">Birthday: <span className="text-white">{new Date(customer.Birthday).toLocaleDateString()}</span></p>}
-                      {customer.Address && <p className="text-neutral-400">Address: <span className="text-white">{customer.Address}</span></p>}
-                    </div>
-                  )}
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Card className="bg-neutral-700 border-neutral-600 p-4">
-                    <p className="text-sm text-neutral-400">Total Revenue</p>
-                    <p className="text-xl font-semibold text-white mt-1">
-                      {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
-                        .format(customer.Total)}
-                    </p>
-                  </Card>
-                  <Card className="bg-neutral-700 border-neutral-600 p-4">
-                    <p className="text-sm text-neutral-400">Total Invoices</p>
-                    <p className="text-xl font-semibold text-white mt-1">{customer.InvoiceCount}</p>
-                  </Card>
-                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Card className="bg-neutral-700 border-neutral-600 p-4">
+                  <p className="text-sm text-neutral-400">Total Revenue</p>
+                  <p className="text-xl font-semibold text-white mt-1">
+                    {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
+                      .format(customer.Total)}
+                  </p>
+                </Card>
+                <Card className="bg-neutral-700 border-neutral-600 p-4">
+                  <p className="text-sm text-neutral-400">Total Invoices</p>
+                  <p className="text-xl font-semibold text-white mt-1">{customer.InvoiceCount}</p>
+                </Card>
               </div>
             </Card>
 
@@ -378,6 +448,46 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
           </>
         ) : null}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-[425px] bg-neutral-800 border-neutral-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Delete Customer</DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              Are you sure you want to delete {customer?.CustomerName}? This action cannot be undone.
+              {customer && customer.Total > 0 && (
+                <div className="mt-2 bg-destructive/10 p-3 rounded-md text-destructive border border-destructive">
+                  <AlertOctagon className="inline-block mr-2" size={16} />
+                  Warning: This customer has invoices with a total value of {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(customer.Total)}.
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              onClick={() => setDeleteConfirmOpen(false)}
+              className="bg-neutral-700 hover:bg-neutral-600 border-neutral-600"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmDelete}
+              disabled={isDeleting}
+              className="bg-red-900/80 hover:bg-red-900 text-white"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 size={16} className="inline-block mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Customer'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarDemo>
   );
 } 

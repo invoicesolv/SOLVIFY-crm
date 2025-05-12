@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { stripe } from '@/lib/stripe'
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     const { priceId } = await req.json()
@@ -12,7 +14,7 @@ export async function POST(req: Request) {
       )
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
 
     // Create Stripe checkout session
     const session = await stripe.checkout.sessions.create({

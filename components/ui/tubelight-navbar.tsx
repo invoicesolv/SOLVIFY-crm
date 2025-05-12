@@ -6,7 +6,6 @@ import Link from "next/link"
 import Image from "next/image"
 import { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { LanguageSwitcher } from "@/components/ui/language-switcher"
 
 interface NavItem {
   name: string
@@ -42,22 +41,12 @@ export function NavBar({ items, className }: NavBarProps) {
     >
       <div className="inline-flex items-center gap-3 bg-background/5 border border-white/10 backdrop-blur-sm py-1.5 px-2 rounded-full shadow-lg">
         <Link href="/" className="px-2 flex items-center pointer-events-auto">
-          <div className="relative w-[100px] h-[32px] hidden md:block">
-            <Image
-              src="/Solvify-logo-WTE.png"
-              alt="Solvify Logo"
-              fill
-              style={{ objectFit: "contain" }}
-              priority
-            />
-          </div>
-          <div className="relative w-[28px] h-[28px] md:hidden">
-            <Image
-              src="/Solvify-logo-WTE.png"
-              alt="Solvify Logo"
-              fill
-              style={{ objectFit: "contain" }}
-              priority
+          <div className="w-7 h-7 relative">
+            <Image 
+              src="/S-logo.png" 
+              alt="Solvify Logo" 
+              fill 
+              className="object-contain"
             />
           </div>
         </Link>
@@ -101,9 +90,6 @@ export function NavBar({ items, className }: NavBarProps) {
             </Link>
           )
         })}
-        <div className="pointer-events-auto">
-          <LanguageSwitcher />
-        </div>
       </div>
     </nav>
   )

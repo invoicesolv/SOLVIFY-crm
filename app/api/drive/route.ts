@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/auth-options';
+import authOptions from "@/lib/auth";
 import { supabase } from '@/lib/supabase';
+
+export const dynamic = 'force-dynamic';
 
 async function getAccessToken(userId: string): Promise<string | null> {
   console.log('Getting Drive token for user:', userId);

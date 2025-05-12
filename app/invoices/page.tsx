@@ -12,7 +12,8 @@ import { useSession } from 'next-auth/react';
 import { checkPermission, getActiveWorkspaceId } from '@/lib/permission';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
-import { DollarSign, BarChart } from 'lucide-react';
+import { DollarSign, BarChart, CalendarCheck } from 'lucide-react';
+import { FortnoxDateFetcher } from '@/components/ui/fortnox-date-fetcher';
 
 interface Invoice {
   DocumentNumber: string;
@@ -45,6 +46,17 @@ interface FortnoxInvoice {
   ExternalInvoiceReference1: string;
 }
 
+// Add type interfaces for the team members
+interface TeamMembership {
+  workspace_id: string;
+  is_admin: boolean;
+  permissions?: {
+    view_invoices?: boolean;
+    admin?: boolean;
+    [key: string]: boolean | undefined;
+  };
+}
+
 export default function InvoicesPage() {
   const { data: session } = useSession()
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -61,6 +73,7 @@ export default function InvoicesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [showFortnoxTester, setShowFortnoxTester] = useState(false);
   const [sortConfig, setSortConfig] = useState<{
     key: keyof Invoice;
     direction: 'asc' | 'desc';
@@ -167,6 +180,77 @@ export default function InvoicesPage() {
       // Log the user ID for debugging
       console.log('[Invoices] Fetching invoices for user ID:', session.user.id, 'Email:', session.user.email);
       
+      // Try fetching invoices directly from Fortnox first
+      try {
+        setLoading(true);
+        console.log('[Invoices] Trying to fetch invoices directly from Fortnox...');
+        
+        const response = await fetch(`/api/fortnox/invoices`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'user-id': session.user.id
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`[Invoices] Successfully fetched ${data.count || 0} invoices directly from Fortnox`);
+          
+          if (data.Invoices && data.Invoices.length > 0) {
+            // Transform invoice format if needed
+            const processedInvoices = data.Invoices.map((invoice: any) => ({
+              DocumentNumber: invoice.DocumentNumber,
+              InvoiceDate: invoice.InvoiceDate,
+              CustomerName: invoice.CustomerName,
+              Total: typeof invoice.Total === 'string' ? parseFloat(invoice.Total) : invoice.Total,
+              Balance: typeof invoice.Balance === 'string' ? parseFloat(invoice.Balance) : invoice.Balance,
+              DueDate: invoice.DueDate,
+              Currency: invoice.Currency || 'SEK',
+              InvoiceType: invoice.InvoiceType || 'Standard',
+              PaymentWay: invoice.PaymentWay || 'Bank Transfer',
+              ExternalInvoiceReference1: invoice.ExternalInvoiceReference1 || ''
+            }));
+            
+            setInvoices(processedInvoices);
+            
+            // Update the dashboard stats immediately after setting invoices
+            const totalStats = {
+              totalAmount: 0,
+              totalCount: processedInvoices.length,
+              paidCount: 0,
+              unpaidCount: 0,
+              overdueCount: 0
+            };
+            
+            // Calculate stats for the fetched invoices
+            const now = new Date();
+            processedInvoices.forEach(invoice => {
+              totalStats.totalAmount += typeof invoice.Total === 'string' ? parseFloat(invoice.Total) : invoice.Total;
+              
+              if (invoice.Balance === 0) {
+                totalStats.paidCount++;
+              } else {
+                totalStats.unpaidCount++;
+                const dueDate = new Date(invoice.DueDate);
+                if (dueDate < now) {
+                  totalStats.overdueCount++;
+                }
+              }
+            });
+            
+            // Update stats state
+            setStats(totalStats);
+            setLoading(false);
+            return;
+          }
+        } else {
+          console.error('[Invoices] Failed to fetch directly from Fortnox, falling back to database');
+        }
+      } catch (error) {
+        console.error('[Invoices] Error fetching directly from Fortnox:', error);
+        console.log('[Invoices] Falling back to database...');
+      }
+      
       // Get workspaces directly from team_members table
       const { data: teamMemberships, error: teamError } = await supabase
         .from('team_members')
@@ -200,7 +284,6 @@ export default function InvoicesPage() {
           
           if (!emailTeamMemberships || emailTeamMemberships.length === 0) {
             console.log('[Invoices] No workspaces found for user by email either');
-            setInvoices([]);
             setLoading(false);
             return;
           }
@@ -208,7 +291,7 @@ export default function InvoicesPage() {
           console.log('[Invoices] Found workspaces by email:', emailTeamMemberships);
           
           // Check if user has permission to view invoices using email-based team memberships
-          const hasPermission = emailTeamMemberships.some(membership => 
+          const hasPermission = emailTeamMemberships.some((membership: TeamMembership) => 
             membership.is_admin || 
             (membership.permissions && 
               (membership.permissions.view_invoices || 
@@ -223,7 +306,7 @@ export default function InvoicesPage() {
           }
           
           // Use email-based workspace IDs to fetch invoices
-          const workspaceIds = emailTeamMemberships.map(tm => tm.workspace_id);
+          const workspaceIds = emailTeamMemberships.map((tm: TeamMembership) => tm.workspace_id);
           console.log('[Invoices] Workspace IDs from email lookup:', workspaceIds);
           
           // Continue with fetching invoices using these workspace IDs
@@ -231,14 +314,13 @@ export default function InvoicesPage() {
           return;
         } else {
           console.log('[Invoices] No workspaces found and no email available for fallback');
-          setInvoices([]);
           setLoading(false);
           return;
         }
       }
 
       // Check if user has permission to view invoices
-      const hasPermission = teamMemberships.some(membership => 
+      const hasPermission = teamMemberships.some((membership: TeamMembership) => 
         membership.is_admin || 
         (membership.permissions && 
           (membership.permissions.view_invoices || 
@@ -252,7 +334,7 @@ export default function InvoicesPage() {
         return;
       }
 
-      const workspaceIds = teamMemberships.map(tm => tm.workspace_id);
+      const workspaceIds = teamMemberships.map((tm: TeamMembership) => tm.workspace_id);
       console.log('[Invoices] Workspace IDs:', workspaceIds);
 
       // Continue with the existing workflow using the workspaceIds
@@ -269,6 +351,7 @@ export default function InvoicesPage() {
   const fetchInvoicesForWorkspaces = async (workspaceIds: string[]) => {
     try {
       // Fetch invoices with customer names and currency codes
+      console.log('[Invoices] Fetching ALL invoices for workspaces:', workspaceIds);
       const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
         .select(`
@@ -277,7 +360,8 @@ export default function InvoicesPage() {
           currencies (code),
           invoice_types (name)
         `)
-        .in('workspace_id', workspaceIds);
+        .in('workspace_id', workspaceIds)
+        .order('invoice_date', { ascending: false }); // Order by date, most recent first
 
       if (invoicesError) {
         console.error('[Invoices] Error fetching invoices:', invoicesError);
@@ -296,7 +380,7 @@ export default function InvoicesPage() {
       }
 
       // Transform the data to match the expected format
-      const processedInvoices = invoicesData.map(invoice => ({
+      const processedInvoices = invoicesData.map((invoice: any) => ({
         DocumentNumber: invoice.document_number,
         InvoiceDate: invoice.invoice_date,
         CustomerName: invoice.customers?.name || 'Unknown Customer',
@@ -309,7 +393,36 @@ export default function InvoicesPage() {
         ExternalInvoiceReference1: invoice.external_reference || ''
       }));
 
+      // Update the invoices state
       setInvoices(processedInvoices);
+      
+      // Calculate statistics for these invoices to update the dashboard
+      const now = new Date();
+      const totalStats = {
+        totalAmount: 0,
+        totalCount: processedInvoices.length,
+        paidCount: 0,
+        unpaidCount: 0,
+        overdueCount: 0
+      };
+      
+      processedInvoices.forEach(invoice => {
+        totalStats.totalAmount += typeof invoice.Total === 'string' ? parseFloat(invoice.Total) : invoice.Total;
+        
+        if (invoice.Balance === 0) {
+          totalStats.paidCount++;
+        } else {
+          totalStats.unpaidCount++;
+          const dueDate = new Date(invoice.DueDate);
+          if (dueDate < now) {
+            totalStats.overdueCount++;
+          }
+        }
+      });
+      
+      // Update stats in UI
+      setStats(totalStats);
+      console.log('[Invoices] Updated dashboard stats with', totalStats);
     } catch (error) {
       console.error('[Invoices] Error processing invoices:', error);
       toast.error('Failed to process invoices data');
@@ -381,7 +494,7 @@ export default function InvoicesPage() {
 
       if (customerError) throw customerError;
 
-      const customerMap = new Map(customers.map(c => [c.name, c.id]));
+      const customerMap = new Map(customers.map((c: { name: string, id: string }) => [c.name, c.id]));
 
       // Transform invoices data to match Supabase schema
       const invoicesToSave = invoices.map(invoice => ({
@@ -396,15 +509,24 @@ export default function InvoicesPage() {
         workspace_id: workspaceId  // Add workspace_id
       }));
 
-      const { data, error } = await supabase
-        .from('invoices')
-        .upsert(invoicesToSave, {
-          onConflict: 'document_number',
-          ignoreDuplicates: true
-        })
-        .select();
-
-      if (error) throw error;
+      // Use fetch with API instead of direct Supabase client for proper auth handling
+      const response = await fetch('/api/invoices/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoices: invoicesToSave,
+          workspaceId: workspaceId
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save invoices');
+      }
+      
+      const data = await response.json();
 
       toast.success(`Successfully saved ${invoicesToSave.length} invoices`);
     } catch (error) {
@@ -423,7 +545,9 @@ export default function InvoicesPage() {
         return;
       }
       
-      // Get the active workspace ID
+      console.log('[Invoices] Checking for new Fortnox invoices...');
+      
+      // Get the user's workspace ID
       const { data: teamMemberships, error: teamError } = await supabase
         .from('team_members')
         .select('workspace_id')
@@ -434,44 +558,105 @@ export default function InvoicesPage() {
       if (teamError || !teamMemberships || teamMemberships.length === 0) {
         console.error('Error getting workspace ID:', teamError);
         toast.error('Failed to check for new invoices: Cannot determine workspace');
-        setIsRefreshing(false);
         return;
       }
       
       const workspaceId = teamMemberships[0].workspace_id;
+      console.log(`[Invoices] Using workspace ID: ${workspaceId}`);
       
-      // Fetch current data from Fortnox
-      const response = await fetch('http://localhost:5001/fortnox/invoices');
-      if (!response.ok) throw new Error('Failed to fetch Fortnox invoices');
+      // Fetch current data from Fortnox using Next.js API route
+      console.log('[Invoices] Fetching invoices from Fortnox API...');
+      const response = await fetch(`/api/fortnox/invoices`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': session.user.id,
+          // Only include workspace-id if it exists
+          ...(workspaceId ? { 'workspace-id': workspaceId } : {})
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`[Invoices] Fortnox API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        console.error(`[Invoices] Error details: ${errorText}`);
+        throw new Error('Failed to fetch Fortnox invoices');
+      }
+      
       const fortnoxData = await response.json();
       const fortnoxInvoices = (fortnoxData.Invoices || []) as FortnoxInvoice[];
-
-      // Get current Supabase data for comparison
+      console.log(`[Invoices] Fetched ${fortnoxInvoices.length} invoices from Fortnox`);
+      
+      try {
+        // Process the Fortnox invoices directly
+        const processedInvoices = fortnoxInvoices.map((invoice: any) => ({
+          DocumentNumber: invoice.DocumentNumber,
+          InvoiceDate: invoice.InvoiceDate,
+          CustomerName: invoice.CustomerName,
+          Total: typeof invoice.Total === 'string' ? parseFloat(invoice.Total) : invoice.Total,
+          Balance: typeof invoice.Balance === 'string' ? parseFloat(invoice.Balance) : invoice.Balance,
+          DueDate: invoice.DueDate,
+          Currency: invoice.Currency || 'SEK',
+          InvoiceType: invoice.InvoiceType || 'Standard',
+          PaymentWay: invoice.PaymentWay || 'Bank Transfer',
+          ExternalInvoiceReference1: invoice.ExternalInvoiceReference1 || ''
+        }));
+        
+        // Update the state with the new invoices
+        setInvoices(processedInvoices);
+        toast.success(`Successfully fetched ${processedInvoices.length} invoices from Fortnox`);
+        setIsRefreshing(false);
+        
+        // If we don't have a workspace ID, we're done
+        if (!workspaceId) {
+          return;
+        }
+      } catch (error) {
+        console.error('[Invoices] Error processing Fortnox invoices:', error);
+        toast.error('Error processing Fortnox invoices');
+        setIsRefreshing(false);
+        return;
+      }
+      
+      // If we have a workspace ID, also try to save these invoices
+      // Get current Supabase data for comparison for this specific workspace
+      console.log(`[Invoices] Fetching existing invoices from database for workspace ${workspaceId}...`);
       const { data: supabaseInvoices, error: invoicesError } = await supabase
         .from('invoices')
-        .select('document_number');
+        .select('document_number')
+        .eq('workspace_id', workspaceId);
 
-      if (invoicesError) throw invoicesError;
+      if (invoicesError) {
+        console.error('[Invoices] Error fetching existing invoices:', invoicesError);
+        throw invoicesError;
+      }
+
+      console.log(`[Invoices] Found ${supabaseInvoices.length} existing invoices in database`);
 
       // Compare document numbers
-      const supabaseDocNumbers = new Set(supabaseInvoices.map(inv => inv.document_number));
+      const supabaseDocNumbers = new Set(supabaseInvoices.map((inv: { document_number: string }) => inv.document_number));
       const newInvoices = fortnoxInvoices.filter(inv => !supabaseDocNumbers.has(inv.DocumentNumber));
+      console.log(`[Invoices] Found ${newInvoices.length} new invoices to add`);
 
       if (newInvoices.length > 0) {
         // Show confirmation dialog
         const shouldUpdate = window.confirm(
-          `Found ${newInvoices.length} new invoice${newInvoices.length === 1 ? '' : 's'}. Would you like to save ${newInvoices.length === 1 ? 'it' : 'them'} to the database?`
+          `Found ${newInvoices.length} new invoice${newInvoices.length === 1 ? '' : 's'} from Fortnox. Would you like to save ${newInvoices.length === 1 ? 'it' : 'them'} to the database?`
         );
 
         if (shouldUpdate) {
+          console.log('[Invoices] User confirmed saving new invoices');
           // First ensure we have all customers
           const { data: customers, error: customerError } = await supabase
             .from('customers')
             .select('id, name');
 
-          if (customerError) throw customerError;
+          if (customerError) {
+            console.error('[Invoices] Error fetching customers:', customerError);
+            throw customerError;
+          }
 
-          const customerMap = new Map(customers.map(c => [c.name, c.id]));
+          const customerMap = new Map(customers.map((c: { name: string, id: string }) => [c.name, c.id]));
+          console.log(`[Invoices] Loaded ${customers.length} customers for matching`);
 
           // Prepare new invoices for Supabase format
           const invoicesToSave = newInvoices.map(invoice => ({
@@ -483,29 +668,44 @@ export default function InvoicesPage() {
             due_date: invoice.DueDate,
             external_reference: invoice.ExternalInvoiceReference1,
             user_id: session.user.id,
-            workspace_id: workspaceId  // Add workspace_id
+            workspace_id: workspaceId
           }));
 
+          console.log(`[Invoices] Saving ${invoicesToSave.length} new invoices to database...`);
           // Save new invoices
-          const { error: saveError } = await supabase
-            .from('invoices')
-            .upsert(invoicesToSave, {
-              onConflict: 'document_number',
-              ignoreDuplicates: true
-            });
+          // Use fetch with API instead of direct Supabase client
+          const response = await fetch('/api/invoices/save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              invoices: invoicesToSave,
+              workspaceId: workspaceId
+            }),
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error('[Invoices] Error saving invoices:', errorData);
+            throw new Error(errorData.error || 'Failed to save invoices');
+          }
 
-          if (saveError) throw saveError;
-
+          console.log('[Invoices] Successfully saved new invoices');
           toast.success(`Successfully saved ${newInvoices.length} new invoice${newInvoices.length === 1 ? '' : 's'}`);
           // Refresh the display
           fetchInvoices();
+        } else {
+          console.log('[Invoices] User declined to save new invoices');
+          toast.info('No invoices were saved');
         }
       } else {
-        toast.info('No new invoices found');
+        console.log('[Invoices] No new invoices found');
+        toast.info('No new invoices found in Fortnox');
       }
     } catch (error) {
       console.error('Error checking for new data:', error);
-      toast.error('Failed to check for new invoices');
+      toast.error('Failed to check for new invoices: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsRefreshing(false);
     }
@@ -538,6 +738,13 @@ export default function InvoicesPage() {
               >
                 <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                 {isRefreshing ? "Checking..." : "Check New"}
+              </button>
+              <button
+                onClick={() => setShowFortnoxTester(!showFortnoxTester)}
+                className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm text-white transition-colors"
+              >
+                <CalendarCheck className="h-4 w-4" />
+                Date Tester
               </button>
               <button
                 onClick={handleSaveAll}
@@ -609,6 +816,61 @@ export default function InvoicesPage() {
               </div>
             </Card>
           </div>
+
+          {/* Fortnox Date Tester */}
+          {showFortnoxTester && session?.user?.id && (
+            <div className="mb-6">
+              <FortnoxDateFetcher 
+                userId={session.user.id} 
+                onFetchComplete={(fetchedInvoices) => {
+                  // Update invoices state with the fetched invoices
+                  if (fetchedInvoices && fetchedInvoices.length > 0) {
+                    const processedInvoices = fetchedInvoices.map((invoice: any) => ({
+                      DocumentNumber: invoice.DocumentNumber,
+                      InvoiceDate: invoice.InvoiceDate,
+                      CustomerName: invoice.CustomerName,
+                      Total: typeof invoice.Total === 'string' ? parseFloat(invoice.Total) : invoice.Total,
+                      Balance: typeof invoice.Balance === 'string' ? parseFloat(invoice.Balance) : invoice.Balance,
+                      DueDate: invoice.DueDate,
+                      Currency: invoice.Currency || 'SEK',
+                      InvoiceType: invoice.InvoiceType || 'Standard',
+                      PaymentWay: invoice.PaymentWay || 'Bank Transfer',
+                      ExternalInvoiceReference1: invoice.ExternalInvoiceReference1 || ''
+                    }));
+                    setInvoices(processedInvoices);
+                    console.log(`[InvoicesPage] Updated invoices list with ${processedInvoices.length} fetched invoices`);
+                    // We also need to update the dashboard stats counts
+                    const totalStats = {
+                      totalAmount: 0,
+                      totalCount: processedInvoices.length,
+                      paidCount: 0,
+                      unpaidCount: 0,
+                      overdueCount: 0
+                    };
+                    
+                    // Recalculate stats
+                    const now = new Date();
+                    processedInvoices.forEach(invoice => {
+                      totalStats.totalAmount += invoice.Total;
+                      
+                      if (invoice.Balance === 0) {
+                        totalStats.paidCount++;
+                      } else {
+                        totalStats.unpaidCount++;
+                        const dueDate = new Date(invoice.DueDate);
+                        if (dueDate < now) {
+                          totalStats.overdueCount++;
+                        }
+                      }
+                    });
+                    
+                    // Update stats state
+                    setStats(totalStats);
+                  }
+                }} 
+              />
+            </div>
+          )}
 
           {/* Table */}
           <Card className="bg-neutral-800 border-neutral-700">

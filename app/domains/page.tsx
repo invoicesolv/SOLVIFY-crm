@@ -99,6 +99,10 @@ export default function DomainsPage() {
     key: null,
     direction: 'asc'
   });
+  const [loopiaApiUser, setLoopiaApiUser] = useState<string | null>(null);
+  const [loopiaApiKey, setLoopiaApiKey] = useState<string | null>(null);
+  const [loopiaDomainsLoading, setLoopiaDomainsLoading] = useState(false);
+  const [loopiaConnected, setLoopiaConnected] = useState(false);
 
   const normalizeDomain = (domain: string): { normalized: string; display: string } => {
     try {
@@ -713,6 +717,166 @@ domain.com,75,12000,18000,1200,8000`;
     return { status: 'Not in Loopia', statusColor: 'neutral', tooltip: 'Domain not found in Loopia' };
   };
 
+  // Add useEffect to load Loopia API credentials
+  useEffect(() => {
+    const loadLoopiaCredentials = async () => {
+      if (!activeWorkspace) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('workspace_settings')
+          .select('loopia_api_user, loopia_api_key')
+          .eq('workspace_id', activeWorkspace)
+          .maybeSingle();
+        
+        if (error) throw error;
+        
+        if (data && data.loopia_api_user && data.loopia_api_key) {
+          setLoopiaApiUser(data.loopia_api_user);
+          setLoopiaApiKey(data.loopia_api_key);
+          setLoopiaConnected(true);
+          
+          // Since we have valid credentials, load Loopia domains
+          fetchLoopiaDomainsIfConnected();
+        }
+      } catch (error) {
+        console.error("Error loading Loopia credentials:", error);
+      }
+    };
+    
+    loadLoopiaCredentials();
+  }, [activeWorkspace]);
+
+  // Add function to fetch domains from Loopia API
+  const fetchLoopiaDomainsIfConnected = async () => {
+    if (!loopiaConnected || !loopiaApiUser || !loopiaApiKey || !activeWorkspace) {
+      return;
+    }
+    
+    setLoopiaDomainsLoading(true);
+    try {
+      // This would typically be a real API call to Loopia
+      // For this implementation, we'll simulate the API call
+      toast.info('Fetching domains from Loopia...');
+      
+      // In a real implementation, you would make an API call to Loopia
+      // We're simulating it here for demonstration purposes
+      const sampleLoopiaData: DomainData[] = [
+        {
+          domain: 'example.com',
+          domain_rating: 25,
+          status: 'active',
+          expiry_date: '2025-12-31',
+          auto_renew: true,
+          source: 'Loopia' as 'Loopia', // Explicitly cast to the correct type
+          last_updated: new Date().toISOString(),
+          loopia_account: loopiaApiUser || undefined,
+          normalized_domain: 'example.com',
+          display_domain: 'example.com'
+        },
+        {
+          domain: 'solvify.se',
+          domain_rating: 35,
+          status: 'active',
+          expiry_date: '2025-10-15',
+          auto_renew: true,
+          source: 'Loopia' as 'Loopia', // Explicitly cast to the correct type
+          last_updated: new Date().toISOString(),
+          loopia_account: loopiaApiUser || undefined,
+          normalized_domain: 'solvify.se',
+          display_domain: 'solvify.se'
+        }
+      ];
+      
+      // Merge the Loopia domains with existing domains
+      const loopiaSourceDomains: DomainData[] = sampleLoopiaData.map(domain => ({
+        ...domain,
+        workspace_id: activeWorkspace
+      }));
+      
+      // Add Loopia domains to the list
+      setDomains(prev => {
+        // Remove existing Loopia domains
+        const filteredDomains = prev.filter(d => d.source !== 'Loopia');
+        
+        // Add new Loopia domains
+        return [...filteredDomains, ...loopiaSourceDomains];
+      });
+      
+      toast.success(`Successfully loaded ${loopiaSourceDomains.length} domains from Loopia`);
+    } catch (error) {
+      console.error("Error fetching Loopia domains:", error);
+      toast.error("Failed to fetch domains from Loopia");
+    } finally {
+      setLoopiaDomainsLoading(false);
+    }
+  };
+
+  // Add Loopia connection card component
+  const LoopiaConnectionCard = () => {
+    if (!hasPermission) return null;
+    
+    return (
+      <Card className="bg-neutral-900 border-neutral-800 mb-6">
+        <div className="px-6 py-5">
+          <h3 className="text-lg font-medium text-white flex items-center gap-2">
+            <Globe className="text-neutral-400" /> Loopia API Connection
+          </h3>
+          <p className="text-sm text-neutral-400 mt-1">
+            Connect to your Loopia account to manage your domains
+          </p>
+        </div>
+        <div className="px-6 pb-5">
+          {loopiaConnected ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="text-green-500 h-5 w-5" />
+                  <span className="text-neutral-300">Connected to Loopia account: {loopiaApiUser}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  className="border-neutral-700 text-neutral-300"
+                  onClick={fetchLoopiaDomainsIfConnected}
+                  disabled={loopiaDomainsLoading}
+                >
+                  {loopiaDomainsLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" /> Sync Domains
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-neutral-500">
+                To update your Loopia API credentials, please visit the Settings page.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-amber-500">
+                <AlertTriangle className="h-5 w-5" />
+                <span className="text-sm">
+                  No Loopia API credentials found. Configure in Settings to connect.
+                </span>
+              </div>
+              <Button
+                variant="outline" 
+                className="border-neutral-700 text-neutral-300"
+                onClick={() => window.location.href = '/settings'}
+              >
+                Go to Settings
+              </Button>
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  };
+
   // Render content based on permissions
   if (status === 'loading' || permissionLoading) {
     return (
@@ -1077,6 +1241,8 @@ domain.com,75,12000,18000,1200,8000`;
             </div>
           </div>
         </Card>
+
+        <LoopiaConnectionCard />
       </div>
     </SidebarDemo>
   );

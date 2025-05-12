@@ -128,13 +128,13 @@ export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
             </div>
           )}
           {tier.trial && (
-            <div className="text-sm text-primary mt-1">
+            <div className="text-sm font-semibold text-white bg-primary/20 px-2 py-1 rounded-md mt-2 inline-block">
               {tier.trial}
             </div>
           )}
         </div>
 
-        <div className="space-y-2 text-sm text-white/60">
+        <div className="space-y-2 text-sm text-white">
           {tier.features.map((feature) => (
             <div key={feature} className="flex items-center gap-2">
               <Check className="h-4 w-4 text-primary" />

@@ -1,0 +1,1454 @@
+import { useEffect, useState } from 'react'
+import { Card } from '@/components/ui/card'
+import { BarChart, Users, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, AlertCircle, Settings, X, Eye, EyeOff, Globe, Grid, TrendingUp, Inbox, LineChart, RefreshCw } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { useSession } from 'next-auth/react'
+import { useSearchParams } from "next/navigation";
+import { handleFetchError } from '@/lib/fetch-util'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+
+interface Invoice {
+  document_number: string
+  invoice_date: string
+  total: number
+  balance: number
+  due_date: string
+  customers: {
+    name: string
+  }
+  currencies: {
+    code: string
+  }
+}
+
+interface Task {
+  id: string
+  title: string
+  deadline: string
+  project_id: string
+  progress: number
+}
+
+interface Meeting {
+  id: string
+  title: string
+  start_time: string
+  end_time: string
+  description: string
+}
+
+interface DashboardStats {
+  totalRevenue: number
+  invoiceCount: number
+  averageInvoiceValue: number
+  revenueGrowth: number
+}
+
+interface Domain {
+  id: string
+  name: string
+  expiry_date: string
+  status: string
+}
+
+interface Lead {
+  id: string
+  name: string
+  company: string
+  email: string
+  status: string
+  created_at: string
+}
+
+interface Sale {
+  id: string
+  customer_name: string
+  amount: number
+  status: string
+  created_at: string
+}
+
+interface EmailThread {
+  id: string
+  subject: string
+  from: string
+  date: string
+  unread: boolean
+}
+
+interface AnalyticsData {
+  pageviews: number
+  visitors: number
+  bounce_rate: number
+  avg_session_duration: number
+}
+
+interface SearchConsoleData {
+  clicks: number
+  impressions: number
+  ctr: number
+  position: number
+}
+
+interface CronJob {
+  id: string
+  name: string
+  schedule: string
+  last_run: string
+  status: string
+}
+
+export function Dashboard() {
+  const { data: session } = useSession()
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [meetings, setMeetings] = useState<Meeting[]>([])
+  const [domains, setDomains] = useState<Domain[]>([])
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [sales, setSales] = useState<Sale[]>([])
+  const [emails, setEmails] = useState<EmailThread[]>([])
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
+  const [searchConsoleData, setSearchConsoleData] = useState<SearchConsoleData | null>(null)
+  const [cronJobs, setCronJobs] = useState<CronJob[]>([])
+  const [stats, setStats] = useState<DashboardStats>({
+    totalRevenue: 0,
+    invoiceCount: 0,
+    averageInvoiceValue: 0,
+    revenueGrowth: 0
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const searchParams = useSearchParams();
+  const view = searchParams.get('view');
+  
+  // Dashboard customization state
+  const [isCustomizing, setIsCustomizing] = useState(false)
+  const [visibleWidgets, setVisibleWidgets] = useState({
+    revenueStats: true,
+    invoiceStats: true,
+    averageInvoice: true,
+    recentInvoices: true,
+    invoiceTypes: true,
+    upcomingEvents: true,
+    upcomingDeadlines: true,
+    urgentTasks: true,
+    domains: true,
+    leads: true,
+    sales: true,
+    gmailHub: true,
+    analyticsData: true,
+    searchConsole: true,
+    cronJobs: true
+  })
+
+  // Load dashboard preferences
+  useEffect(() => {
+    const loadDashboardPreferences = async () => {
+      if (!session?.user?.id) return;
+      
+      try {
+        console.log('Loading dashboard preferences for user:', session.user.id);
+        
+        const { data, error } = await supabase
+          .from('user_preferences')
+          .select('dashboard_settings')
+          .eq('user_id', session.user.id)
+          .single();
+          
+        if (error) {
+          if (error.code !== 'PGRST116') { // PGRST116 is expected when no record exists
+            console.error('Error loading dashboard preferences:', error);
+          } else {
+            console.log('No existing preferences found - using defaults');
+          }
+          return;
+        }
+        
+        if (data?.dashboard_settings) {
+          console.log('Loaded dashboard preferences:', data.dashboard_settings);
+          const parsedSettings = typeof data.dashboard_settings === 'string' 
+            ? JSON.parse(data.dashboard_settings) 
+            : data.dashboard_settings;
+            
+          // Merge with defaults to handle any new widget types
+          const mergedSettings = { ...visibleWidgets, ...parsedSettings };
+          console.log('Merged settings:', mergedSettings);
+          setVisibleWidgets(mergedSettings);
+        } else {
+          console.log('No dashboard settings found in preferences');
+        }
+      } catch (error) {
+        console.error('Error parsing dashboard preferences:', error);
+      }
+    };
+    
+    loadDashboardPreferences();
+  }, [session?.user?.id]);
+
+  // Save dashboard preferences
+  const saveDashboardPreferences = async () => {
+    if (!session?.user?.id) return;
+    
+    try {
+      console.log('Saving dashboard preferences:', visibleWidgets);
+      
+      // First check if a record exists
+      const { data: existingPrefs } = await supabase
+        .from('user_preferences')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .single();
+      
+      let saveResult;
+      
+      if (existingPrefs) {
+        // Update existing record
+        saveResult = await supabase
+          .from('user_preferences')
+          .update({
+            dashboard_settings: JSON.stringify(visibleWidgets),
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', session.user.id);
+      } else {
+        // Insert new record
+        saveResult = await supabase
+          .from('user_preferences')
+          .insert({
+            user_id: session.user.id,
+            dashboard_settings: JSON.stringify(visibleWidgets),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+      }
+      
+      if (saveResult.error) {
+        console.error('Error saving dashboard preferences:', saveResult.error);
+        throw saveResult.error;
+      }
+      
+      console.log('Dashboard preferences saved successfully');
+    } catch (error) {
+      console.error('Error saving dashboard preferences:', error);
+    }
+  };
+
+  // Toggle widget visibility
+  const toggleWidget = (widget: keyof typeof visibleWidgets) => {
+    setVisibleWidgets(prev => ({
+      ...prev,
+      [widget]: !prev[widget]
+    }));
+  };
+
+  // Apply changes and exit customization mode
+  const applyChanges = async () => {
+    try {
+      await saveDashboardPreferences();
+      console.log('Changes applied successfully');
+      setIsCustomizing(false);
+    } catch (error) {
+      console.error('Error applying changes:', error);
+    }
+  };
+
+  // Cancel changes and exit customization mode
+  const cancelChanges = () => {
+    // Reload preferences
+    const loadDashboardPreferences = async () => {
+      if (!session?.user?.id) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('user_preferences')
+          .select('dashboard_settings')
+          .eq('user_id', session.user.id)
+          .single();
+          
+        if (error && error.code !== 'PGRST116') {
+          console.error('Error loading dashboard preferences:', error);
+          return;
+        }
+        
+        if (data?.dashboard_settings) {
+          const parsedSettings = typeof data.dashboard_settings === 'string' 
+            ? JSON.parse(data.dashboard_settings) 
+            : data.dashboard_settings;
+            
+          // Merge with defaults to handle any new widget types
+          const mergedSettings = { ...visibleWidgets, ...parsedSettings };
+          setVisibleWidgets(mergedSettings);
+        }
+      } catch (error) {
+        console.error('Error parsing dashboard preferences:', error);
+      }
+    };
+    
+    loadDashboardPreferences();
+    setIsCustomizing(false);
+  };
+
+  // Function to refresh all dashboard data
+  const refreshDashboard = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  };
+
+  // Use effect for auto-refresh
+  useEffect(() => {
+    // Set up a refresh interval (every 5 minutes)
+    const refreshInterval = setInterval(() => {
+      fetchData();
+    }, 5 * 60 * 1000);
+    
+    return () => clearInterval(refreshInterval);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [session?.user?.id]);
+
+  const fetchData = async () => {
+    if (!session?.user?.id) {
+      setLoading(false);
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Fetch invoices with user_id filter
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          customers (
+            name
+          ),
+          currencies (
+            code
+          )
+        `)
+        .eq('user_id', session.user.id);
+
+      if (invoicesError && invoicesError.code !== 'PGRST116') {
+        console.error('Failed to fetch invoices:', invoicesError);
+        setError('Failed to fetch invoices');
+      }
+      
+      // Transform the data to match our interface
+      const transformedInvoices = invoicesData?.map(invoice => ({
+        document_number: invoice.document_number,
+        invoice_date: invoice.invoice_date,
+        total: invoice.total,
+        balance: invoice.balance,
+        due_date: invoice.due_date,
+        customers: {
+          name: invoice.customers?.name || 'Unknown Customer'
+        },
+        currencies: {
+          code: invoice.currencies?.code || 'SEK'
+        }
+      })) || []
+
+      if (transformedInvoices && transformedInvoices.length > 0) {
+        setInvoices(transformedInvoices)
+        calculateStats(transformedInvoices)
+      } else {
+        // Set default stats for new users
+        setStats({
+          totalRevenue: 0,
+          invoiceCount: 0,
+          averageInvoiceValue: 0,
+          revenueGrowth: 0
+        })
+      }
+
+      // Fetch tasks with user_id filter
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('project_tasks')
+        .select(`
+          id,
+          title,
+          deadline,
+          project_id,
+          progress,
+          projects (
+            name
+          )
+        `)
+        .eq('user_id', session.user.id)
+        .order('deadline', { ascending: true });
+
+      if (tasksError && tasksError.code !== 'PGRST116') {
+        console.error('Error fetching tasks:', tasksError)
+      }
+
+      if (tasksData) {
+        setTasks(tasksData)
+      }
+
+      // Fetch calendar events directly from database
+      const { data: calendarEventsData, error: calendarError } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .gte('start_time', new Date().toISOString())
+        .order('start_time', { ascending: true })
+        .limit(5);
+
+      if (calendarError && calendarError.code !== 'PGRST116') {
+        console.error('Error fetching calendar events:', calendarError);
+      }
+
+      if (calendarEventsData) {
+        const transformedMeetings = calendarEventsData.map(event => ({
+          id: event.id,
+          title: event.title,
+          start_time: event.start_time,
+          end_time: event.end_time,
+          description: event.description || ''
+        }));
+        setMeetings(transformedMeetings);
+      } else {
+        // Fallback to API if no direct DB access
+        try {
+          const response = await fetch('/api/calendar');
+          if (!response.ok) {
+            console.error('Error fetching calendar events:', response.statusText);
+          } else {
+            const data = await response.json();
+            if (data.items) {
+              const today = new Date();
+              const thirtyDaysFromNow = new Date();
+              thirtyDaysFromNow.setDate(today.getDate() + 30);
+              
+              // Transform calendar events to match our Meeting interface
+              const transformedMeetings = data.items
+                .filter((event: any) => {
+                  const eventDate = new Date(event.start?.dateTime || event.start?.date);
+                  return eventDate >= today && eventDate <= thirtyDaysFromNow;
+                })
+                .map((event: any) => ({
+                  id: event.id,
+                  title: event.summary,
+                  start_time: event.start.dateTime || event.start.date,
+                  end_time: event.end.dateTime || event.end.date,
+                  description: event.description || ''
+                }))
+                .sort((a: any, b: any) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                .slice(0, 5);
+
+              setMeetings(transformedMeetings);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching calendar events:', error);
+        }
+      }
+
+      // Fetch domains
+      const { data: domainsData, error: domainsError } = await supabase
+        .from('domains')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('expiry_date', { ascending: true })
+        .limit(5);
+
+      if (domainsError && domainsError.code !== 'PGRST116') {
+        console.error('Error fetching domains:', domainsError);
+      }
+
+      if (domainsData) {
+        setDomains(domainsData);
+      }
+
+      // Fetch leads
+      const { data: leadsData, error: leadsError } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (leadsError && leadsError.code !== 'PGRST116') {
+        console.error('Error fetching leads:', leadsError);
+      }
+
+      if (leadsData) {
+        setLeads(leadsData);
+      }
+
+      // Fetch sales
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (salesError && salesError.code !== 'PGRST116') {
+        console.error('Error fetching sales:', salesError);
+      }
+
+      if (salesData) {
+        setSales(salesData);
+      }
+
+      // Fetch Gmail data (if available)
+      try {
+        const response = await fetch('/api/gmail-hub');
+        if (response.ok) {
+          const emailData = await response.json();
+          if (emailData.threads) {
+            const transformedEmails = emailData.threads
+              .slice(0, 5)
+              .map((thread: any) => ({
+                id: thread.id,
+                subject: thread.subject || '(No Subject)',
+                from: thread.from || 'Unknown',
+                date: thread.date,
+                unread: thread.unread
+              }));
+            setEmails(transformedEmails);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching gmail data:', error);
+      }
+
+      // Fetch Analytics data (if available)
+      try {
+        const response = await fetch('/api/analytics/summary');
+        if (response.ok) {
+          const data = await response.json();
+          setAnalyticsData({
+            pageviews: data.pageviews || 0,
+            visitors: data.visitors || 0,
+            bounce_rate: data.bounce_rate || 0,
+            avg_session_duration: data.avg_session_duration || 0
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching analytics data:', error);
+      }
+
+      // Fetch Search Console data (if available)
+      try {
+        const response = await fetch('/api/marketing/summary');
+        if (response.ok) {
+          const data = await response.json();
+          setSearchConsoleData({
+            clicks: data.clicks || 0,
+            impressions: data.impressions || 0,
+            ctr: data.ctr || 0,
+            position: data.position || 0
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching search console data:', error);
+      }
+
+      // Fetch Cron Jobs
+      const { data: cronJobsData, error: cronJobsError } = await supabase
+        .from('cron_jobs')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('last_run', { ascending: false })
+        .limit(5);
+
+      if (cronJobsError && cronJobsError.code !== 'PGRST116') {
+        console.error('Error fetching cron jobs:', cronJobsError);
+      }
+
+      if (cronJobsData) {
+        setCronJobs(cronJobsData);
+      }
+
+    } catch (error) {
+      console.error('Error fetching data:', error)
+      handleFetchError(error, 'dashboard data')
+    } finally {
+      setLoading(false)
+    }
+  };
+
+  const calculateStats = (invoices: Invoice[]) => {
+    console.log('Calculating stats from invoices:', invoices)
+    
+    const total = invoices.reduce((sum, inv) => {
+      console.log('Processing invoice:', inv)
+      const amount = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total
+      return sum + (amount || 0)
+    }, 0)
+    
+    const count = invoices.length
+    const average = count > 0 ? total / count : 0
+
+    // Calculate growth by comparing last month to previous month
+    const now = new Date()
+    const lastMonthInvoices = invoices.filter(inv => {
+      const date = new Date(inv.invoice_date)
+      return date.getMonth() === now.getMonth() - 1
+    })
+    const previousMonthInvoices = invoices.filter(inv => {
+      const date = new Date(inv.invoice_date)
+      return date.getMonth() === now.getMonth() - 2
+    })
+
+    const lastMonthTotal = lastMonthInvoices.reduce((sum, inv) => {
+      const amount = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total
+      return sum + (amount || 0)
+    }, 0)
+    
+    const previousMonthTotal = previousMonthInvoices.reduce((sum, inv) => {
+      const amount = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total
+      return sum + (amount || 0)
+    }, 0)
+
+    const growth = previousMonthTotal > 0 
+      ? ((lastMonthTotal - previousMonthTotal) / previousMonthTotal) * 100 
+      : 0
+
+    console.log('Calculated stats:', {
+      totalRevenue: total,
+      invoiceCount: count,
+      averageInvoiceValue: average,
+      revenueGrowth: growth
+    })
+
+    setStats({
+      totalRevenue: total,
+      invoiceCount: count,
+      averageInvoiceValue: average,
+      revenueGrowth: growth
+    })
+  }
+
+  const getGreeting = () => {
+    const hour = new Date().getHours()
+    const name = session?.user?.name || 'there' // Use session user's name or fallback to 'there'
+    
+    if (hour < 12) return `Good morning, ${name}`
+    if (hour < 17) return `Good afternoon, ${name}`
+    return `Good evening, ${name}`
+  }
+
+  const getUpcomingDeadlines = () => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    return tasks
+      .filter(task => {
+        const deadline = new Date(task.deadline)
+        deadline.setHours(0, 0, 0, 0)
+        return deadline >= today && task.progress < 100
+      })
+      .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+      .slice(0, 5)
+  }
+
+  const getUrgentTasks = () => {
+    const today = new Date()
+    today.setHours(23, 59, 59, 999)
+    
+    return tasks
+      .filter(task => {
+        const deadline = new Date(task.deadline)
+        return deadline <= today && task.progress < 100
+      })
+      .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+  }
+
+  if (view === 'agenda') {
+    return <div className="text-neutral-400">Agenda view removed.</div>;
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-400"></div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-8 p-6">
+      <div className="flex justify-between items-center">
+        <Card className="p-6 bg-neutral-800 border-neutral-700 shadow-lg flex-1 mr-4">
+          <h2 className="text-2xl font-bold text-white">{getGreeting()}</h2>
+          <p className="text-neutral-400 mt-2">Here's what's happening today</p>
+        </Card>
+        
+        <div className="flex space-x-2">
+          <Button 
+            variant="outline" 
+            className="bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700"
+            onClick={refreshDashboard}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+          
+          <Button 
+            variant="outline" 
+            className="bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700"
+            onClick={() => setIsCustomizing(!isCustomizing)}
+          >
+            {isCustomizing ? <X className="h-4 w-4 mr-2" /> : <Settings className="h-4 w-4 mr-2" />}
+            {isCustomizing ? 'Cancel' : 'Customize Dashboard'}
+          </Button>
+        </div>
+      </div>
+      
+      {isCustomizing && (
+        <Card className="p-6 bg-neutral-800 border-neutral-700 shadow-lg">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-white">Customize Your Dashboard</h3>
+            <div className="flex space-x-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="bg-neutral-700 border-neutral-600 text-neutral-200 hover:bg-neutral-600"
+                onClick={cancelChanges}
+              >
+                Cancel
+              </Button>
+              
+              <Button 
+                variant="default" 
+                size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={applyChanges}
+              >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.revenueStats ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.revenueStats ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('revenueStats')}
+              >
+                {visibleWidgets.revenueStats ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Revenue Stats</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.invoiceStats ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.invoiceStats ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('invoiceStats')}
+              >
+                {visibleWidgets.invoiceStats ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Invoice Count</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.averageInvoice ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.averageInvoice ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('averageInvoice')}
+              >
+                {visibleWidgets.averageInvoice ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Average Invoice</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.recentInvoices ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.recentInvoices ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('recentInvoices')}
+              >
+                {visibleWidgets.recentInvoices ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Recent Invoices</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.invoiceTypes ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.invoiceTypes ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('invoiceTypes')}
+              >
+                {visibleWidgets.invoiceTypes ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Invoice Types</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.upcomingEvents ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.upcomingEvents ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('upcomingEvents')}
+              >
+                {visibleWidgets.upcomingEvents ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Upcoming Events</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.upcomingDeadlines ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.upcomingDeadlines ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('upcomingDeadlines')}
+              >
+                {visibleWidgets.upcomingDeadlines ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Upcoming Deadlines</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.urgentTasks ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.urgentTasks ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('urgentTasks')}
+              >
+                {visibleWidgets.urgentTasks ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Urgent Tasks</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.domains ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.domains ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('domains')}
+              >
+                {visibleWidgets.domains ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Domains</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.leads ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.leads ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('leads')}
+              >
+                {visibleWidgets.leads ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Leads</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.sales ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.sales ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('sales')}
+              >
+                {visibleWidgets.sales ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Sales</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.gmailHub ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.gmailHub ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('gmailHub')}
+              >
+                {visibleWidgets.gmailHub ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Gmail Hub</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.analyticsData ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.analyticsData ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('analyticsData')}
+              >
+                {visibleWidgets.analyticsData ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Analytics</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.searchConsole ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.searchConsole ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('searchConsole')}
+              >
+                {visibleWidgets.searchConsole ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Search Console</span>
+            </div>
+            
+            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+              <Button 
+                variant={visibleWidgets.cronJobs ? "default" : "outline"}
+                size="sm"
+                className={`${visibleWidgets.cronJobs ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                onClick={() => toggleWidget('cronJobs')}
+              >
+                {visibleWidgets.cronJobs ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+              </Button>
+              <span className="text-sm text-neutral-300">Scheduled Tasks</span>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {visibleWidgets.revenueStats || visibleWidgets.invoiceStats || visibleWidgets.averageInvoice ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {visibleWidgets.revenueStats && (
+            <Link href="/invoices" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Details →
+              </span>
+              <Card className="p-6 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-neutral-400">Total Revenue</p>
+                    <h3 className="text-2xl font-bold mt-2 text-white">
+                      {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
+                        .format(stats.totalRevenue)}
+                    </h3>
+                    <div className="mt-4 flex items-center gap-2">
+                      <div className={`flex items-center gap-1 ${stats.revenueGrowth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {stats.revenueGrowth >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                        <span>{Math.abs(stats.revenueGrowth).toFixed(1)}%</span>
+                      </div>
+                      <p className="text-sm text-neutral-400">vs last month</p>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-emerald-500/10 rounded-full">
+                    <DollarSign className="w-6 h-6 text-emerald-400" />
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.invoiceStats && (
+            <Link href="/invoices" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Details →
+              </span>
+              <Card className="p-6 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-neutral-400">Total Invoices</p>
+                    <h3 className="text-2xl font-bold mt-2 text-white">{stats.invoiceCount}</h3>
+                  </div>
+                  <div className="p-3 bg-blue-500/10 rounded-full">
+                    <Users className="w-6 h-6 text-blue-400" />
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.averageInvoice && (
+            <Link href="/invoices" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Details →
+              </span>
+              <Card className="p-6 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-neutral-400">Average Invoice</p>
+                    <h3 className="text-2xl font-bold mt-2 text-white">
+                      {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
+                        .format(stats.averageInvoiceValue)}
+                    </h3>
+                  </div>
+                  <div className="p-3 bg-purple-500/10 rounded-full">
+                    <BarChart className="w-6 h-6 text-purple-400" />
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+        </div>
+      ) : null}
+
+      {visibleWidgets.recentInvoices || visibleWidgets.invoiceTypes ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {visibleWidgets.recentInvoices && (
+            <Link href="/invoices" className="block lg:col-span-2 relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View All Invoices →
+              </span>
+              <Card className="lg:col-span-2 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Recent Invoices</h3>
+                  </div>
+                  <div className="mt-6">
+                    <table className="w-full">
+                      <thead>
+                        <tr>
+                          <th className="text-left text-sm font-medium text-neutral-400 pb-4">Customer</th>
+                          <th className="text-left text-sm font-medium text-neutral-400 pb-4">Date</th>
+                          <th className="text-right text-sm font-medium text-neutral-400 pb-4">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-700">
+                        {invoices.slice(0, 5).map((invoice) => (
+                          <tr key={invoice.document_number}>
+                            <td className="py-4 text-sm text-white">{invoice.customers?.name}</td>
+                            <td className="py-4 text-sm text-neutral-400">
+                              {new Date(invoice.invoice_date).toLocaleDateString('sv-SE')}
+                            </td>
+                            <td className="py-4 text-sm text-right font-medium text-white">
+                              {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: invoice.currencies?.code || 'SEK' })
+                                .format(invoice.total)}
+                            </td>
+                          </tr>
+                        ))}
+                        {invoices.length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="py-4 text-sm text-center text-neutral-400">No invoices found</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.invoiceTypes && (
+            <Link href="/invoices" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Details →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <h3 className="text-lg font-semibold text-white">Invoice Types</h3>
+                  <div className="mt-6 space-y-4">
+                    {Object.entries(
+                      invoices.reduce((acc, inv) => {
+                        const type = inv.balance === 0 ? 'Paid' : inv.balance === inv.total ? 'Unpaid' : 'Partial'
+                        acc[type] = (acc[type] || 0) + 1
+                        return acc
+                      }, {} as Record<string, number>)
+                    ).map(([type, count]) => (
+                      <div key={type} className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">{type}</span>
+                        <span className="text-sm font-medium text-white">{count}</span>
+                      </div>
+                    ))}
+                    {invoices.length === 0 && (
+                      <div className="text-sm text-center text-neutral-400">No invoice data</div>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+        </div>
+      ) : null}
+
+      {visibleWidgets.upcomingEvents || visibleWidgets.upcomingDeadlines || visibleWidgets.urgentTasks ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {visibleWidgets.upcomingEvents && (
+            <Link href="/calendar" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                Go to Calendar →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Upcoming Events</h3>
+                    <Calendar className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  <div className="space-y-4">
+                    {meetings.map(meeting => (
+                      <div key={meeting.id} className="flex items-start space-x-4">
+                        <div className="p-2 bg-blue-500/10 rounded-full">
+                          <Clock className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{meeting.title}</p>
+                          <p className="text-xs text-neutral-400">
+                            {new Date(meeting.start_time).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {meetings.length === 0 && (
+                      <p className="text-sm text-neutral-400">No upcoming events</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.upcomingDeadlines && (
+            <Link href="/projects" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Deadlines →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Upcoming Deadlines</h3>
+                    <Clock className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  <div className="space-y-4">
+                    {getUpcomingDeadlines().map(task => (
+                      <div key={task.id} className="flex items-start space-x-4">
+                        <div className="p-2 bg-yellow-500/10 rounded-full">
+                          <Clock className="w-4 h-4 text-yellow-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{task.title}</p>
+                          <p className="text-xs text-neutral-400">Due {new Date(task.deadline).toLocaleDateString('sv-SE')}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {getUpcomingDeadlines().length === 0 && (
+                      <p className="text-sm text-neutral-400">No upcoming deadlines</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.urgentTasks && (
+            <Link href="/projects" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Urgent Tasks →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Urgent Tasks</h3>
+                    <AlertCircle className="w-5 h-5 text-red-400" />
+                  </div>
+                  <div className="space-y-4">
+                    {getUrgentTasks().map(task => (
+                      <div key={task.id} className="flex items-start space-x-4">
+                        <div className="p-2 bg-red-500/10 rounded-full">
+                          <AlertCircle className="w-4 h-4 text-red-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{task.title}</p>
+                          <p className="text-xs text-neutral-400">Due today</p>
+                        </div>
+                      </div>
+                    ))}
+                    {getUrgentTasks().length === 0 && (
+                      <p className="text-sm text-neutral-400">No urgent tasks</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+        </div>
+      ) : null}
+
+      {/* Domains, Leads and Sales section */}
+      {visibleWidgets.domains || visibleWidgets.leads || visibleWidgets.sales ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {visibleWidgets.domains && (
+            <Link href="/domains" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View All Domains →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Domain Expiry</h3>
+                    <Globe className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  <div className="space-y-4">
+                    {domains.map(domain => (
+                      <div key={domain.id} className="flex items-start space-x-4">
+                        <div className="p-2 bg-blue-500/10 rounded-full">
+                          <Globe className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{domain.name}</p>
+                          <p className="text-xs text-neutral-400">
+                            Expires: {new Date(domain.expiry_date).toLocaleDateString('sv-SE')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {domains.length === 0 && (
+                      <p className="text-sm text-neutral-400">No domains found</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.leads && (
+            <Link href="/leads" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View All Leads →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Recent Leads</h3>
+                    <Grid className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  <div className="space-y-4">
+                    {leads.map(lead => (
+                      <div key={lead.id} className="flex items-start space-x-4">
+                        <div className="p-2 bg-green-500/10 rounded-full">
+                          <Grid className="w-4 h-4 text-green-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{lead.name}</p>
+                          <p className="text-xs text-neutral-400">
+                            {lead.company} - {lead.status}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {leads.length === 0 && (
+                      <p className="text-sm text-neutral-400">No leads found</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.sales && (
+            <Link href="/sales" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View All Sales →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Recent Sales</h3>
+                    <TrendingUp className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  <div className="space-y-4">
+                    {sales.map(sale => (
+                      <div key={sale.id} className="flex items-start space-x-4">
+                        <div className="p-2 bg-purple-500/10 rounded-full">
+                          <TrendingUp className="w-4 h-4 text-purple-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white">{sale.customer_name}</p>
+                          <p className="text-xs text-neutral-400">
+                            {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(sale.amount)} - {sale.status}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {sales.length === 0 && (
+                      <p className="text-sm text-neutral-400">No sales found</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+        </div>
+      ) : null}
+
+      {/* Gmail Hub, Analytics and Search Console */}
+      {visibleWidgets.gmailHub || visibleWidgets.analyticsData || visibleWidgets.searchConsole ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {visibleWidgets.gmailHub && (
+            <Link href="/gmail-hub" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                Open Gmail Hub →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Recent Emails</h3>
+                    <Inbox className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  <div className="space-y-4">
+                    {emails.map(email => (
+                      <div key={email.id} className="flex items-start space-x-4">
+                        <div className={`p-2 ${email.unread ? 'bg-blue-500/20' : 'bg-neutral-700/20'} rounded-full`}>
+                          <Inbox className={`w-4 h-4 ${email.unread ? 'text-blue-400' : 'text-neutral-400'}`} />
+                        </div>
+                        <div>
+                          <p className={`text-sm font-medium ${email.unread ? 'text-white' : 'text-neutral-300'}`}>
+                            {email.subject.length > 30 ? email.subject.substring(0, 30) + '...' : email.subject}
+                          </p>
+                          <p className="text-xs text-neutral-400">
+                            {email.from} - {new Date(email.date).toLocaleDateString('sv-SE')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    {emails.length === 0 && (
+                      <p className="text-sm text-neutral-400">No recent emails</p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.analyticsData && (
+            <Link href="/analytics" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Analytics →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Analytics Overview</h3>
+                    <LineChart className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  {analyticsData ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">Pageviews</span>
+                        <span className="text-sm font-medium text-white">{analyticsData.pageviews.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">Visitors</span>
+                        <span className="text-sm font-medium text-white">{analyticsData.visitors.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">Bounce Rate</span>
+                        <span className="text-sm font-medium text-white">{analyticsData.bounce_rate.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">Avg. Session</span>
+                        <span className="text-sm font-medium text-white">{analyticsData.avg_session_duration.toFixed(1)}s</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-neutral-400">No analytics data available</p>
+                  )}
+                </div>
+              </Card>
+            </Link>
+          )}
+
+          {visibleWidgets.searchConsole && (
+            <Link href="/marketing" className="block relative group">
+              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                View Search Console →
+              </span>
+              <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-white">Search Performance</h3>
+                    <LineChart className="w-5 h-5 text-neutral-400" />
+                  </div>
+                  {searchConsoleData ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">Clicks</span>
+                        <span className="text-sm font-medium text-white">{searchConsoleData.clicks.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">Impressions</span>
+                        <span className="text-sm font-medium text-white">{searchConsoleData.impressions.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">CTR</span>
+                        <span className="text-sm font-medium text-white">{searchConsoleData.ctr.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-neutral-400">Avg. Position</span>
+                        <span className="text-sm font-medium text-white">{searchConsoleData.position.toFixed(1)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-neutral-400">No search data available</p>
+                  )}
+                </div>
+              </Card>
+            </Link>
+          )}
+        </div>
+      ) : null}
+
+      {/* Scheduled Tasks */}
+      {visibleWidgets.cronJobs && (
+        <div className="grid grid-cols-1 gap-6">
+          <Link href="/settings/cron" className="block relative group">
+            <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
+              Manage Scheduled Tasks →
+            </span>
+            <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-semibold text-white">Scheduled Tasks</h3>
+                  <Clock className="w-5 h-5 text-neutral-400" />
+                </div>
+                {cronJobs.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr>
+                          <th className="text-left text-sm font-medium text-neutral-400 pb-4">Task</th>
+                          <th className="text-left text-sm font-medium text-neutral-400 pb-4">Schedule</th>
+                          <th className="text-left text-sm font-medium text-neutral-400 pb-4">Last Run</th>
+                          <th className="text-right text-sm font-medium text-neutral-400 pb-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-700">
+                        {cronJobs.map((job) => (
+                          <tr key={job.id}>
+                            <td className="py-3 text-sm text-white">{job.name}</td>
+                            <td className="py-3 text-sm text-neutral-400">{job.schedule}</td>
+                            <td className="py-3 text-sm text-neutral-400">
+                              {job.last_run ? new Date(job.last_run).toLocaleString('sv-SE') : 'Never'}
+                            </td>
+                            <td className="py-3 text-sm text-right">
+                              <span className={`px-2 py-1 rounded-full text-xs ${
+                                job.status === 'active' ? 'bg-green-500/20 text-green-400' : 
+                                job.status === 'failed' ? 'bg-red-500/20 text-red-400' : 
+                                'bg-neutral-600/20 text-neutral-400'
+                              }`}>
+                                {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-neutral-400">No scheduled tasks found</p>
+                )}
+              </div>
+            </Card>
+          </Link>
+        </div>
+      ) : null}
+    </div>
+  )
+} 

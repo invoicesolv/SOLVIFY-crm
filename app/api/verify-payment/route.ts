@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getStripeInstance } from '@/lib/stripe';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   try {
     const { payment_intent } = await req.json();

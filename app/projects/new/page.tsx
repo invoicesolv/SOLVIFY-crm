@@ -147,6 +147,34 @@ export default function NewProjectPage() {
       }
 
       console.log('Project created successfully:', data.id);
+      
+      // Create a calendar event for this project
+      if (data.id && (data.start_date || data.end_date)) {
+        try {
+          const calendarEvent = {
+            title: `Project: ${data.name}`,
+            start_time: data.start_date,
+            end_time: data.end_date || data.start_date, // Use start date as fallback if no end date
+            user_id: session.user.id,
+            project_id: data.id,
+            is_synced: true
+          };
+          
+          const { error: calendarError } = await supabase
+            .from('calendar_events')
+            .insert([calendarEvent]);
+            
+          if (calendarError) {
+            console.error('Error creating calendar event for project:', calendarError);
+            // Don't block project creation if calendar sync fails
+          } else {
+            console.log('Calendar event created for project:', data.id);
+          }
+        } catch (calendarErr) {
+          console.error('Exception creating calendar event:', calendarErr);
+        }
+      }
+            
       toast.success('Project created successfully');
       router.push('/projects');
     } catch (error: any) {

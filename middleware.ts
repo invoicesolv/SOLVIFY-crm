@@ -7,8 +7,26 @@ export async function middleware(request: NextRequest) {
     // Get the pathname of the request (with defensive check)
     const pathname = request.nextUrl?.pathname || '/'
     
+    // Handle Fortnox OAuth callback
+    if (pathname === '/oauth/callback') {
+      console.log('Handling Fortnox OAuth callback in middleware');
+      const url = request.nextUrl.clone();
+      url.pathname = '/api/oauth/callback';
+      return NextResponse.rewrite(url);
+    }
+    
+    // Create a debugging object with limited information
+    const debug = {
+      pathname,
+      cookies: Object.fromEntries(request.cookies.getAll().map(c => [c.name, c.value.substring(0, 5) + '...'])),
+      referer: request.headers.get('referer') || '',
+    }
+    
+    console.log(`[Middleware Debug] Request: ${JSON.stringify(debug, null, 2)}`)
+    
     // Skip middleware for API routes and auth callbacks
     if (pathname.startsWith('/api/')) {
+      console.log(`[Middleware] Skipping API route: ${pathname}`)
       return NextResponse.next()
     }
     
@@ -17,46 +35,89 @@ export async function middleware(request: NextRequest) {
       '/login', 
       '/landing', 
       '/sv', 
-      '/register'
-    ].includes(pathname)
+      '/register',
+      '/auth/forgot-password',
+      '/blog',
+      '/blog/sv'
+    ].includes(pathname) || pathname.startsWith('/blog/')
+    
+    console.log(`[Middleware] Path ${pathname} is ${isPublicPath ? 'public' : 'protected'}`)
 
     // Check if user is authenticated using NextAuth token
     const token = await getToken({ 
       req: request,
       secret: process.env.NEXTAUTH_SECRET 
     })
+    
+    // Check for session cookie presence - this helps detect in-progress auth
+    const hasSessionCookie = request.cookies.has('next-auth.session-token') || 
+                             request.cookies.has('__Secure-next-auth.session-token')
+    
+    // Additional debug info
+    const userEmail = request.cookies.has('user_email') ? request.cookies.get('user_email')?.value : null;
+    console.log(`[Middleware] User email from cookie: ${userEmail}`);
+
+    // Determine authentication status
     const isAuthenticated = !!token
+    const isAuthenticating = !token && hasSessionCookie
+    
+    console.log(`[Middleware] Auth status: isAuthenticated=${isAuthenticated}, isAuthenticating=${isAuthenticating}, hasToken=${!!token}, hasSessionCookie=${hasSessionCookie}`)
 
-    // Always redirect root to Swedish version for non-authenticated users
-    if (pathname === '/') {
-      if (!isAuthenticated) {
-        return NextResponse.redirect(new URL('/sv', request.url))
-      }
+    // IMPORTANT: Check if this is a post-login redirect
+    const referer = request.headers.get('referer') || ''
+    const isPostLogin = referer.includes('/api/auth/callback') || referer.includes('/login')
+    
+    if (isAuthenticated && isPostLogin && pathname === '/') {
+      console.log(`[Middleware] Post-login redirect detected - allowing through to dashboard (root)`)
       return NextResponse.next()
     }
 
-    // If trying to access /landing directly, keep it accessible
-    if (pathname === '/landing') {
+    // Allow requests in the authentication process even without a token
+    if (isAuthenticating) {
+      console.log(`[Middleware] In-progress authentication detected - allowing through`)
       return NextResponse.next()
     }
 
-    if (isPublicPath && isAuthenticated && pathname !== '/sv') {
-      // If user is authenticated and tries to access public pages (except Swedish landing),
-      // redirect to root
+    // If the user is authenticated and tries to access the root path,
+    // let them through to the dashboard (which is at root)
+    if (pathname === '/' && isAuthenticated) {
+      console.log(`[Middleware] Authenticated user at root - accessing dashboard`)
+      return NextResponse.next()
+    }
+    
+    // Only redirect to landing page if the user is not authenticated
+    // and trying to access the root
+    if (pathname === '/' && !isAuthenticated) {
+      console.log(`[Middleware] Unauthenticated user at root - redirecting to landing page`)
+      return NextResponse.redirect(new URL('/sv', request.url))
+    }
+
+    // If trying to access /landing or /sv directly, keep it accessible
+    if (pathname === '/landing' || pathname === '/sv') {
+      console.log(`[Middleware] Allowing direct access to landing page`)
+      return NextResponse.next()
+    }
+
+    // If user is authenticated and tries to access login/register pages,
+    // redirect to dashboard (root)
+    if (isPublicPath && isAuthenticated && !['/sv', '/landing', '/blog', '/blog/sv'].includes(pathname) && !pathname.startsWith('/blog/')) {
+      console.log(`[Middleware] Authenticated user accessing public page - redirecting to dashboard`)
       return NextResponse.redirect(new URL('/', request.url))
     }
 
+    // If user is not authenticated and tries to access protected route,
+    // redirect to login page
     if (!isPublicPath && !isAuthenticated) {
-      // If user is not authenticated and tries to access protected route,
-      // redirect to login page
+      console.log(`[Middleware] Unauthenticated user accessing protected page - redirecting to login`)
       const url = new URL('/login', request.url)
       url.searchParams.set('callbackUrl', pathname)
       return NextResponse.redirect(url)
     }
 
+    console.log(`[Middleware] Allowing access to ${pathname}`)
     return NextResponse.next()
   } catch (error) {
-    console.error('Middleware error:', error)
+    console.error('[Middleware] Error:', error)
     return NextResponse.next()
   }
 }
@@ -72,5 +133,6 @@ export const config = {
      * - public files
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)',
+    '/oauth/callback'
   ],
 } 

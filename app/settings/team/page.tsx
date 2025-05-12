@@ -35,7 +35,13 @@ export type PermissionKey =
   | 'edit_domains'
   | 'admin'
   | 'canInviteUsers'
-  | 'canManageWorkspace';
+  | 'canManageWorkspace'
+  | 'view_sales'
+  | 'edit_sales'
+  | 'view_leads'
+  | 'edit_leads'
+  | 'edit_calendar'
+  | 'use_chatbot';
 
 // Add role types at the top with other types
 type Role = 'admin' | 'editor' | 'reader';
@@ -63,7 +69,13 @@ const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
       edit_domains: true,
       admin: true,
       canInviteUsers: true,
-      canManageWorkspace: true
+      canManageWorkspace: true,
+      view_sales: true,
+      edit_sales: true,
+      view_leads: true,
+      edit_leads: true,
+      edit_calendar: true,
+      use_chatbot: true
     }
   },
   editor: {
@@ -81,7 +93,13 @@ const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
       edit_domains: false,
       admin: false,
       canInviteUsers: false,
-      canManageWorkspace: false
+      canManageWorkspace: false,
+      view_sales: false,
+      edit_sales: false,
+      view_leads: false,
+      edit_leads: false,
+      edit_calendar: false,
+      use_chatbot: false
     }
   },
   reader: {
@@ -99,7 +117,13 @@ const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
       edit_domains: false,
       admin: false,
       canInviteUsers: false,
-      canManageWorkspace: false
+      canManageWorkspace: false,
+      view_sales: false,
+      edit_sales: false,
+      view_leads: false,
+      edit_leads: false,
+      edit_calendar: false,
+      use_chatbot: false
     }
   }
 };
@@ -121,6 +145,78 @@ interface Workspace {
   owner_id: string;
   created_at: string;
 }
+
+// Define the structure for permission groups
+const permissionGroups = [
+  {
+    title: 'Projects',
+    permissions: [
+      { key: 'view_projects', label: 'View Projects' },
+      { key: 'edit_projects', label: 'Edit Projects' },
+    ]
+  },
+  {
+    title: 'Customers',
+    permissions: [
+      { key: 'view_customers', label: 'View Customers' },
+      { key: 'edit_customers', label: 'Edit Customers' },
+    ]
+  },
+  {
+    title: 'Invoices',
+    permissions: [
+      { key: 'view_invoices', label: 'View Invoices' },
+      // Assuming no 'edit_invoices' currently
+    ]
+  },
+  {
+    title: 'Calendar',
+    permissions: [
+      { key: 'view_calendar', label: 'View Calendar' },
+      { key: 'edit_calendar', label: 'Edit Calendar' }, // Added
+    ]
+  },
+  {
+    title: 'Analytics',
+    permissions: [
+      { key: 'view_analytics', label: 'View Analytics' },
+    ]
+  },
+  {
+    title: 'Domains',
+    permissions: [
+      { key: 'view_domains', label: 'View Domains' },
+      { key: 'edit_domains', label: 'Edit Domains' },
+    ]
+  },
+  { // Added Sales Group
+    title: 'Sales',
+    permissions: [
+      { key: 'view_sales', label: 'View Sales' },
+      { key: 'edit_sales', label: 'Edit Sales' },
+    ]
+  },
+  { // Added Leads Group
+    title: 'Leads',
+    permissions: [
+      { key: 'view_leads', label: 'View Leads' },
+      { key: 'edit_leads', label: 'Edit Leads' },
+    ]
+  },
+   { // Added Chatbot Group
+    title: 'Chatbot',
+    permissions: [
+      { key: 'use_chatbot', label: 'Use Chatbot' },
+    ]
+  },
+  {
+    title: 'Management',
+    permissions: [
+      { key: 'canInviteUsers', label: 'Invite Users' },
+      { key: 'canManageWorkspace', label: 'Manage Workspace' },
+    ]
+  }
+];
 
 export default function TeamPage() {
   const { data: session, status } = useSession();
@@ -157,7 +253,13 @@ export default function TeamPage() {
     edit_domains: false,
     admin: false,
     canInviteUsers: false,
-    canManageWorkspace: false
+    canManageWorkspace: false,
+    view_sales: false,
+    edit_sales: false,
+    view_leads: false,
+    edit_leads: false,
+    edit_calendar: false,
+    use_chatbot: false
   });
 
   useEffect(() => {
@@ -224,47 +326,42 @@ export default function TeamPage() {
         status
       });
 
-      // Set the Supabase auth session
-      if (session?.access_token) {
-        console.log('Setting Supabase auth session with access token');
+      // Don't try to set Supabase session with Google OAuth token
+      // Instead use anonymous auth with RLS policies
+      const isGoogleAuth = !!session?.access_token && !(session as any).supabaseAccessToken;
+      
+      if (isGoogleAuth) {
+        console.log('[Team Page] Using anonymous auth with RLS policies for Google OAuth');
+        await supabase.auth.signInAnonymously();
+      } 
+      else if ((session as any)?.supabaseAccessToken) {
+        console.log('[Team Page] Using Supabase token from session');
+        try {
         const { error: authError } = await supabase.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token || '',
+            access_token: (session as any).supabaseAccessToken,
+            refresh_token: '',
         });
+          
         if (authError) {
-          console.error('Error setting Supabase auth session:', authError);
-          toast.error('Failed to authenticate with Supabase');
-          return;
-        }
-        console.log('Successfully set Supabase auth session');
+            console.error('[Team Page] Error setting Supabase session:', authError);
+            // Fall back to anonymous auth
+            await supabase.auth.signInAnonymously();
       } else {
-        console.warn('No access token found in session');
-        toast.error('Authentication information missing');
-        return;
-      }
-
-      // Verify the Supabase auth user
-      const { data: { user }, error: getUserError } = await supabase.auth.getUser();
-      console.log('Supabase auth user:', {
-        id: user?.id,
-        email: user?.email,
-        role: user?.role,
-      });
-      
-      if (getUserError) {
-        console.error('Supabase auth error:', getUserError);
-        toast.error('Failed to verify your authentication');
-        return;
-      }
-      
-      if (!user) {
-        console.error('No user found in Supabase session');
-        toast.error('Unable to authenticate with Supabase');
-        return;
+            console.log('[Team Page] Successfully set Supabase session');
+          }
+        } catch (err) {
+          console.error('[Team Page] Exception setting Supabase session:', err);
+          // Fall back to anonymous auth
+          await supabase.auth.signInAnonymously();
+        }
+      } 
+      else {
+        console.log('[Team Page] No valid tokens. Using anonymous auth with RLS policies');
+        await supabase.auth.signInAnonymously();
       }
 
       // First, get user's workspace memberships without joining workspaces
-      console.log('Fetching team memberships for user:', user.id);
+      console.log('Fetching team memberships for user:', session?.user?.id);
       const { data: memberships, error: membershipError } = await supabase
         .from('team_members')
         .select(`
@@ -277,8 +374,7 @@ export default function TeamPage() {
           is_admin,
           permissions
         `)
-        .eq('user_id', user.id)
-        .returns<TeamMember[]>();
+        .eq('user_id', session?.user?.id);
 
       console.log('Team memberships query result:', {
         membershipCount: memberships?.length,
@@ -293,7 +389,10 @@ export default function TeamPage() {
         return;
       }
 
-      if (!memberships?.length) {
+      // Cast the result to the expected type after fetching
+      const typedMemberships = memberships as TeamMember[] | null;
+      
+      if (!typedMemberships?.length) {
         console.log('No team memberships found for user, creating default workspace');
         // Create a default workspace for the user
         const { data: newWorkspace, error: createError } = await supabase
@@ -301,7 +400,7 @@ export default function TeamPage() {
           .insert([
             { 
               name: 'My Workspace',
-              owner_id: user.id
+              owner_id: session?.user?.id
             }
           ])
           .select()
@@ -324,7 +423,7 @@ export default function TeamPage() {
             .from('team_members')
             .insert([
               {
-                user_id: user.id,
+                user_id: session?.user?.id,
                 workspace_id: newWorkspace.id,
                 role: 'admin',
                 name: session?.user?.name || 'Admin User',
@@ -351,7 +450,7 @@ export default function TeamPage() {
       }
 
       // Get workspace IDs from memberships
-      const workspaceIds: string[] = memberships.map(m => m.workspace_id);
+      const workspaceIds: string[] = typedMemberships.map(m => m.workspace_id);
       console.log('Workspace IDs to fetch:', workspaceIds);
 
       // Fetch workspaces directly using the Supabase client with in operator
@@ -371,19 +470,32 @@ export default function TeamPage() {
         workspaces: workspacesData
       });
       
-      // Set workspaces and select the first one as active
+      // Set workspaces
       setWorkspaces(workspacesData || []);
       
-      if (workspacesData?.length > 0 && !activeWorkspace) {
+      // Check for stored workspace preference in localStorage
+      let storedWorkspaceId = null;
+      if (typeof window !== 'undefined' && session?.user?.id) {
+        storedWorkspaceId = localStorage.getItem(`workspace_${session.user.id}`);
+        console.log(`[Workspace] Found stored workspace preference: ${storedWorkspaceId}`);
+        
+        // Verify the stored workspace is in the list of accessible workspaces
+        if (storedWorkspaceId && workspacesData?.some(w => w.id === storedWorkspaceId)) {
+          console.log(`[Workspace] Using stored workspace preference: ${storedWorkspaceId}`);
+          setActiveWorkspace(storedWorkspaceId);
+        } else if (workspacesData?.length > 0 && !activeWorkspace) {
+          // Fall back to first workspace if no valid stored preference
+          console.log(`[Workspace] No valid stored preference, using first workspace: ${workspacesData[0].id}`);
+          setActiveWorkspace(workspacesData[0].id);
+          
+          // Store this preference for future use
+          if (session?.user?.id) {
+            localStorage.setItem(`workspace_${session.user.id}`, workspacesData[0].id);
+          }
+        }
+      } else if (workspacesData?.length > 0 && !activeWorkspace) {
+        // Fall back to first workspace if localStorage not available
         setActiveWorkspace(workspacesData[0].id);
-      }
-      
-      // Log if we're missing any workspaces
-      if (workspacesData.length !== workspaceIds.length) {
-        console.log('Some workspace IDs were not found:', {
-          missing: workspaceIds.filter((id: string) => !workspacesData.some((w: Workspace) => w.id === id)),
-          found: workspacesData.map((w: Workspace) => w.id)
-        });
       }
     } catch (error) {
       console.error('Error in loadWorkspaces:', error);
@@ -921,77 +1033,47 @@ export default function TeamPage() {
                           </p>
                           
                           <div className="space-y-6">
-                            {teamMembers.map((member) => (
+                            {teamMembers.map((member) => {
+                              const effectiveIsAdmin = member.is_admin || (workspaces.find(w => w.id === activeWorkspace)?.owner_id === member.user_id);
+                              return (
                               <div key={member.id} className="p-4 rounded-lg bg-neutral-800/50">
                                 <div className="flex items-center justify-between mb-4">
                                   <div>
                                     <h3 className="text-white font-medium">{member.name || 'Unknown User'}</h3>
                                     <p className="text-sm text-neutral-400">{member.email || 'No email'}</p>
                                   </div>
-                                  {member.is_admin && (
-                                    <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/10 text-blue-400">
-                                      Admin
+                                    <div className="flex items-center space-x-2">
+                                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${effectiveIsAdmin ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                                        {effectiveIsAdmin ? 'Admin' : 'Member'}
                                     </span>
-                                  )}
+                                      {/* Optional: Add admin toggle switch here if needed, similar to previous logic */} 
+                                    </div>
                                 </div>
                                 
-                                <div className="grid grid-cols-2 gap-4">
-                                  {(Object.entries({
-                                    view_projects: 'View Projects',
-                                    edit_projects: 'Edit Projects',
-                                    view_customers: 'View Customers',
-                                    edit_customers: 'Edit Customers',
-                                    view_invoices: 'View Invoices',
-                                    view_calendar: 'View Calendar',
-                                    view_analytics: 'View Analytics',
-                                    view_domains: 'View Domains',
-                                    edit_domains: 'Edit Domains'
-                                  }) as [PermissionKey, string][]).map(([key, label]) => (
-                                    <div key={key} className="flex items-center justify-between p-3 rounded-md bg-neutral-800 border border-neutral-700">
-                                      <div className="flex items-center space-x-3">
+                                  {/* Use permissionGroups for rendering */}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
+                                    {permissionGroups.map((group) => (
+                                      <div key={group.title} className="space-y-3">
+                                        <h5 className="text-sm font-semibold text-muted-foreground mb-2">{group.title}</h5>
+                                        {group.permissions.map((perm) => (
+                                          <div key={perm.key} className="flex items-center space-x-2">
                                         <Checkbox
-                                          id={`${member.id}-${key}`}
-                                          checked={member.permissions?.[key] ?? false}
+                                              id={`${member.id}-${perm.key}`}
+                                              checked={effectiveIsAdmin || !!member.permissions?.[perm.key as PermissionKey]}
                                           onCheckedChange={async (checked) => {
-                                            if (!isAdmin) {
-                                              toast.error('You must be an admin to update permissions');
+                                                if (!isAdmin && !isWorkspaceOwner()) { // Check both admin prop and owner status
+                                                  toast.error('You must be an admin or owner to update permissions');
                                               return;
                                             }
                                             
-                                            // Show toast for immediate feedback
                                             toast.promise(
                                               (async () => {
-                                                console.log('Updating permission:', {
-                                                  memberId: member.id,
-                                                  key,
-                                                  currentValue: member.permissions?.[key],
-                                                  newValue: checked,
-                                                  isAdmin
-                                                });
-                                                
-                                                // Create updated permissions object
                                                 const updatedPermissions = {
                                                   ...member.permissions,
-                                                  [key]: checked
-                                                };
-                                                
-                                                // Immediately update the database
-                                                const { error } = await supabase
-                                                  .from('team_members')
-                                                  .update({ permissions: updatedPermissions })
-                                                  .eq('id', member.id);
-                                                
-                                                if (error) throw error;
-                                                
-                                                // Update local state to avoid refetching
-                                                const updatedMembers = teamMembers.map(m => 
-                                                  m.id === member.id 
-                                                    ? { ...m, permissions: updatedPermissions } 
-                                                    : m
-                                                );
-                                                setTeamMembers(updatedMembers);
-                                                
-                                                return 'Permissions updated';
+                                                      [perm.key]: checked,
+                                                    };
+                                                    await handleUpdatePermissions(member.id, updatedPermissions);
+                                                    return 'Permissions updated'; // Return value needed for promise
                                               })(),
                                               {
                                                 loading: 'Updating permission...',
@@ -1000,20 +1082,23 @@ export default function TeamPage() {
                                               }
                                             );
                                           }}
-                                          disabled={!isAdmin || member.is_admin}
+                                              disabled={effectiveIsAdmin} // Disable for admins/owners
+                                              aria-label={`Toggle ${perm.label} for ${member.email}`}
                                         />
                                         <label 
-                                          htmlFor={`${member.id}-${key}`}
-                                          className="text-sm text-neutral-300 select-none cursor-pointer"
+                                              htmlFor={`${member.id}-${perm.key}`}
+                                              className="text-sm font-medium leading-none text-neutral-300 peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                                         >
-                                          {label}
+                                              {perm.label}
                                         </label>
                                       </div>
+                                        ))}
                                     </div>
                                   ))}
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       </Card>

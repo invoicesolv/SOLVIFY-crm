@@ -13,6 +13,8 @@ interface CronJob {
   id: string;
   job_type: string;
   status: string;
+  execution_status: string;
+  error_message?: string;
   last_run: string | null;
   next_run: string;
   settings: {
@@ -45,7 +47,14 @@ export default function CronJobsPage() {
 
       if (error) throw error;
 
-      setCronJobs(data || []);
+      // Format the jobs with proper defaults
+      const formattedJobs = (data || []).map(job => ({
+        ...job,
+        status: job.status || 'pending',
+        execution_status: job.execution_status || (job.last_run ? 'success' : 'pending')
+      }));
+      
+      setCronJobs(formattedJobs);
     } catch (error) {
       console.error('Error loading cron jobs:', error);
       toast.error('Failed to load scheduled tasks');
@@ -60,8 +69,38 @@ export default function CronJobsPage() {
         return 'bg-green-500/10 text-green-400';
       case 'disabled':
         return 'bg-neutral-700/50 text-neutral-400';
+      case 'pending':
+        return 'bg-yellow-500/10 text-yellow-400';
       default:
         return 'bg-neutral-700/50 text-neutral-400';
+    }
+  };
+
+  const getExecutionStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'success':
+        return 'bg-green-500/10 text-green-400';
+      case 'failed':
+        return 'bg-red-500/10 text-red-400';
+      case 'running':
+        return 'bg-blue-500/10 text-blue-400';
+      case 'pending':
+        return 'bg-yellow-500/10 text-yellow-400';
+      default:
+        return 'bg-neutral-700/50 text-neutral-400';
+    }
+  };
+
+  const formatStatus = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'active':
+        return 'Active';
+      case 'disabled':
+        return 'Disabled';
+      case 'pending':
+        return 'Pending';
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
     }
   };
 
@@ -105,8 +144,16 @@ export default function CronJobsPage() {
                         {job.job_type === 'analytics_report' ? 'Analytics Report' : job.job_type}
                       </h3>
                       <span className={`text-xs px-2 py-1 rounded ${getStatusColor(job.status)}`}>
-                        {job.status}
+                        {formatStatus(job.status)}
                       </span>
+                      {job.execution_status && (
+                        <span className={`text-xs px-2 py-1 rounded ${getExecutionStatusColor(job.execution_status)}`}>
+                          {formatStatus(job.execution_status)}
+                          {job.error_message && 
+                            <span className="ml-1 cursor-help" title={job.error_message}>⚠️</span>
+                          }
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm text-neutral-400">
                       Property ID: {job.property_id}

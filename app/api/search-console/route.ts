@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/auth-options';
+import authOptions from "@/lib/auth";
 import { supabase } from '@/lib/supabase';
+
+export const dynamic = 'force-dynamic';
 
 interface SearchConsoleData {
   overview: {
@@ -58,6 +60,18 @@ interface SearchConsoleData {
       top100: number;
     };
   };
+}
+
+interface SearchConsoleResult {
+  overview: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  };
+  topQueries: any[];
+  byDevice: {[key: string]: { clicks: number; impressions: number }};
+  byCountry: {[key: string]: { clicks: number; impressions: number }};
 }
 
 // Add helper function for date formatting
@@ -161,7 +175,7 @@ export async function POST(request: NextRequest) {
     }
 
     // If siteUrl is provided, fetch search data
-    let searchData = null;
+    let searchData: SearchConsoleResult | null = null;
     if (siteUrl) {
       try {
         console.log('[Search Console API] Fetching search data for site:', siteUrl);
@@ -219,7 +233,7 @@ async function fetchSearchConsoleSites(accessToken: string) {
   })) || [];
 }
 
-async function fetchSearchConsoleData(accessToken: string, startDate: string, endDate: string, siteUrl: string) {
+async function fetchSearchConsoleData(accessToken: string, startDate: string, endDate: string, siteUrl: string): Promise<SearchConsoleResult> {
   try {
     console.log('[Search Console API] Fetching search data:', { siteUrl, startDate, endDate });
 

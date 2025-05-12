@@ -10,7 +10,7 @@ import time
 app = Flask(__name__)
 CORS(app, 
      resources={r"/*": {
-         "origins": ["http://localhost:3000", "http://localhost:3001"],
+         "origins": ["https://crm.solvify.se"],
          "methods": ["GET", "POST", "OPTIONS"],
          "allow_headers": ["Content-Type", "Authorization"],
          "supports_credentials": True,
@@ -224,7 +224,7 @@ def oauth_callback():
             save_to_supabase(token_data)
             print("Token saved to Supabase")
             
-            return redirect('http://localhost:3000/fortnox')
+            return redirect('https://crm.solvify.se/fortnox')
         else:
             print(f"Token request failed: {token_data}")
             return jsonify(token_data), response.status_code

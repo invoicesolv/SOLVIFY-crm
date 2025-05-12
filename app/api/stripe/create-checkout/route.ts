@@ -1,7 +1,26 @@
 import { NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/auth-options'
+import authOptions from "@/lib/auth";
+
+export const dynamic = 'force-dynamic';
+
+// Define the Session user type with expected properties
+interface SessionUser {
+  id?: string;
+  name?: string;
+  email?: string;
+  image?: string;
+}
+
+// Extend the Session type
+declare module "next-auth" {
+  interface Session {
+    user: SessionUser;
+    access_token: string;
+    refresh_token: string;
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -41,11 +60,11 @@ export async function POST(req: Request) {
             quantity: 1,
           },
         ],
-        success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/dashboard?payment=success`,
-        cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/dashboard?payment=canceled`,
+        success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001'}/dashboard?payment=success`,
+        cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001'}/dashboard?payment=canceled`,
         customer_email: session.user.email || undefined,
         metadata: {
-          userId: session.user.id,
+          userId: session.user.id || 'anonymous', // Provide a default value for undefined
         },
       })
       

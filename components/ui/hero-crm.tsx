@@ -6,22 +6,41 @@ import { Mockup, MockupFrame } from "@/components/ui/mockup";
 import { Glow } from "@/components/ui/glow";
 import { ArrowRight, BarChart2, Users, PieChart, Activity } from "lucide-react";
 import { motion } from "framer-motion";
-import { DashboardPreview } from "@/components/ui/dashboard-preview";
+import Image from "next/image";
 
 interface HeroCRMProps {
   title?: string;
   subtitle?: string;
   ctaText?: string;
   ctaHref?: string;
+  lang?: 'en' | 'sv';
 }
 
 export function HeroCRM({
-  title = "Welcome back to your Dashboard",
-  subtitle = "Track your business performance and customer insights in real-time",
-  ctaText = "Get Started",
+  title,
+  subtitle,
+  ctaText,
   ctaHref = "/login",
+  lang = 'en'
 }: HeroCRMProps) {
   const [mounted, setMounted] = useState(false);
+  const isSwedish = lang === 'sv';
+
+  // Default texts based on language
+  const defaultTitle = isSwedish 
+    ? "8 verktyg i 1: Slipp flera prenumerationer" 
+    : "8 Tools in 1: Ditch the Multiple Subscriptions";
+  
+  const defaultSubtitle = isSwedish
+    ? "Den kompletta affärslösningen som ersätter din fragmenterade mjukvarustack och sparar tusentals kronor per år"
+    : "The all-in-one business solution that replaces your fragmented software stack while saving thousands per year";
+  
+  const defaultCtaText = isSwedish ? "Kom igång" : "Get Started";
+  
+  // Use provided values or defaults
+  const displayTitle = title || defaultTitle;
+  const displaySubtitle = subtitle || defaultSubtitle;
+  const displayCtaText = ctaText || defaultCtaText;
 
   useEffect(() => {
     setMounted(true);
@@ -40,36 +59,42 @@ export function HeroCRM({
     }),
   };
 
-  const floatingElements = [
+  const replacedSoftware = [
     { 
-      icon: <BarChart2 className="h-5 w-5 text-blue-400" />, 
-      label: "Revenue", 
-      value: "+24%",
-      position: "top-[20%] left-[10%]",
-      delay: 0.5
+      name: "Slack", 
+      category: isSwedish ? "Kommunikation" : "Communication", 
+      logo: "/logos/slack.png"
     },
     { 
-      icon: <Users className="h-5 w-5 text-indigo-400" />, 
-      label: "Customers", 
-      value: "2,834",
-      position: "top-[15%] right-[15%]",
-      delay: 0.7
+      name: "Asana", 
+      category: isSwedish ? "Projekthantering" : "Project Management", 
+      logo: "/logos/asana.png"
     },
     { 
-      icon: <PieChart className="h-5 w-5 text-cyan-400" />, 
-      label: "Conversion", 
-      value: "12.5%",
-      position: "bottom-[25%] left-[15%]",
-      delay: 0.9
+      name: "Notion", 
+      category: isSwedish ? "Dokumentation" : "Documentation", 
+      logo: "/logos/notion.png"
     },
     { 
-      icon: <Activity className="h-5 w-5 text-blue-500" />, 
-      label: "Activity", 
-      value: "High",
-      position: "bottom-[20%] right-[10%]",
-      delay: 1.1
+      name: "Teams", 
+      category: isSwedish ? "Samarbete" : "Collaboration", 
+      logo: "/logos/teams.png"
     },
+    { 
+      name: "Salesforce", 
+      category: "CRM", 
+      logo: "/logos/salesforce.png"
+    },
+    { 
+      name: "Atlassian", 
+      category: isSwedish ? "Projekthantering" : "Project Management", 
+      logo: "/logos/atlassian.png"
+    }
   ];
+
+  const replaceText = isSwedish ? "Ersätt alla dessa" : "Replace all of these";
+  const withText = isSwedish ? "med" : "with";
+  const solutionBadgeText = isSwedish ? "Komplett Affärslösning" : "All-In-One Business Solution";
 
   return (
     <section className="relative bg-neutral-950 text-white overflow-hidden min-h-screen flex flex-col items-center justify-center py-16 px-4 pt-32">
@@ -77,7 +102,7 @@ export function HeroCRM({
       <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-neutral-950 to-indigo-900/20 pointer-events-none" />
       
       <div className="relative z-10 container mx-auto max-w-7xl">
-        <div className="flex flex-col items-center text-center mb-12">
+        <div className="flex flex-col items-center text-center mb-8">
           {/* Badge */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -87,7 +112,7 @@ export function HeroCRM({
           >
             <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
             <span className="text-sm text-blue-300 tracking-wide">
-              Next-Gen CRM Solution
+              {solutionBadgeText}
             </span>
           </motion.div>
 
@@ -99,7 +124,7 @@ export function HeroCRM({
             animate="visible"
             className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 max-w-4xl"
           >
-            {title}
+            {displayTitle}
           </motion.h1>
 
           {/* Subtitle */}
@@ -110,8 +135,52 @@ export function HeroCRM({
             animate="visible"
             className="text-lg md:text-xl text-neutral-400 mb-8 max-w-2xl"
           >
-            {subtitle}
+            {displaySubtitle}
           </motion.p>
+
+          {/* "Replace all of these" section */}
+          <motion.div
+            custom={1.5}
+            variants={fadeUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="mb-10 w-full max-w-6xl"
+          >
+            <div className="text-2xl md:text-3xl font-bold text-white mb-12">
+              {replaceText}
+            </div>
+            
+            <div className="relative px-2">
+              {/* Software logos with strikethrough */}
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-4 items-center">
+                {replacedSoftware.map((software, index) => (
+                  <div 
+                    key={index} 
+                    className="relative bg-neutral-900 border border-neutral-800 rounded-xl p-4 flex flex-col items-center justify-center h-[180px]"
+                  >
+                    <div className="relative w-20 h-20 mb-3 flex items-center justify-center">
+                      <Image
+                        src={software.logo}
+                        alt={software.name}
+                        fill
+                        style={{ objectFit: software.name === "Atlassian" ? "contain" : "contain" }}
+                        className="p-1"
+                      />
+                    </div>
+                    <p className="text-lg font-medium text-white">{software.name}</p>
+                    <p className="text-sm text-neutral-400">{software.category}</p>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Red strikethrough line - positioned absolutely to cross all logos */}
+              <div className="absolute top-1/2 left-0 right-0 h-3 bg-red-600 transform -translate-y-1/2 -rotate-[2deg]"></div>
+            </div>
+            
+            <div className="text-2xl md:text-3xl font-bold text-white mt-16 mb-8">
+              {withText}
+            </div>
+          </motion.div>
 
           {/* CTA Button */}
           <motion.div
@@ -121,13 +190,13 @@ export function HeroCRM({
             animate="visible"
           >
             <Button
-              size="default"
+              size="lg"
               asChild
-              className="bg-primary/10 hover:bg-primary/20 border border-primary/20 text-white px-6 py-2 h-10 text-base group"
+              className="bg-primary hover:bg-primary/90 text-white px-8 py-6 h-12 text-lg font-medium group"
             >
               <a href={ctaHref}>
-                {ctaText}
-                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                {displayCtaText}
+                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </a>
             </Button>
           </motion.div>
@@ -227,8 +296,6 @@ export function HeroCRM({
                       </div>
                     </div>
                   </div>
-                  
-                  {/* Remove floating elements since we have the metrics directly in the dashboard */}
                 </div>
               )}
             </Mockup>

@@ -20,38 +20,38 @@ interface FeaturesSectionProps {
 
 // Features Section
 export function FeaturesSection({ 
-  title = "Powerful Features for Your Business",
-  subtitle = "Our CRM is packed with features to help you manage customers, track sales, and grow your business.",
+  title = "Replace 8 Different Software Tools With One Solution",
+  subtitle = "Vibe CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
   features = [
     {
-      title: "Customer Management",
-      description: "Organize and track all your customer interactions in one place.",
-      icon: "👥",
+      title: "CRM & Sales Pipeline",
+      description: "Replaces Salesforce & HubSpot with powerful lead management and sales tracking.",
+      icon: "💼",
     },
     {
-      title: "Sales Pipeline",
-      description: "Visualize and optimize your sales process from lead to close.",
-      icon: "📊",
-    },
-    {
-      title: "Analytics Dashboard",
-      description: "Get real-time insights into your business performance.",
-      icon: "📈",
-    },
-    {
-      title: "Task Management",
-      description: "Assign and track tasks to ensure nothing falls through the cracks.",
+      title: "Project Management",
+      description: "Replaces Asana & Monday.com with intuitive task tracking and team collaboration.",
       icon: "✅",
     },
     {
-      title: "Email Integration",
-      description: "Connect your email to track all customer communications.",
+      title: "Financial Management",
+      description: "Replaces QuickBooks & FreshBooks with invoicing, billing and financial reporting.",
+      icon: "💰",
+    },
+    {
+      title: "Email Marketing",
+      description: "Replaces Mailchimp & Constant Contact with integrated email campaign tools.",
       icon: "📧",
     },
     {
-      title: "Mobile Access",
-      description: "Access your CRM from anywhere with our mobile-friendly design.",
-      icon: "📱",
+      title: "Analytics Dashboard",
+      description: "Get comprehensive insights into all aspects of your business in one place.",
+      icon: "📈",
+    },
+    {
+      title: "Domain & Lead Management",
+      description: "Track domains, capture leads, and convert prospects all in one system.",
+      icon: "🌐",
     },
   ]
 }: FeaturesSectionProps) {
@@ -92,12 +92,12 @@ interface AboutSectionProps {
 
 // About Section
 export function AboutSection({ 
-  title = "About Solvify",
-  subtitle = "We're on a mission to help businesses grow through better customer relationships.",
+  title = "About Vibe CRM",
+  subtitle = "We're on a mission to help businesses grow by eliminating software fragmentation.",
   content = [
-    "Solvify was founded in 2020 with a simple goal: to create a CRM that people actually want to use. We believe that customer relationship management software should be intuitive, powerful, and enjoyable to use.",
-    "Our team of experienced developers and designers has worked tirelessly to create a platform that streamlines your workflow, provides valuable insights, and helps you build stronger relationships with your customers.",
-    "We're proud to serve businesses of all sizes, from startups to enterprise organizations, across a wide range of industries. Our commitment to continuous improvement means we're always adding new features and refining existing ones based on customer feedback."
+    "Vibe CRM was founded with a clear vision: to end the era of disconnected business tools. We were tired of seeing businesses juggle 8+ different subscriptions, wasting time switching between platforms, and losing critical data in the gaps.",
+    "Our team of experienced developers and designers has created an all-in-one platform that consolidates CRM, project management, invoicing, email marketing, analytics, and more into a single, cohesive solution that costs less than what you're currently paying for multiple tools.",
+    "Businesses using Vibe CRM report saving an average of $12,000 per year in software costs while increasing productivity by eliminating context switching between applications. Join the growing number of companies simplifying their tech stack with our unified platform."
   ]
 }: AboutSectionProps) {
   return (
@@ -192,18 +192,18 @@ export function ContactSection({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
                 <h3 className="text-xl font-semibold text-white mb-4">
-                  {language === 'en' ? 'Contact Information' : 'Kontaktinformation'}
+                  Contact Information
                 </h3>
                 <div className="space-y-4 text-neutral-300">
                   <p>Email: {currentContactInfo.email}</p>
-                  <p>{language === 'en' ? 'Phone' : 'Telefon'}: {currentContactInfo.phone}</p>
-                  <p>{language === 'en' ? 'Address' : 'Adress'}: {currentContactInfo.address}</p>
-                  <p>{language === 'en' ? 'Hours' : 'Öppettider'}: {currentContactInfo.hours}</p>
+                  <p>Phone: {currentContactInfo.phone}</p>
+                  <p>Address: {currentContactInfo.address}</p>
+                  <p>Hours: {currentContactInfo.hours}</p>
                 </div>
                 
                 <div className="mt-8">
                   <h4 className="text-lg font-medium text-white mb-3">
-                    {language === 'en' ? 'Follow Us' : 'Följ Oss'}
+                    Follow Us
                   </h4>
                   <div className="flex space-x-4">
                     <a href="#" className="text-neutral-400 hover:text-white transition-colors">
@@ -221,7 +221,7 @@ export function ContactSection({
               
               <div>
                 <h3 className="text-xl font-semibold text-white mb-4">
-                  {language === 'en' ? 'Send Us a Message' : 'Skicka ett Meddelande'}
+                  Send Us a Message
                 </h3>
                 <form className="space-y-4">
                   <div>
@@ -287,14 +287,14 @@ interface FooterProps {
 
 // Footer
 export function Footer({ 
-  description = "Powerful CRM solutions for businesses of all sizes. Streamline your workflow and build better customer relationships.",
+  description = "Vibe CRM: The all-in-one solution that replaces 8+ separate business tools. Save money, streamline workflows, and eliminate software fragmentation.",
   links = {
     product: {
       title: "Product",
       items: [
         { label: "Features", href: "#features" },
         { label: "Pricing", href: "#pricing" },
-        { label: "Integrations", href: "#" },
+        { label: "Software We Replace", href: "#features" },
         { label: "Updates", href: "#" }
       ]
     },
@@ -302,8 +302,8 @@ export function Footer({
       title: "Company",
       items: [
         { label: "About", href: "#about" },
-        { label: "Careers", href: "#" },
-        { label: "Blog", href: "#" },
+        { label: "Testimonials", href: "#" },
+        { label: "Case Studies", href: "#" },
         { label: "Contact", href: "#contact" }
       ]
     },
@@ -319,29 +319,27 @@ export function Footer({
   }
 }: FooterProps) {
   return (
-    <footer className="bg-neutral-950 py-12 border-t border-neutral-800">
-      <div className="container mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div>
-            <div className="mb-4">
-              <img 
-                src="/Solvify-logo-WTE.png" 
-                alt="Solvify" 
-                className="h-8 object-contain"
-              />
+    <footer className="bg-neutral-900 py-16 px-4">
+      <div className="container mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+          <div className="md:col-span-1">
+            <div className="flex items-center space-x-2 mb-4">
+              <div className="w-6 h-6 rounded-full bg-blue-500"></div>
+              <span className="text-white font-bold text-xl">Vibe CRM</span>
             </div>
-            <p className="text-neutral-400 text-sm">
-              {description}
-            </p>
+            <p className="text-neutral-400 mb-4">{description}</p>
           </div>
           
           <div>
-            <h4 className="text-white font-medium mb-4">{links.product.title}</h4>
-            <ul className="space-y-2">
-              {links.product.items.map((item, index) => (
-                <li key={index}>
-                  <a href={item.href} className="text-neutral-400 hover:text-white transition-colors text-sm">
-                    {item.label}
+            <h3 className="font-semibold text-white mb-4">{links.product.title}</h3>
+            <ul className="space-y-3">
+              {links.product.items.map((link, i) => (
+                <li key={i}>
+                  <a 
+                    href={link.href} 
+                    className="text-neutral-400 hover:text-white transition-colors"
+                  >
+                    {link.label}
                   </a>
                 </li>
               ))}
@@ -349,12 +347,15 @@ export function Footer({
           </div>
           
           <div>
-            <h4 className="text-white font-medium mb-4">{links.company.title}</h4>
-            <ul className="space-y-2">
-              {links.company.items.map((item, index) => (
-                <li key={index}>
-                  <a href={item.href} className="text-neutral-400 hover:text-white transition-colors text-sm">
-                    {item.label}
+            <h3 className="font-semibold text-white mb-4">{links.company.title}</h3>
+            <ul className="space-y-3">
+              {links.company.items.map((link, i) => (
+                <li key={i}>
+                  <a 
+                    href={link.href} 
+                    className="text-neutral-400 hover:text-white transition-colors"
+                  >
+                    {link.label}
                   </a>
                 </li>
               ))}
@@ -362,12 +363,15 @@ export function Footer({
           </div>
           
           <div>
-            <h4 className="text-white font-medium mb-4">{links.legal.title}</h4>
-            <ul className="space-y-2">
-              {links.legal.items.map((item, index) => (
-                <li key={index}>
-                  <a href={item.href} className="text-neutral-400 hover:text-white transition-colors text-sm">
-                    {item.label}
+            <h3 className="font-semibold text-white mb-4">{links.legal.title}</h3>
+            <ul className="space-y-3">
+              {links.legal.items.map((link, i) => (
+                <li key={i}>
+                  <a 
+                    href={link.href} 
+                    className="text-neutral-400 hover:text-white transition-colors"
+                  >
+                    {link.label}
                   </a>
                 </li>
               ))}
@@ -375,11 +379,11 @@ export function Footer({
           </div>
         </div>
         
-        <div className="border-t border-neutral-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-neutral-500 text-sm">
-            © {new Date().getFullYear()} Solvify. All rights reserved.
+        <div className="border-t border-neutral-800 pt-8 flex flex-col md:flex-row justify-between items-center">
+          <p className="text-neutral-500 text-sm mb-4 md:mb-0">
+            © 2023 Vibe CRM. All rights reserved.
           </p>
-          <div className="flex space-x-6 mt-4 md:mt-0">
+          <div className="flex space-x-6">
             <a href="#" className="text-neutral-500 hover:text-white transition-colors">
               Twitter
             </a>
@@ -388,6 +392,9 @@ export function Footer({
             </a>
             <a href="#" className="text-neutral-500 hover:text-white transition-colors">
               Facebook
+            </a>
+            <a href="#" className="text-neutral-500 hover:text-white transition-colors">
+              Instagram
             </a>
           </div>
         </div>

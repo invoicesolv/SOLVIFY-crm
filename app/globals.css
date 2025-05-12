@@ -22,6 +22,18 @@
   }
 }
 
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 @keyframes appear {
   from {
     opacity: 0;
@@ -42,12 +54,35 @@
   }
 }
 
+/* Glow Animation for Email Popup */
+@keyframes glow-pulse {
+  0% {
+    opacity: 0.3;
+    box-shadow: 0 0 5px 0px rgba(139, 92, 246, 0.3),
+                0 0 20px 0px rgba(139, 92, 246, 0.2);
+  }
+  50% {
+    opacity: 0.5;
+    box-shadow: 0 0 10px 2px rgba(139, 92, 246, 0.5),
+                0 0 30px 5px rgba(139, 92, 246, 0.3);
+  }
+  100% {
+    opacity: 0.3;
+    box-shadow: 0 0 5px 0px rgba(139, 92, 246, 0.3),
+                0 0 20px 0px rgba(139, 92, 246, 0.2);
+  }
+}
+
 .animate-fade-in {
   animation: fade-in 0.3s ease-out forwards;
 }
 
 .animate-bounce {
   animation: bounce 1s ease-in-out infinite;
+}
+
+.animate-gradient {
+  animation: gradient 6s linear infinite;
 }
 
 /* Custom Scrollbar Styles */
@@ -114,6 +149,7 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+    --black: #000; /* Added for GlowingEffect */
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -140,6 +176,7 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+    --black: #000; /* Added for GlowingEffect */
   }
 }
 
@@ -150,4 +187,247 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Remove redundant border in projects page */
+.bg-card {
+  background-color: transparent !important;
+  border: none !important;
+}
+
+/* Hide the second border in the projects page */
+.projects-page tr:last-child + div > hr,
+.projects-page > div:last-child > hr,
+.projects-page + hr,
+.projects-page tbody + hr {
+  display: none !important;
+}
+
+/* Enhanced Glowing effect styles */
+.glow-container {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  pointer-events: none !important;
+}
+
+.glow-effect {
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.6), rgba(67, 56, 202, 0.6), rgba(109, 40, 217, 0.6));
+  background-size: 400% 400%;
+  animation: gradient 8s ease infinite;
+  filter: blur(10px);
+  opacity: 0.4;
+  pointer-events: none !important;
+}
+
+.glow-border {
+  position: relative;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  pointer-events: none !important;
+}
+
+.glow-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.7), rgba(79, 70, 229, 0.7));
+  border-radius: inherit;
+  animation: glow-pulse 3s ease-in-out infinite;
+  pointer-events: none !important;
+}
+
+.glow-shadow {
+  box-shadow: 0 0 15px 0px rgba(139, 92, 246, 0.3), 
+              0 0 30px 0px rgba(139, 92, 246, 0.1);
+  animation: glow-pulse 4s ease-in-out infinite;
+  pointer-events: none !important;
+}
+
+.glow-text {
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.5);
+}
+
+.glow-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.glow-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.3), rgba(79, 70, 229, 0.3));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none !important;
+}
+
+.glow-button:hover::after {
+  opacity: 1;
+}
+
+/* Ensure proper pointer events for glowing effect elements */
+.glow, 
+.glow-effect, 
+.glow-border::before,
+.glow-container,
+.glow-button::after,
+.glow-shadow {
+  pointer-events: none !important;
+}
+
+/* Enhance cursor detection for glowing effect */
+* {
+  --cursor-x: 0px;
+  --cursor-y: 0px;
+}
+
+/* Ensure overflow is properly handled for the glowing effect */
+.overflow-hidden {
+  overflow: hidden !important;
+  isolation: isolate;
+}
+
+/* Custom styling for email content */
+.custom-html-content {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  line-height: 1.6;
+  color: #e2e2e2;
+}
+
+.custom-html-content a {
+  color: #a78bfa;
+  text-decoration: underline;
+}
+
+.custom-html-content pre,
+.custom-html-content code {
+  font-family: 'Roboto Mono', monospace;
+  background-color: #1e1e1e;
+  border-radius: 0.25rem;
+  padding: 0.25rem;
+}
+
+.custom-html-content h1,
+.custom-html-content h2,
+.custom-html-content h3,
+.custom-html-content h4,
+.custom-html-content h5,
+.custom-html-content h6 {
+  color: #ffffff;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.custom-html-content p {
+  margin-bottom: 1rem;
+}
+
+.custom-html-content ul,
+.custom-html-content ol {
+  margin-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.custom-html-content li {
+  margin-bottom: 0.25rem;
+}
+
+.custom-html-content blockquote {
+  border-left: 3px solid #6d28d9;
+  padding-left: 1rem;
+  margin-left: 0;
+  margin-right: 0;
+  font-style: italic;
+  color: #a8a8a8;
+}
+
+.custom-html-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.25rem;
+}
+
+.custom-html-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.custom-html-content th,
+.custom-html-content td {
+  border: 1px solid #393939;
+  padding: 0.5rem;
+}
+
+.custom-html-content th {
+  background-color: #2e2e2e;
+  font-weight: 600;
+}
+
+/* Font improvements across app */
+body, input, textarea, button {
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Blog specific styles to ensure proper text visibility */
+.blog-content h1,
+.blog-content h2,
+.blog-content h3,
+.blog-content h4,
+.blog-content h5,
+.blog-content h6 {
+  color: white !important;
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
+  font-weight: 700;
+}
+
+.blog-content h1 {
+  font-size: 2em;
+}
+
+.blog-content h2 {
+  font-size: 1.75em;
+}
+
+.blog-content h3 {
+  font-size: 1.5em;
+}
+
+.blog-content p,
+.blog-content li,
+.blog-content blockquote {
+  color: #e5e5e5 !important;
+  margin-bottom: 1em;
+}
+
+.blog-content a {
+  color: #3b82f6 !important;
+  text-decoration: underline;
+}
+
+.blog-content strong {
+  color: white !important;
+  font-weight: 700;
+}
+
+.blog-content table {
+  color: white !important;
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1.5em;
+}
+
+.blog-content th,
+.blog-content td {
+  border: 1px solid #404040;
+  padding: 0.5em;
+  text-align: left;
 } 

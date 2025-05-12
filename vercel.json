@@ -1,4 +1,7 @@
 {
-  "buildCommand": "npm run build",
-  "framework": "nextjs"
+  "functions": {
+    "app/api/generate-content/route.ts": {
+      "maxDuration": 60
+    }
+  }
 } 

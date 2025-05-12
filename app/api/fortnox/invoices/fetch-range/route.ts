@@ -1,0 +1,262 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { getServerSession } from 'next-auth';
+import authOptions from '@/lib/auth';
+
+// Fortnox API URL
+const BASE_API_URL = 'https://api.fortnox.se/3/';
+
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Helper to load token from Supabase
+async function loadTokenFromSupabase(userId: string) {
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    console.error('Cannot load token: Supabase client not initialized');
+    return null;
+  }
+  
+  try {
+    console.log(`Attempting to load Fortnox token for user ID: ${userId}`);
+    const { data, error } = await supabaseAdmin
+      .from('settings')
+      .select('*')
+      .eq('service_name', 'fortnox')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error) {
+      console.error('Error retrieving Fortnox token from database:', error.message);
+      return null;
+    }
+    
+    if (!data) {
+      console.error('No Fortnox token found for user');
+      return null;
+    }
+    
+    // Try to get tokens from direct columns first, then from settings_data as fallback
+    let accessToken = data.access_token;
+    let refreshToken = data.refresh_token;
+    let expiresAt = data.expires_at;
+    
+    // If not in direct columns, try to get from settings_data
+    if ((!accessToken || !refreshToken) && data.settings_data) {
+      console.log('Tokens not found in direct columns, checking settings_data');
+      
+      if (typeof data.settings_data === 'string') {
+        try {
+          // If settings_data is stored as string, parse it
+          const settingsData = JSON.parse(data.settings_data);
+          accessToken = accessToken || settingsData.access_token;
+          refreshToken = refreshToken || settingsData.refresh_token;
+          expiresAt = expiresAt || settingsData.expires_at;
+        } catch (e) {
+          console.error('Failed to parse settings_data string:', e);
+        }
+      } else if (typeof data.settings_data === 'object' && data.settings_data !== null) {
+        // If settings_data is already an object
+        accessToken = accessToken || data.settings_data.access_token;
+        refreshToken = refreshToken || data.settings_data.refresh_token;
+        expiresAt = expiresAt || data.settings_data.expires_at;
+      }
+    }
+    
+    console.log(`Fortnox token found. Access token: ${accessToken ? 'present' : 'missing'}`);
+    
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_at: expiresAt
+    };
+  } catch (e) {
+    console.error('Error loading token from Supabase:', e);
+    return null;
+  }
+}
+
+// Helper function to fetch invoices for a date range
+async function fetchInvoicesForRange(tokenData: any, startDate: string, endDate: string) {
+  if (!tokenData || !tokenData.access_token) {
+    console.error('No valid token provided to fetchInvoices');
+    throw new Error('No valid token provided');
+  }
+  
+  console.log(`Fetching invoices from ${startDate} to ${endDate} with access token`);
+  
+  try {
+    // Construct the URL with the date range
+    const baseUrl = `${BASE_API_URL}invoices?fromdate=${startDate}&todate=${endDate}`;
+    
+    // Use pagination to fetch all invoices
+    const allInvoices: any[] = [];
+    let page = 1;
+    let hasMorePages = true;
+    const pageSize = 500; // Larger page size to reduce API calls
+    
+    while (hasMorePages) {
+      const url = `${baseUrl}&limit=${pageSize}&page=${page}`;
+      console.log(`Calling Fortnox API with URL: ${url} (page ${page})`);
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${tokenData.access_token}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log(`Fortnox API response status for page ${page}: ${response.status}`);
+      
+      if (response.status === 200) {
+        const data = await response.json();
+        const pageInvoices = data.Invoices || [];
+        console.log(`Retrieved ${pageInvoices.length} invoices from page ${page}`);
+        
+        // Add this page's invoices to our collection
+        allInvoices.push(...pageInvoices);
+        
+        // Check if we've reached the last page
+        if (pageInvoices.length < pageSize) {
+          hasMorePages = false;
+          console.log(`End of invoices reached at page ${page}`);
+        } else {
+          page++;
+        }
+      } else {
+        // Try to get more information about the error
+        try {
+          const errorText = await response.text();
+          let errorDetails = errorText;
+          
+          // Try to parse as JSON if possible
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.ErrorInformation) {
+              errorDetails = `${errorJson.ErrorInformation.message} (Code: ${errorJson.ErrorInformation.code})`;
+            }
+          } catch (jsonErr) {
+            // Not JSON, use the text as is
+          }
+          
+          console.error(`Fortnox API error: ${response.status} - ${errorText}`);
+          throw new Error(`Fortnox API error: ${response.status} - ${errorDetails}`);
+        } catch (e) {
+          if (e instanceof Error && e.message.includes('Fortnox API error')) {
+            throw e; // Re-throw our custom error
+          }
+          console.error(`Could not parse error response: ${e}`);
+          throw new Error(`Fortnox API error: ${response.status}`);
+        }
+      }
+    }
+    
+    console.log(`Successfully retrieved a total of ${allInvoices.length} invoices from Fortnox`);
+    return allInvoices;
+  } catch (e) {
+    console.error('Error fetching invoices from Fortnox:', e);
+    throw e;
+  }
+}
+
+export async function GET(req: NextRequest) {
+  console.log('\n=== Fetching Fortnox Invoices by Date Range ===');
+  
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return NextResponse.json(
+      { error: 'Server configuration error: Supabase not initialized' }, 
+      { status: 500 }
+    );
+  }
+  
+  // Get parameters
+  const searchParams = req.nextUrl.searchParams;
+  const startDate = searchParams.get('startDate');
+  const endDate = searchParams.get('endDate');
+  
+  if (!startDate || !endDate) {
+    console.error('Missing required parameters: startDate or endDate');
+    return NextResponse.json(
+      { error: 'Missing required parameters: startDate and endDate are required' }, 
+      { status: 400 }
+    );
+  }
+  
+  // First try to get user ID from headers (for compatibility with frontend)
+  const workspaceId = req.headers.get('workspace-id');
+  const headerUserId = req.headers.get('user-id');
+  
+  // If headers don't have the user ID, try to get it from the session
+  let sessionUserId: string | undefined;
+  try {
+    const session = await getServerSession(authOptions);
+    sessionUserId = session?.user?.id;
+    console.log('Got user ID from session:', sessionUserId);
+  } catch (e) {
+    console.error('Error getting session:', e);
+  }
+  
+  // Final user ID to use
+  const finalUserId = headerUserId || sessionUserId;
+  
+  if (!finalUserId) {
+    console.error('No user ID found in headers or session');
+    return NextResponse.json({ error: 'Unauthorized: User not authenticated', details: 'Please log in or provide a user-id header' }, { status: 401 });
+  }
+  
+  console.log(`Processing request for user ID: ${finalUserId}`);
+  
+  try {
+    // Load Fortnox token
+    const tokenData = await loadTokenFromSupabase(finalUserId);
+    
+    if (!tokenData || !tokenData.access_token) {
+      console.error('No Fortnox token found for user');
+      return NextResponse.json(
+        { error: 'Not connected to Fortnox', tokenStatus: 'missing' }, 
+        { status: 401 }
+      );
+    }
+    
+    // Fetch invoices for the specified date range
+    const allInvoices = await fetchInvoicesForRange(tokenData, startDate, endDate);
+    console.log(`Total invoices fetched from Fortnox: ${allInvoices.length}`);
+    
+    // Format the invoices for response
+    const formattedInvoices = allInvoices.map(invoice => ({
+      DocumentNumber: invoice.DocumentNumber,
+      InvoiceDate: invoice.InvoiceDate,
+      CustomerName: invoice.CustomerName,
+      Total: parseFloat(invoice.Total) || 0,
+      Balance: parseFloat(invoice.Balance) || 0,
+      DueDate: invoice.DueDate,
+      Currency: invoice.Currency || 'SEK',
+      InvoiceType: invoice.InvoiceType || 'INVOICE',
+      PaymentWay: invoice.PaymentWay || 'BANK',
+      ExternalInvoiceReference1: invoice.ExternalInvoiceReference1 || ''
+    }));
+    
+    return NextResponse.json({
+      Invoices: formattedInvoices,
+      count: formattedInvoices.length
+    });
+  } catch (error) {
+    console.error('Error processing Fortnox invoices request:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Unknown error' }, 
+      { status: 500 }
+    );
+  }
+} 

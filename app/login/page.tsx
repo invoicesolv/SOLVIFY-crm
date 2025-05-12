@@ -2,15 +2,17 @@
 
 import { Suspense } from 'react'
 import { useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 import { cn } from "@/lib/utils"
+import Link from "next/link"
 
 function LoginContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get("callbackUrl") || "/"
+  const router = useRouter()
+  let callbackUrl = searchParams.get("callbackUrl") || "/"
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -23,6 +25,11 @@ function LoginContent() {
 
     try {
       console.log('Attempting to sign in with credentials:', { email });
+      
+      // Store the email in a cookie for debug purposes only
+      if (typeof document !== 'undefined' && email) {
+        document.cookie = `user_email=${email}; path=/; max-age=3600; SameSite=Lax`;
+      }
       
       const result = await signIn("credentials", {
         email,
@@ -37,8 +44,8 @@ function LoginContent() {
         setError(result.error);
         setLoading(false);
       } else if (result?.url) {
-        // Successful login, redirect
-        window.location.href = result.url;
+        // Successful login - use router instead of window.location for client-side navigation
+        router.push(result.url);
       } else {
         // Something unexpected happened
         setError("An unexpected error occurred");
@@ -57,7 +64,7 @@ function LoginContent() {
     
     try {
       await signIn("google", { 
-        callbackUrl: '/',
+        callbackUrl,
         redirect: true
       })
     } catch (error) {
@@ -150,6 +157,14 @@ function LoginContent() {
                 className="mt-1 block w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter your password"
               />
+              <div className="mt-2 text-right">
+                <Link 
+                  href="/auth/forgot-password"
+                  className="text-sm text-blue-500 hover:text-blue-400"
+                >
+                  Forgot password?
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -166,9 +181,9 @@ function LoginContent() {
 
         <p className="mt-4 text-center text-sm text-white/60">
           Don't have an account?{" "}
-          <a href="/register" className="font-medium text-blue-500 hover:text-blue-400">
+          <Link href="/register" className="font-medium text-blue-500 hover:text-blue-400">
             Sign up
-          </a>
+          </Link>
         </p>
       </div>
     </div>

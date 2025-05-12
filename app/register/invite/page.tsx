@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 
-export default function InviteRegisterPage() {
+function InviteRegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -254,5 +254,22 @@ export default function InviteRegisterPage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+export default function InviteRegisterPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">
+        <Card className="w-full max-w-md border-neutral-800 bg-neutral-900 p-8">
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-white"></div>
+            <p className="text-white">Loading...</p>
+          </div>
+        </Card>
+      </div>
+    }>
+      <InviteRegisterForm />
+    </Suspense>
   );
 } 

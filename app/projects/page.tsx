@@ -4,7 +4,9 @@ import { SidebarDemo } from "@/components/ui/code.demo";
 export default function ProjectsPage() {
   return (
     <SidebarDemo>
-      <ProjectsView />
+      <div className="projects-page">
+        <ProjectsView />
+      </div>
     </SidebarDemo>
   );
 } 

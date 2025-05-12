@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getStripeSession } from '@/lib/stripe'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '../../auth/[...nextauth]/auth-options'
+import authOptions from "@/lib/auth";
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   try {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -8,10 +8,10 @@ import { Card } from "@/components/ui/card";
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
-export default function Register() {
+function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -43,7 +43,7 @@ export default function Register() {
       setLoading(true);
       console.log('Verifying invitation with token:', token);
       
-      const { data: invitation, error } = await supabase
+      const { data: invitation, error } = await supabaseAdmin
         .from('invitations')
         .select('email, workspace_name, workspace_id, is_admin, permissions')
         .eq('token', token)
@@ -105,7 +105,7 @@ export default function Register() {
 
         if (isInvite && token && inviteDetails) {
           console.log('Linking existing user to team_members for token:', token);
-          const { data: teamData, error: teamError } = await supabase
+          const { data: teamData, error: teamError } = await supabaseAdmin
             .from('team_members')
             .upsert({
               user_id: (await supabase.auth.getUser()).data.user?.id,
@@ -119,7 +119,7 @@ export default function Register() {
           if (teamError) throw teamError;
 
           console.log('Updating invitation status for token:', token);
-          const { data: updateData, error: updateError } = await supabase
+          const { data: updateData, error: updateError } = await supabaseAdmin
             .from('invitations')
             .update({ status: 'accepted' })
             .eq('token', token);
@@ -128,7 +128,7 @@ export default function Register() {
         }
 
         toast.success('Logged in successfully! You can now access the workspace.');
-        router.push('/dashboard');
+        router.push('/');
       } else {
         console.log('User does not exist, attempting signup:', email);
         const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -149,7 +149,7 @@ export default function Register() {
 
         if (isInvite && token && inviteDetails) {
           console.log('Adding new user to team_members for token:', token);
-          const { data: teamData, error: teamError } = await supabase
+          const { data: teamData, error: teamError } = await supabaseAdmin
             .from('team_members')
             .insert({
               user_id: userId,
@@ -163,7 +163,7 @@ export default function Register() {
           if (teamError) throw teamError;
 
           console.log('Updating invitation status for token:', token);
-          const { data: updateData, error: updateError } = await supabase
+          const { data: updateData, error: updateError } = await supabaseAdmin
             .from('invitations')
             .update({ status: 'accepted' })
             .eq('token', token);
@@ -172,18 +172,18 @@ export default function Register() {
         } else {
           console.log('Creating default workspace for new user:', userId);
           const defaultWorkspaceId = uuidv4();
-          const { data: workspaceData, error: workspaceError } = await supabase
+          const { data: workspaceData, error: workspaceError } = await supabaseAdmin
             .from('workspaces')
             .insert({
               id: defaultWorkspaceId,
-              name: 'Default Workspace',
+              name: company ? company : (name ? `${name}'s Workspace` : 'My Workspace'),
               owner_id: userId,
             });
           console.log('Workspace insert result:', { workspaceData, workspaceError });
           if (workspaceError) throw workspaceError;
 
           console.log('Adding new user to team_members for default workspace:', defaultWorkspaceId);
-          const { data: teamData, error: teamError } = await supabase
+          const { data: teamData, error: teamError } = await supabaseAdmin
             .from('team_members')
             .insert({
               user_id: userId,
@@ -198,7 +198,7 @@ export default function Register() {
         }
 
         console.log('Logging user_registration event');
-        const { data: eventData, error: eventError } = await supabase
+        const { data: eventData, error: eventError } = await supabaseAdmin
           .from('event_tracking')
           .insert({
             event_type: 'user_registration',
@@ -280,7 +280,7 @@ export default function Register() {
                 type="password"
                 placeholder="••••••••"
                 value={confirmPassword}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
               />
@@ -334,5 +334,13 @@ export default function Register() {
         </form>
       </Card>
     </div>
+  );
+}
+
+export default function Register() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">Loading...</div>}>
+      <RegisterForm />
+    </Suspense>
   );
 }

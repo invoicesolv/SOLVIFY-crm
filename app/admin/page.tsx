@@ -127,7 +127,13 @@ export default function AdminPage() {
         .limit(10)
 
       if (users) {
-        setRecentUsers(users.map(user => ({
+        setRecentUsers(users.map((user: {
+          user_id: string;
+          name: string;
+          email: string;
+          company?: string;
+          created_at: string;
+        }) => ({
           id: user.user_id,
           name: user.name,
           email: user.email,

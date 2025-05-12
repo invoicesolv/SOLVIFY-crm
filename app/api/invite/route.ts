@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from "uuid"
 import { supabase } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/app/api/auth/[...nextauth]/auth-options"
+import authOptions from "@/lib/auth";
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -83,7 +83,7 @@ async function sendInvitationEmail(email: string, inviterName: string, token: st
               <p>Click the button below to accept this invitation and set up your account:</p>
               
               <div style="margin-top: 30px;">
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://crm.solvify.se'}/register?token=${token}" 
+                <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/register?token=${token}" 
                    style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
                    Accept Invitation
                 </a>

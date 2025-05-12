@@ -152,7 +152,7 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
         text: "Try for free",
         href: "/register"
       },
-      trial: "14-day free trial",
+      trial: "14 days for free",
       stripePriceId: {
         monthly: null,
         yearly: null
@@ -177,7 +177,7 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
         text: "Try for free",
         href: "#"
       },
-      trial: "14-day free trial",
+      trial: "14 days for free",
       stripePriceId: {
         monthly: "price_1R3KiwKrzodQUsuF79bVaycE",
         yearly: "price_1R3Kj6KrzodQUsuFOsAVUeWl"
@@ -203,7 +203,7 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
         text: "Try for free",
         href: "#"
       },
-      trial: "14-day free trial",
+      trial: "14 days for free",
       stripePriceId: {
         monthly: "price_1R3KjGKrzodQUsuFkBaoyjB2",
         yearly: "price_1R3KjTKrzodQUsuF2ULuAm7D"
@@ -245,23 +245,22 @@ interface PricingSectionDemoProps {
 }
 
 export function PricingSectionDemo({
-  title = "Enkel prissättning",
-  subtitle = "Välj den plan som passar dina behov",
-  lang = "sv",
+  title = "Simple Pricing",
+  subtitle = "Choose the plan that fits your needs",
+  lang = "en",
   frequencies = PAYMENT_FREQUENCIES[lang],
   tiers = TIERS[lang],
 }: PricingSectionDemoProps) {
   return (
-    <div className="relative flex justify-center items-center w-full mt-20 scale-90">
-      <div className="absolute inset-0 -z-10">
-        <div className="h-full w-full bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:35px_35px] opacity-30 [mask-image:radial-gradient(ellipse_80%_50%_at_50%_0%,#000_70%,transparent_110%)]" />
+    <section id="pricing" className="py-24 bg-neutral-900">
+      <div className="container mx-auto px-4">
+        <PricingSection
+          title={title}
+          subtitle={subtitle}
+          tiers={tiers}
+          frequencies={frequencies}
+        />
       </div>
-      <PricingSection
-        title={title}
-        subtitle={subtitle}
-        frequencies={frequencies}
-        tiers={tiers}
-      />
-    </div>
-  )
+    </section>
+  );
 } 

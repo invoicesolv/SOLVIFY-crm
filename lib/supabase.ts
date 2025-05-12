@@ -22,25 +22,43 @@ const customStorage = {
   }
 }
 
-// Create a single supabase client for interacting with your database
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: isBrowser,
-    autoRefreshToken: isBrowser,
-    detectSessionInUrl: isBrowser,
-    storage: customStorage,
-    debug: false
-  }
-})
+// Global variables to hold singleton instances
+let supabaseClientSingleton: any = null;
+let supabaseAdminSingleton: any = null;
 
-// Create a service role client for admin operations
-export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+// Properly implement the singleton pattern with a function that ensures only one client exists
+function getSupabaseClient() {
+  if (supabaseClientSingleton === null) {
+    supabaseClientSingleton = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: customStorage,
+        debug: process.env.NODE_ENV === 'development'
+      }
+    });
+  }
+  return supabaseClientSingleton;
+}
+
+// Properly implement the singleton pattern for admin client
+function getSupabaseAdmin() {
+  if (supabaseAdminSingleton === null) {
+    supabaseAdminSingleton = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
     detectSessionInUrl: false
   }
-})
+    });
+  }
+  return supabaseAdminSingleton;
+}
+
+// Export the singleton instances
+export const supabase = getSupabaseClient();
+export const supabaseAdmin = getSupabaseAdmin();
 
 // Function to sync NextAuth session with Supabase
 export const syncSupabaseSession = async (accessToken: string) => {
@@ -63,40 +81,6 @@ export const syncSupabaseSession = async (accessToken: string) => {
     return null;
   }
 };
-
-// Only run client-side session checks in browser environment
-if (isBrowser) {
-  // Log initial session state
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session) {
-      // Check if the user has valid permissions
-      supabase
-        .from('team_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id)
-        .limit(1)
-        .then(() => {
-          // Session validation complete
-        });
-    }
-  });
-
-  // Log authentication state changes
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (session) {
-      // When auth state changes to signed_in, verify database access
-      if (event === 'SIGNED_IN') {
-        supabase
-          .from('workspaces')
-          .select('id, name')
-          .limit(1)
-          .then(() => {
-            // Database access verification complete
-          });
-      }
-    }
-  });
-}
 
 // Type-safe database functions
 export type Database = {
@@ -321,16 +305,20 @@ export type Database = {
   }
 }
 
-// Export for server-side usage
-export const createServerSupabaseClient = () => createClient(
+// Create a truly unique client for server-side use
+export const createServerSupabaseClient = () => {
+  return createClient(
   supabaseUrl,
   supabaseAnonKey,
   {
     auth: {
-      persistSession: false
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
     }
   }
-)
+  );
+};
 
 // Helper function for ensuring consistent user identifiers across auth providers
 export function getConsistentUserId(sessionUserId: string | undefined, email?: string | null): string | undefined {
@@ -339,23 +327,7 @@ export function getConsistentUserId(sessionUserId: string | undefined, email?: s
   // In a production environment, you'd want to maintain a mapping table
   // in your database rather than using hardcoded IDs or email checks
   
-  // Handle special user mapping without logging
-  if (typeof window !== 'undefined') {
-    try {
-      const storedEmail = localStorage.getItem('current_user_email');
-      const isSpecialUser = localStorage.getItem('is_special_user');
-      
-      if (isSpecialUser === 'true') {
-        // Check for known problematic users
-        if (storedEmail === 'kevin@amptron.com') {
-          // For kevin@amptron.com, use the known Supabase ID
-          return 'f0c85d2f-4842-473c-9720-bead3ef9587d';
-        }
-      }
-    } catch (error) {
-      // Silently handle errors
-    }
-  }
+  // No special user mapping
   
   return sessionUserId;
 } 

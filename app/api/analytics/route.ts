@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/auth-options';
+import authOptions from "@/lib/auth";
 import { supabase } from '@/lib/supabase';
+
+export const dynamic = 'force-dynamic';
 
 // Add helper function for date formatting
 function formatDate(date: Date): string {
@@ -107,26 +109,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Try fetching Analytics properties first
-    let properties = [];
+    // Fetch Analytics Properties
+    let properties: AnalyticsProperty[] = [];
     try {
-      console.log('[Analytics API] Fetching analytics properties...');
       properties = await fetchAnalyticsProperties(tokens['google-analytics']);
-      console.log('[Analytics API] Found properties:', properties);
-    } catch (error: any) {
-      console.error('[Analytics API] Error fetching properties:', error);
-      return NextResponse.json(
-        { 
-          error: 'Failed to fetch properties',
-          details: error.message,
-          properties: []
-        },
-        { status: 500 }
-      );
+    } catch (error) {
+      console.warn('Failed to fetch Analytics properties:', error);
     }
 
     // Try fetching Analytics data
-    let analyticsData = null;
+    let analyticsData: AnalyticsResult | null = null;
     let analyticsError = null;
     try {
       console.log('Fetching analytics data for property:', propertyId);
@@ -144,9 +136,9 @@ export async function POST(request: NextRequest) {
     }
     
     // Then try fetching Search Console data, but only if siteUrl is provided
-    let searchData = null;
+    let searchData: SearchConsoleResult | null = null;
     let searchError = null;
-    let sites = null;
+    let sites: AnalyticsSite[] | null = null;
     try {
       console.log('Fetching search console sites...');
       sites = await fetchSearchConsoleSites(tokens['google-searchconsole']);
@@ -207,7 +199,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function fetchAnalyticsProperties(accessToken: string) {
+async function fetchAnalyticsProperties(accessToken: string): Promise<AnalyticsProperty[]> {
   try {
     console.log('[Analytics API] Starting to fetch GA4 properties');
     
@@ -245,7 +237,7 @@ async function fetchAnalyticsProperties(accessToken: string) {
     }
 
     // Get properties for all accounts
-    const allProperties = [];
+    const allProperties: AnalyticsProperty[] = [];
     for (const account of accountsData.accounts) {
       try {
         console.log(`[Analytics API] Fetching properties for account: ${account.displayName || account.name}`);
@@ -276,14 +268,17 @@ async function fetchAnalyticsProperties(accessToken: string) {
         });
 
         if (data.properties) {
-          allProperties.push(...data.properties.map((prop: any) => ({
+          // Type the property properly
+          const typedProperties: AnalyticsProperty[] = data.properties.map((prop: any) => ({
             id: prop.name.split('/').pop(),
             name: prop.displayName || prop.name,
             createTime: prop.createTime,
             updateTime: prop.updateTime,
             parent: prop.parent,
             propertyType: prop.propertyType
-          })));
+          }));
+          
+          allProperties.push(...typedProperties);
         }
       } catch (error) {
         console.warn(`[Analytics API] Error fetching properties for account ${account.name}:`, error);
@@ -302,7 +297,7 @@ async function fetchAnalyticsProperties(accessToken: string) {
   }
 }
 
-async function fetchSearchConsoleSites(accessToken: string) {
+async function fetchSearchConsoleSites(accessToken: string): Promise<AnalyticsSite[]> {
   const response = await fetch(
     'https://www.googleapis.com/webmasters/v3/sites',
     {
@@ -398,6 +393,32 @@ interface AnalyticsResult {
       end: string;
     };
   };
+}
+
+interface SearchConsoleResult {
+  overview: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  };
+  topQueries: any[];
+  byDevice: Record<string, { clicks: number; impressions: number; }>;
+  byCountry: Record<string, { clicks: number; impressions: number; }>;
+}
+
+interface AnalyticsSite {
+  url: string;
+  permissionLevel: string;
+}
+
+interface AnalyticsProperty {
+  id: string;
+  name: string;
+  createTime?: string;
+  updateTime?: string;
+  parent?: string;
+  propertyType?: string;
 }
 
 async function fetchAnalyticsData(accessToken: string, startDate: string, endDate: string, propertyId: string): Promise<AnalyticsResult> {

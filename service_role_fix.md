@@ -10,7 +10,7 @@ This file contains the implementation to fix the service role key exposure issue
 import { NextResponse } from "next/server";
 import { createClient } from '@supabase/supabase-js';
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/auth-options";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // Create a server-side Supabase admin client
 const supabaseAdmin = createClient(

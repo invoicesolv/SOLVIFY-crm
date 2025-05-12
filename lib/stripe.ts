@@ -6,7 +6,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 
 // Create a simple Stripe instance with the secret key
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16',
+  apiVersion: '2023-10-16' as const,
   typescript: true,
 });
 
@@ -19,7 +19,7 @@ export const getStripeSession = async (
     throw new Error('STRIPE_SECRET_KEY is not set');
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
   
   console.log('Creating Stripe checkout session with:', {
     priceId,

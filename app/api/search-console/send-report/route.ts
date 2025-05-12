@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { supabase } from '@/lib/supabase';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../../auth/[...nextauth]/auth-options';
+import authOptions from "@/lib/auth";
+
+export const dynamic = 'force-dynamic';
 
 // Create transporter with debug logging
 const transporter = nodemailer.createTransport({

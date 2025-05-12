@@ -1,0 +1,11 @@
+import nextPlugin from '@next/eslint-plugin';
+import nextJs from 'eslint-config-next';
+
+export default [
+  {
+    plugins: {
+      '@next': nextPlugin,
+    },
+  },
+  ...nextJs,
+]; 

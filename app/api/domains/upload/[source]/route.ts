@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/auth-options';
+import authOptions from "@/lib/auth";
 import { supabase } from '@/lib/supabase';
 import { parse } from 'csv-parse/sync';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(
   request: NextRequest,

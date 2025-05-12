@@ -1,9 +1,11 @@
 "use client";
 
 import { Card } from "@/components/ui/card";
+import { AnimatedBorderCard } from "@/components/ui/animated-border-card";
+import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { cn } from "@/lib/utils";
 import { useCustomers, EnhancedCustomer } from "@/hooks/useCustomers";
-import { Upload, Search, Save, RefreshCw, CheckSquare, Loader2, AlertOctagon, ChevronRight, ListTodo, Folder, BarChart3, ArrowUpRight, Users } from "lucide-react";
+import { Upload, Search, Save, RefreshCw, CheckSquare, Loader2, AlertOctagon, ChevronRight, ListTodo, Folder, BarChart3, ArrowUpRight, Users, PlusCircle, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { toast } from "sonner";
@@ -11,6 +13,7 @@ import { useSession } from "next-auth/react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogHeader, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
+import { CreateCustomerDialog } from "./CreateCustomerDialog";
 
 interface CustomersViewProps {
   className?: string;
@@ -20,6 +23,7 @@ interface CustomersViewProps {
 interface FortnoxCustomer {
   CustomerNumber: string;
   Name: string;
+  Email: string;
 }
 
 // Define task and checklist item interfaces
@@ -37,16 +41,43 @@ interface ChecklistItem {
   done: boolean;
 }
 
+// Fix the interface to handle optional values correctly
+interface ExtendedCustomer {
+  id: string;
+  customer_number?: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  workspace_id: string;
+  user_id: string;
+  created_at: string;
+  updated_at?: string;
+  total?: number;
+  invoice_count?: number;
+  last_invoice_date?: string;
+  invoices?: any[];
+  total_revenue?: number;
+  task_count?: number;
+  project_count?: number;
+  completed_tasks?: any[];
+  linked_projects?: any[];
+}
+
 export function CustomersView({ className }: CustomersViewProps) {
   const { data: session } = useSession();
   // Use any type to avoid type checking issues
-  const { customers, isLoading, error }: { customers: any[], isLoading: boolean, error: any } = useCustomers() as any;
+  const { customers, isLoading, error, refetch }: { customers: any[], isLoading: boolean, error: any, refetch: () => void } = useCustomers() as any;
   const [search, setSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<EnhancedCustomer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<ExtendedCustomer | null>(null);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("invoices");
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [deletingCustomerId, setDeletingCustomerId] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<ExtendedCustomer | null>(null);
+  const [isSyncingEmails, setIsSyncingEmails] = useState(false);
 
   // Debug useEffect for selectedCustomer and invoices
   useEffect(() => {
@@ -66,7 +97,7 @@ export function CustomersView({ className }: CustomersViewProps) {
     }
   }, [session?.user]);
 
-  const filteredCustomers = Array.isArray(customers) ? customers.filter((customer: EnhancedCustomer) => 
+  const filteredCustomers = Array.isArray(customers) ? customers.filter((customer: ExtendedCustomer) => 
     customer && customer.name && customer.name.toLowerCase().includes(search.toLowerCase())
   ) : [];
 
@@ -78,10 +109,10 @@ export function CustomersView({ className }: CustomersViewProps) {
 
     setIsSaving(true);
     try {
-      console.log('Session:', {
-        user: session.user,
-        accessToken: session.accessToken,
-        hasRefreshToken: !!session.accessToken
+      console.log('Session details:', {
+        user: session?.user,
+        accessToken: session.access_token,
+        hasRefreshToken: !!session.access_token
       });
 
       const supabaseAdmin = createClient(
@@ -156,10 +187,10 @@ export function CustomersView({ className }: CustomersViewProps) {
     formData.append('file', file);
 
     try {
-      console.log('Session:', {
-        user: session.user,
-        accessToken: session.accessToken,
-        hasRefreshToken: !!session.accessToken
+      console.log('Session details:', {
+        user: session?.user,
+        accessToken: session.access_token,
+        hasRefreshToken: !!session.access_token
       });
 
       const supabaseAdmin = createClient(
@@ -210,10 +241,10 @@ export function CustomersView({ className }: CustomersViewProps) {
 
     setIsRefreshing(true);
     try {
-      console.log('Session:', {
-        user: session.user,
-        accessToken: session.accessToken,
-        hasRefreshToken: !!session.accessToken
+      console.log('Session details:', {
+        user: session?.user,
+        accessToken: session.access_token,
+        hasRefreshToken: !!session.access_token
       });
 
       const supabaseAdmin = createClient(
@@ -272,6 +303,7 @@ export function CustomersView({ className }: CustomersViewProps) {
           const customersToSave = newCustomers.map(customer => ({
             name: customer.Name,
             customer_number: customer.CustomerNumber,
+            email: customer.Email,
             workspace_id: workspace.workspace_id,
             user_id: session.user.id
           }));
@@ -299,11 +331,93 @@ export function CustomersView({ className }: CustomersViewProps) {
   };
 
   // Handle opening the task dialog
-  const handleOpenTaskDialog = (customer: EnhancedCustomer) => {
+  const handleOpenTaskDialog = (customer: ExtendedCustomer) => {
     console.log('[Debug] Selected customer:', customer);
     console.log('[Debug] Customer invoices:', customer.invoices);
     setSelectedCustomer(customer);
     setTaskDialogOpen(true);
+  };
+
+  // Check to see if customers list should refresh after creating a new customer
+  const handleCustomerCreated = () => {
+    if (refetch) {
+      refetch();
+    } else {
+      // If refetch isn't available, reload the page as a fallback
+      window.location.reload();
+    }
+  };
+
+  const handleDeleteCustomer = async (customer: ExtendedCustomer) => {
+    setCustomerToDelete(customer);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!customerToDelete || !session?.user?.id) return;
+    
+    setDeletingCustomerId(customerToDelete.id);
+    try {
+      const response = await fetch(`/api/customers/delete?id=${customerToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete customer');
+      }
+
+      toast.success(`Successfully deleted customer: ${customerToDelete.name}`);
+      refetch(); // Refresh the customer list
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete customer');
+    } finally {
+      setDeletingCustomerId(null);
+      setDeleteConfirmOpen(false);
+      setCustomerToDelete(null);
+    }
+  };
+
+  // Add function to sync customer emails from Fortnox
+  const syncCustomerEmails = async () => {
+    if (!session?.user?.id) {
+      toast.error('Please sign in to sync customer emails');
+      return;
+    }
+
+    setIsSyncingEmails(true);
+    try {
+      const response = await fetch('/api/fortnox/customers/sync-emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': session.user.id
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to sync customer emails');
+      }
+
+      const data = await response.json();
+      
+      toast.success(`Successfully synced ${data.stored_emails} customer emails from Fortnox`);
+      
+      // Refresh the customer list
+      if (refetch) {
+        refetch();
+      }
+    } catch (error) {
+      console.error('Error syncing customer emails:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to sync customer emails');
+    } finally {
+      setIsSyncingEmails(false);
+    }
   };
 
   if (isLoading) {
@@ -333,163 +447,219 @@ export function CustomersView({ className }: CustomersViewProps) {
   }
 
   return (
-    <div className={cn("space-y-6", className)}>
-      <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #262626;
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #404040;
-          border-radius: 3px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #525252;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.2s ease-out forwards;
-        }
-      `}</style>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-white">Customers</h1>
-        <div className="flex items-center gap-4">
+    <div className={cn("flex-1 pl-4 py-4 pr-4", className)}>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-semibold text-white">Customers</h2>
+        <div className="flex items-center gap-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-500" />
+            <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-500" />
             <input
               type="text"
               placeholder="Search customers..."
+              className="pl-10 pr-4 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-[250px] text-white"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
             />
           </div>
-          <button
-            onClick={checkForNewData}
-            disabled={isRefreshing || isLoading}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm text-white transition-colors",
-              (isRefreshing || isLoading) && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? "Checking..." : "Check New"}
-          </button>
-          <button
-            onClick={handleSaveAll}
-            disabled={isSaving || isLoading || !Array.isArray(customers) || customers.length === 0}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm text-white transition-colors",
-              (isSaving || isLoading || !Array.isArray(customers) || customers.length === 0) && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            <Save className="h-4 w-4" />
-            {isSaving ? "Saving..." : "Save All"}
-          </button>
-          <div className="relative">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="hidden"
-              id="csv-upload"
-            />
-            <label
-              htmlFor="csv-upload"
-              className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm text-white cursor-pointer transition-colors"
-            >
-              <Upload className="h-4 w-4" />
-              Import CSV
-            </label>
+          
+          <div className="group relative overflow-hidden rounded-lg">
+            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-purple-500 via-blue-500 to-purple-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+            
+            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <button
+                onClick={syncCustomerEmails}
+                disabled={isSyncingEmails}
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+              >
+                {isSyncingEmails ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Sync Emails
+              </button>
+            </div>
+          </div>
+          
+          <div className="group relative overflow-hidden rounded-lg">
+            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+            
+            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <button
+                onClick={() => setCreateCustomerOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Create Customer
+              </button>
+            </div>
+          </div>
+          
+          <div className="group relative overflow-hidden rounded-lg">
+            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+            
+            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <button
+                onClick={checkForNewData}
+                disabled={isRefreshing}
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+              >
+                {isRefreshing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Refresh
+              </button>
+            </div>
+          </div>
+          
+          <div className="group relative overflow-hidden rounded-lg">
+            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+            
+            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <button
+                onClick={handleSaveAll}
+                disabled={isSaving}
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Save All
+              </button>
+            </div>
+          </div>
+          
+          <div className="group relative overflow-hidden rounded-lg">
+            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+            
+            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <label
+                className="flex items-center gap-1.5 px-3 py-2 cursor-pointer border-0 bg-transparent text-neutral-200 hover:text-white"
+              >
+                <Upload className="h-4 w-4" />
+                Import CSV
+                <input
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </label>
+            </div>
           </div>
         </div>
       </div>
 
-      <Card className="bg-neutral-800 border-neutral-700">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-neutral-700">
-                <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Customer Name</th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Customer Number</th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Total Revenue</th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Invoices</th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Last Invoice</th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Projects & Tasks</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-700">
-              {!Array.isArray(customers) || filteredCustomers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-neutral-400">
-                    {search ? "No customers found matching your search." : "No customers found. Import customers to get started."}
-                  </td>
-                </tr>
-              ) : (
-                filteredCustomers.map((customer: EnhancedCustomer) => (
-                  <tr
-                    key={customer.id || Math.random().toString()}
-                    className="hover:bg-neutral-750 transition-colors cursor-pointer"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleOpenTaskDialog(customer);
-                    }}
-                  >
-                    <td className="py-4 px-6 text-sm text-white">{customer.name || ''}</td>
-                    <td className="py-4 px-6 text-sm text-white">{customer.customer_number || ''}</td>
-                    <td className="py-4 px-6 text-sm text-white">
-                      {typeof customer.total === 'number' ? 
-                        new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
-                          .format(customer.total) : '0 SEK'}
-                    </td>
-                    <td className="py-4 px-6 text-sm text-white">{customer.invoice_count || 0}</td>
-                    <td className="py-4 px-6 text-sm text-neutral-400">
-                      {customer.last_invoice_date ? new Date(customer.last_invoice_date).toLocaleDateString() : 'No invoices'}
-                    </td>
-                    <td className="py-4 px-6 text-sm">
-                      {(customer.completed_tasks?.length > 0 || customer.linked_projects?.length > 0) ? (
-                        <button 
-                          className="flex items-center gap-1 text-neutral-400 hover:text-white"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenTaskDialog(customer);
-                          }}
-                        >
-                          <ListTodo className="h-4 w-4 text-blue-400" />
-                          <span>{customer.completed_tasks?.length || 0} tasks</span>
-                          <span className="text-neutral-500 mx-1">|</span>
-                          <Folder className="h-4 w-4 text-yellow-400" />
-                          <span>{customer.linked_projects?.length || 0} projects</span>
-                        </button>
-                      ) : (
-                        <span className="text-neutral-500">None</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
         </div>
-      </Card>
-
-      <div className="text-sm text-neutral-400">
-        CSV Import Requirements:
-        <ul className="list-disc ml-5 mt-2">
-          <li>File format: CSV</li>
-          <li>Maximum file size: 5MB</li>
-          <li>Required columns: name, customer_number</li>
-          <li>Optional columns: email, phone, birthday (YYYY-MM-DD), address</li>
-          <li>First row should be column headers</li>
-          <li>Text should be UTF-8 encoded</li>
-        </ul>
-      </div>
+      ) : error ? (
+        <div className="flex items-center justify-center py-12 text-red-500">
+          <AlertOctagon className="w-6 h-6 mr-2" />
+          <span>{error.message || "Failed to load customers"}</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6">
+          <AnimatedBorderCard className="overflow-hidden bg-neutral-900 border-0">
+            <div className="relative">
+              <GlowingEffect 
+                spread={30} 
+                glow={true} 
+                disabled={false} 
+                proximity={60} 
+                inactiveZone={0.01}
+                borderWidth={1.5}
+                movementDuration={1.5}
+                variant="default"
+              />
+              <div className="p-0 relative z-10">
+                <div className="rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="text-sm font-medium bg-neutral-800 text-neutral-300">
+                        <th className="text-left px-4 py-3">Customer Name</th>
+                        <th className="text-left px-4 py-3">Customer Number</th>
+                        <th className="text-left px-4 py-3">Email</th>
+                        <th className="text-left px-4 py-3">Total Revenue</th>
+                        <th className="text-left px-4 py-3">Invoices</th>
+                        <th className="text-left px-4 py-3">Last Invoice</th>
+                        <th className="text-center px-4 py-3">Actions</th>
+                      </tr>
+                    </thead>
+                    {filteredCustomers.length > 0 ? (
+                      <tbody className="divide-y divide-neutral-800">
+                        {filteredCustomers.map((customer: ExtendedCustomer) => (
+                          <tr key={customer.id || customer.customer_number} className="hover:bg-neutral-800/50 transition-colors">
+                            <td className="px-4 py-3">
+                              <Link href={`/customers/${customer.id}`} className="font-medium text-white hover:text-primary hover:underline">
+                                {customer.name}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-3 text-neutral-400">{customer.customer_number}</td>
+                            <td className="px-4 py-3 text-neutral-400">{customer.email || '-'}</td>
+                            <td className="px-4 py-3 text-white">
+                              {customer.total ? `${customer.total.toLocaleString()} kr` : '0 kr'}
+                            </td>
+                            <td className="px-4 py-3 text-neutral-400">
+                              {customer.invoice_count || 0}
+                            </td>
+                            <td className="px-4 py-3 text-neutral-400">
+                              {customer.last_invoice_date ? new Date(customer.last_invoice_date).toLocaleDateString('sv-SE') : 'Never'}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex justify-center gap-2">
+                                <button
+                                  onClick={() => handleOpenTaskDialog(customer)}
+                                  className="text-neutral-400 hover:text-primary transition-colors"
+                                  title="View Tasks"
+                                >
+                                  <ListTodo size={18} />
+                                </button>
+                                <Link
+                                  href={`/customers/${customer.id}`}
+                                  className="text-neutral-400 hover:text-primary transition-colors"
+                                  title="View Details"
+                                >
+                                  <ChevronRight size={18} />
+                                </Link>
+                                <button
+                                  onClick={() => handleDeleteCustomer(customer)}
+                                  className="text-neutral-400 hover:text-destructive transition-colors"
+                                  title="Delete Customer"
+                                  disabled={deletingCustomerId === customer.id}
+                                >
+                                  {deletingCustomerId === customer.id ? (
+                                    <Loader2 size={18} className="animate-spin" />
+                                  ) : (
+                                    <Trash2 size={18} />
+                                  )}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    ) : (
+                      <tbody>
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
+                            No customers found. Try updating your search or importing customers.
+                          </td>
+                        </tr>
+                      </tbody>
+                    )}
+                  </table>
+                </div>
+              </div>
+            </div>
+          </AnimatedBorderCard>
+        </div>
+      )}
 
       {/* Dialog for displaying customer details, tasks and projects */}
       <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
@@ -509,6 +679,11 @@ export function CustomersView({ className }: CustomersViewProps) {
                 <DialogDescription className="text-neutral-400 mt-1">
                   Customer information, projects and tasks
                 </DialogDescription>
+                {selectedCustomer?.email && (
+                  <div className="mt-2 text-sm text-blue-400">
+                    {selectedCustomer.email}
+                  </div>
+                )}
               </div>
               
               <div className="flex items-center gap-3">
@@ -596,20 +771,6 @@ export function CustomersView({ className }: CustomersViewProps) {
                     </div>
                   </div>
                 </div>
-                
-                {selectedCustomer?.email && (
-                  <div className="flex items-center gap-2 text-sm text-neutral-400 mt-4">
-                    <span className="font-medium">Email:</span>
-                    <span>{selectedCustomer.email}</span>
-                  </div>
-                )}
-                
-                {selectedCustomer?.phone && (
-                  <div className="flex items-center gap-2 text-sm text-neutral-400 mt-2">
-                    <span className="font-medium">Phone:</span>
-                    <span>{selectedCustomer.phone}</span>
-                  </div>
-                )}
               </div>
               
               <div className="mb-2">
@@ -760,13 +921,66 @@ export function CustomersView({ className }: CustomersViewProps) {
           </Tabs>
           
           <div className="border-t border-neutral-700 p-4 flex justify-end">
-            <button 
-              className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-sm"
-              onClick={() => setTaskDialogOpen(false)}
-            >
-              Close
-            </button>
+            <div className="group relative overflow-hidden rounded-lg">
+              <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-purple-500 via-blue-500 to-purple-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+              
+              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                <button 
+                  className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                  onClick={() => setTaskDialogOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Customer Dialog */}
+      <CreateCustomerDialog
+        open={createCustomerOpen}
+        onOpenChange={setCreateCustomerOpen}
+        onCustomerCreated={refetch}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Customer</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {customerToDelete?.name}? This action cannot be undone.
+              {customerToDelete?.total && customerToDelete.total > 0 && (
+                <div className="mt-2 bg-destructive/10 p-3 rounded-md text-destructive border border-destructive">
+                  <AlertOctagon className="inline-block mr-2" size={16} />
+                  Warning: This customer has invoices with a total value of {customerToDelete.total.toLocaleString()} kr.
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setDeleteConfirmOpen(false)}
+              className="px-4 py-2 rounded-md bg-muted hover:bg-muted/80 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDelete}
+              className="px-4 py-2 rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+              disabled={deletingCustomerId !== null}
+            >
+              {deletingCustomerId ? (
+                <>
+                  <Loader2 size={16} className="inline-block mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Customer'
+              )}
+            </button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

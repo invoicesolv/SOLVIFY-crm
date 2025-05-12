@@ -3,6 +3,8 @@ import { stripe } from '@/lib/stripe'
 import { supabase } from '@/lib/supabase'
 import Stripe from 'stripe'
 
+export const dynamic = 'force-dynamic';
+
 // This is your Stripe CLI webhook secret for testing your endpoint locally
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET
 

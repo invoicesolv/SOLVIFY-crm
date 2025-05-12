@@ -9,20 +9,28 @@ import {
   ContactSection, 
   Footer 
 } from "@/components/ui/landing-sections";
+import { FeatureComparisonTable } from "@/components/ui/feature-comparison-table";
+import { SocialProof } from "@/components/ui/social-proof";
+import { TestimonialsSection } from "@/components/ui/testimonials-section";
 
 export default function LandingPage() {
   return (
     <main className="bg-neutral-950 min-h-screen">
-      <NavBarDemo />
-      <HeroCRM 
-        title="Transform Your Business with Solvify CRM"
-        subtitle="Gain valuable insights, manage customer relationships, and boost productivity with our powerful CRM solution."
-        ctaText="Get Started"
-        ctaHref="/register"
-      />
+      <NavBarDemo lang="en" />
+      <HeroCRM lang="en" />
       <FeaturesSection />
-      <PricingSectionDemo />
-      <AboutSection />
+      <SocialProof lang="en" />
+      <PricingSectionDemo 
+        lang="en"
+        title="Simple Pricing"
+        subtitle="Choose the plan that fits your needs"
+      />
+      <FeatureComparisonTable lang="en" />
+      <TestimonialsSection lang="en" />
+      <AboutSection 
+        title="About Solvify CRM"
+        subtitle="We're on a mission to help businesses grow through better customer relationships and streamlined workflows."
+      />
       <ContactSection 
         language="en"
         title="Get in Touch"

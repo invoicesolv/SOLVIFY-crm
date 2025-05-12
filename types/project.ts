@@ -13,6 +13,7 @@ export interface Task {
   checklist: ChecklistItem[];
   project_id?: string;
   user_id?: string;
+  assigned_to?: string;
 }
 
 export interface Project {
@@ -25,4 +26,5 @@ export interface Project {
   endDate?: string;
   description: string;
   tasks: Task[];
+  assigned_to?: string;
 } 

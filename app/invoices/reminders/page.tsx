@@ -96,7 +96,7 @@ Your Company Name`
       // Log session details for debugging
       console.log('Session details:', {
         user: session.user,
-        hasAccessToken: !!session.accessToken
+        hasAccessToken: !!session.access_token
       });
 
       // First get the user's workspaces

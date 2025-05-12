@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { GlowingEffect } from "@/components/ui/glowing-effect";
 
 interface EmailSettingsProps {
   projectId: string;
@@ -129,7 +130,19 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-neutral-900 p-8 rounded-lg w-full max-w-md border border-neutral-800">
+      <div className="bg-neutral-900 p-8 rounded-lg w-full max-w-md border border-neutral-800 relative overflow-hidden">
+        <div className="relative">
+          <GlowingEffect 
+            spread={30} 
+            glow={true} 
+            disabled={false} 
+            proximity={60} 
+            inactiveZone={0.01}
+            borderWidth={1.5}
+            movementDuration={1.5}
+            variant="default"
+          />
+          <div className="relative z-10">
         <h2 className="text-xl font-semibold text-white mb-6">Email Report Settings</h2>
         
         <div className="space-y-6">
@@ -218,19 +231,33 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
           )}
 
           <div className="flex justify-end gap-3 pt-4 border-t border-neutral-800">
-            <Button
-              variant="outline"
+                <div className="group relative overflow-hidden rounded-lg">
+                  <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                  
+                  <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                    <button
               onClick={onClose}
-              className="bg-neutral-800 text-white hover:bg-neutral-700"
+                      className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
             >
               Cancel
-            </Button>
-            <Button
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="group relative overflow-hidden rounded-lg">
+                  <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-blue-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                  
+                  <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                    <button
               onClick={handleSaveSettings}
-              className="bg-blue-600 text-white hover:bg-blue-500"
+                      className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
             >
               Save Settings
-            </Button>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

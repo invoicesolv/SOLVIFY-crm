@@ -1,7 +1,7 @@
 "use client";
-import React, { useState, ReactNode } from "react";
+import React, { useState, ReactNode, Suspense } from "react";
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
-import { LayoutDashboard, UserCog, Settings, LogOut, User, Users, FolderKanban, LineChart, Calendar, Receipt, Globe, Calculator, ShieldAlert, Clock, Star, FolderOpen } from "lucide-react";
+import { LayoutDashboard, UserCog, Settings, LogOut, User, Users, FolderKanban, LineChart, Calendar, Receipt, Globe, Calculator, ShieldAlert, Clock, Star, FolderOpen, BarChart3, Grid, Target, TrendingUp, FolderOpenDot, Inbox, CreditCard } from "lucide-react";
 import type { LucideIcon } from 'lucide-react';
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -25,7 +25,8 @@ interface Links {
 export function SidebarDemo({ children }: SidebarDemoProps) {
   const router = useRouter();
   const { data: session } = useSession();
-  const isAdmin = session?.user?.role === "admin" || session?.user?.role === "Administrator";
+  const userRole = session?.user ? (session.user as unknown as { role?: string }).role : undefined;
+  const isAdmin = userRole === "admin" || userRole === "Administrator";
 
   const handleLogout = async () => {
     await signOut({ 
@@ -46,9 +47,24 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
       icon: <Users className="h-5 w-5 text-neutral-400" />,
     },
     {
+      label: "Leads",
+      href: "/leads",
+      icon: <Grid className="h-5 w-5 text-neutral-400" />,
+    },
+    {
+      label: "Gmail Hub",
+      href: "/gmail-hub",
+      icon: <Inbox className="h-5 w-5 text-neutral-400" />,
+    },
+    {
+      label: "Sales",
+      href: "/sales",
+      icon: <TrendingUp className="h-5 w-5 text-neutral-400" />,
+    },
+    {
       label: "Projects",
       href: "/projects",
-      icon: <FolderKanban className="h-5 w-5 text-neutral-400" />,
+      icon: <FolderOpenDot className="h-5 w-5 text-neutral-400" />,
     },
     {
       label: "Invoices",
@@ -91,6 +107,16 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
       icon: <ShieldAlert className="text-red-500 dark:text-red-400 h-5 w-5 flex-shrink-0" />,
     }] : []),
     {
+      label: "Content Generator",
+      href: "/content-generator",
+      icon: <BarChart3 className="h-5 w-5 text-neutral-400" />,
+    },
+    {
+      label: "Billing",
+      href: "/settings/billing",
+      icon: <CreditCard className="h-5 w-5 text-neutral-400" />,
+    },
+    {
       label: "Settings",
       href: "/settings",
       icon: <Settings className="h-5 w-5 text-neutral-400" />,
@@ -109,7 +135,7 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
         <SidebarBody className="justify-between gap-4">
           <div className="flex flex-col flex-1">
             {open ? <Logo /> : <LogoIcon />}
-            <nav className="mt-8 flex flex-col gap-2 overflow-y-auto no-scrollbar">
+            <nav className="mt-8 flex flex-col gap-2 overflow-y-auto max-h-[60vh] md:max-h-none">
               {links.map((link, idx) => (
                 <SidebarLink key={idx} link={link} />
               ))}
@@ -118,8 +144,8 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
           <div>
             <SidebarLink
               link={{
-                label: "Kevin Negash",
-                href: "#",
+                label: session?.user?.name || "User",
+                href: "/profile",
                 icon: (
                   <div className="h-7 w-7 flex-shrink-0 rounded-full bg-neutral-800 flex items-center justify-center">
                     <User className="h-4 w-4 text-neutral-400" />
@@ -134,7 +160,13 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
         {children || (
           <div className="p-6">
             <div className="rounded-xl border border-neutral-800 bg-neutral-900 flex flex-col gap-2 flex-1 w-full h-full">
-              <Dashboard />
+              <Suspense fallback={
+                <div className="flex items-center justify-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-white"></div>
+                </div>
+              }>
+                <Dashboard />
+              </Suspense>
             </div>
           </div>
         )}
@@ -154,6 +186,7 @@ export const Logo = () => {
           src="/Solvify-logo-WTE.png"
           alt="Solvify Logo"
           fill
+          sizes="160px"
           priority
           className="object-contain object-left"
         />
@@ -173,6 +206,7 @@ export const LogoIcon = () => {
           src="/S-logo.png"
           alt="Solvify Icon"
           fill
+          sizes="40px"
           priority
           className="object-contain object-left"
         />
