@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import Stripe from "stripe"
 import { supabase } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
+import axios from 'axios' // Added for reCAPTCHA verification
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2023-10-16",
@@ -142,12 +143,37 @@ async function sendAdminNotificationEmail(userData: { name: string, email: strin
 
 export async function POST(req: Request) {
   try {
-    const { name, email, password, company, sessionId, planId = 'free' } = await req.json()
+    const { name, email, password, company, sessionId, planId = 'free', recaptchaToken } = await req.json()
 
-    // Basic validation
-    if (!name || !email || !password) {
+    // reCAPTCHA verification
+    if (!recaptchaToken) {
+      return NextResponse.json({ error: "reCAPTCHA token is missing" }, { status: 400 });
+    }
+
+    const secretKey = process.env.RECAPTCHA_SECRET_KEY;
+    if (!secretKey) {
+      console.error("RECAPTCHA_SECRET_KEY is not set in environment variables.");
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    }
+
+    const verificationURL = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${recaptchaToken}`;
+
+    try {
+      const recaptchaResponse = await axios.post(verificationURL);
+      if (!recaptchaResponse.data.success || recaptchaResponse.data.score < 0.5) { // Check score for v3
+        console.warn(`reCAPTCHA verification failed: success=${recaptchaResponse.data.success}, score=${recaptchaResponse.data.score}`, recaptchaResponse.data['error-codes']);
+        return NextResponse.json({ error: "reCAPTCHA verification failed. Are you a robot?" }, { status: 403 });
+      }
+      // console.log("reCAPTCHA verification successful, score:", recaptchaResponse.data.score);
+    } catch (error) {
+      console.error("Error during reCAPTCHA verification:", error);
+      return NextResponse.json({ error: "Failed to verify reCAPTCHA" }, { status: 500 });
+    }
+
+    // Basic validation - ensure name is not just an empty string
+    if (!name || name.trim() === "" || !email || !password) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Missing required fields, or name is empty." },
         { status: 400 }
       )
     }
@@ -184,7 +210,7 @@ export async function POST(req: Request) {
     
     // Send notification email to admin
     const adminEmailSent = await sendAdminNotificationEmail({ 
-      name, 
+      name: name.trim(), // Use trimmed name 
       email, 
       company,
       planId 
@@ -196,7 +222,7 @@ export async function POST(req: Request) {
       password,
       options: {
         data: {
-          name,
+          name: name.trim(), // Use trimmed name
           company,
           stripe_customer_id: stripeCustomerId,
           plan_id: planId
@@ -225,7 +251,7 @@ export async function POST(req: Request) {
         user_id: authData.user.id,
         created_at: new Date().toISOString(),
         has_seen_welcome: false,
-        name,
+        name: name.trim(), // Use trimmed name
         company,
         email,
         plan_id: planId,
@@ -242,7 +268,7 @@ export async function POST(req: Request) {
           created_at: new Date().toISOString(),
           details: {
             user_id: authData.user.id,
-            name,
+            name: name.trim(), // Use trimmed name
             email,
             company,
             plan_id: planId,

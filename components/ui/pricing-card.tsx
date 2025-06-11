@@ -44,7 +44,7 @@ export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
   
   const price =
     typeof tier.price[frequency] === "number"
-      ? `${tier.price[frequency]} kr`
+      ? `$${tier.price[frequency]}`
       : tier.price[frequency]
 
   const handleSubscribe = async () => {
@@ -110,31 +110,31 @@ export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
       )}
     >
       {tier.popular && (
-        <div className="absolute -top-3 left-0 right-0 mx-auto w-fit rounded-full bg-primary px-3 py-1 text-xs text-white">
+        <div className="absolute -top-3 left-0 right-0 mx-auto w-fit rounded-full bg-primary px-3 py-1 text-xs text-foreground">
           Popular
         </div>
       )}
       <div className="space-y-4">
         <div className="space-y-1">
-          <h3 className="font-semibold text-white">{tier.name}</h3>
-          <p className="text-sm text-white/60">{tier.description}</p>
+          <h3 className="font-semibold text-foreground">{tier.name}</h3>
+          <p className="text-sm text-foreground/60">{tier.description}</p>
         </div>
 
         <div className="space-y-1">
-          <div className="text-3xl font-bold text-white">{price}</div>
+          <div className="text-3xl font-bold text-foreground">{price}</div>
           {typeof tier.price[frequency] === "number" && (
-            <div className="text-sm font-medium text-white/60">
+            <div className="text-sm font-medium text-foreground/60">
               per {isMonthly ? "month" : "year"}
             </div>
           )}
           {tier.trial && (
-            <div className="text-sm font-semibold text-white bg-primary/20 px-2 py-1 rounded-md mt-2 inline-block">
+            <div className="text-sm font-semibold text-foreground bg-primary/20 px-2 py-1 rounded-md mt-2 inline-block">
               {tier.trial}
             </div>
           )}
         </div>
 
-        <div className="space-y-2 text-sm text-white">
+        <div className="space-y-2 text-sm text-foreground">
           {tier.features.map((feature) => (
             <div key={feature} className="flex items-center gap-2">
               <Check className="h-4 w-4 text-primary" />
@@ -150,8 +150,8 @@ export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
             className={cn(
               "w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors",
               tier.highlighted
-                ? "bg-gradient-to-r from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600"
-                : "bg-white/5 text-white hover:bg-white/10"
+                ? "bg-gradient-to-r from-violet-500 to-indigo-500 text-foreground hover:from-violet-600 hover:to-indigo-600"
+                : "bg-background/5 text-foreground hover:bg-background/10"
             )}
           >
             {loading ? "Loading..." : tier.cta.text}

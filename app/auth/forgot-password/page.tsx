@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import Link from 'next/link';
-import Image from 'next/image';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -48,11 +47,8 @@ export default function ForgotPasswordPage() {
   if (submitted) {
     return (
       <div className="flex h-screen flex-col items-center justify-center p-4">
-        <Card className="w-full max-w-md p-6 shadow-lg">
-          <div className="mb-6 flex justify-center">
-            <Image src="/logo.png" alt="Logo" width={150} height={40} />
-          </div>
-          <h1 className="mb-4 text-center text-2xl font-semibold">Check Your Email</h1>
+              <Card className="w-full max-w-md p-6 shadow-lg">
+        <h1 className="mb-4 text-center text-2xl font-semibold">Check Your Email</h1>
           <p className="mb-6 text-center">
             If an account exists with the email <strong>{email}</strong>, we've sent a link to reset your password.
           </p>
@@ -72,9 +68,6 @@ export default function ForgotPasswordPage() {
   return (
     <div className="flex h-screen flex-col items-center justify-center p-4">
       <Card className="w-full max-w-md p-6 shadow-lg">
-        <div className="mb-6 flex justify-center">
-          <Image src="/logo.png" alt="Logo" width={150} height={40} />
-        </div>
         <h1 className="mb-4 text-center text-2xl font-semibold">Forgot Password</h1>
         <p className="mb-6 text-center">
           Enter your email address and we'll send you a link to reset your password.

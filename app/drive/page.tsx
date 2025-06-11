@@ -175,7 +175,7 @@ export default function DrivePage() {
                 Back
               </Button>
             )}
-            <h1 className="text-2xl font-semibold text-white">
+            <h1 className="text-2xl font-semibold text-foreground">
               {folderPath.length > 0
                 ? folderPath[folderPath.length - 1].name
                 : "Google Drive"}
@@ -188,13 +188,13 @@ export default function DrivePage() {
         </div>
 
         {folderPath.length > 0 && (
-          <div className="flex items-center gap-2 text-sm text-neutral-400 mb-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
             <button
               onClick={() => {
                 setFolderPath([]);
                 setCurrentFolder(null);
               }}
-              className="hover:text-white transition-colors"
+              className="hover:text-foreground transition-colors"
             >
               Root
             </button>
@@ -207,7 +207,7 @@ export default function DrivePage() {
                     setFolderPath(newPath);
                     setCurrentFolder(folder.id);
                   }}
-                  className="hover:text-white transition-colors"
+                  className="hover:text-foreground transition-colors"
                 >
                   {folder.name}
                 </button>
@@ -218,31 +218,31 @@ export default function DrivePage() {
 
         {loading ? (
           <div className="flex justify-center items-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-neutral-500" />
+            <Loader2 className="h-8 w-8 animate-spin text-foreground0" />
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {files.map((file) => (
               <Card
                 key={file.id}
-                className="p-4 bg-neutral-900 border-neutral-800 hover:bg-neutral-800 transition-colors"
+                className="p-4 bg-background border-border hover:bg-background transition-colors"
               >
                 <div className="flex items-start space-x-4">
                   <div className="flex-shrink-0">
-                    <FileText className="h-8 w-8 text-neutral-400" />
+                    <FileText className="h-8 w-8 text-muted-foreground" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">
+                    <p className="text-sm font-medium text-foreground truncate">
                       {file.name}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      <p className="text-xs text-neutral-400">
+                      <p className="text-xs text-muted-foreground">
                         {file.mimeType.split(".").pop()?.toUpperCase()}
                       </p>
                       {file.size && (
                         <>
                           <span className="text-xs text-neutral-600">•</span>
-                          <p className="text-xs text-neutral-400">
+                          <p className="text-xs text-muted-foreground">
                             {formatFileSize(file.size)}
                           </p>
                         </>
@@ -250,7 +250,7 @@ export default function DrivePage() {
                       {file.modifiedTime && (
                         <>
                           <span className="text-xs text-neutral-600">•</span>
-                          <p className="text-xs text-neutral-400">
+                          <p className="text-xs text-muted-foreground">
                             {formatDate(file.modifiedTime)}
                           </p>
                         </>

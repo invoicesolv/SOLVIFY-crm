@@ -1,7 +1,7 @@
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: 'Customers | Vibe CRM',
+  title: 'Customers | Solvify CRM',
   description: 'Manage your customer data and sync with Fortnox',
 };
 

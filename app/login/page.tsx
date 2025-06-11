@@ -1,36 +1,73 @@
 "use client"
 
-import { Suspense } from 'react'
+import { Suspense, useRef } from 'react'
 import { useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
+import ReCAPTCHA from 'react-google-recaptcha'
+
+// reCAPTCHA site key from Google
+const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || '6LflizkrAAAAACU7692bUxrhSuhzqOUnKXbQOuQC';
 
 function LoginContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const recaptchaRef = useRef<ReCAPTCHA>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
-  let callbackUrl = searchParams.get("callbackUrl") || "/"
+  let callbackUrl = searchParams.get("callbackUrl") || "/dashboard"
+
+  const handleCaptchaChange = (token: string | null) => {
+    setCaptchaToken(token);
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
     setError("")
 
+    if (!captchaToken) {
+      setError("Please complete the reCAPTCHA verification");
+      setLoading(false);
+      return;
+    }
+
     const formData = new FormData(e.currentTarget)
     const email = formData.get("email")
     const password = formData.get("password")
 
     try {
-      console.log('Attempting to sign in with credentials:', { email });
+      // Verify reCAPTCHA token server-side
+      const verifyResponse = await fetch('/api/verify-recaptcha', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: captchaToken }),
+      });
+      
+      const verifyData = await verifyResponse.json();
+      
+      if (!verifyData.success) {
+        throw new Error('reCAPTCHA verification failed. Please try again.');
+      }
+    
+      console.log('Attempting to sign in with credentials:', { 
+        email,
+        timestamp: new Date().toISOString(),
+        origin: typeof window !== 'undefined' ? window.location.origin : null,
+        callbackUrl
+      });
       
       // Store the email in a cookie for debug purposes only
       if (typeof document !== 'undefined' && email) {
         document.cookie = `user_email=${email}; path=/; max-age=3600; SameSite=Lax`;
       }
       
+      console.log('Calling NextAuth signIn method...');
       const result = await signIn("credentials", {
         email,
         password,
@@ -38,7 +75,14 @@ function LoginContent() {
         callbackUrl,
       });
 
-      console.log('Sign in result:', result);
+      console.log('Sign in result:', JSON.stringify({
+        success: !result?.error,
+        error: result?.error || null,
+        url: result?.url || null,
+        status: result?.status,
+        ok: result?.ok,
+        timestamp: new Date().toISOString()
+      }, null, 2));
 
       if (result?.error) {
         setError(result.error);
@@ -53,7 +97,10 @@ function LoginContent() {
       }
     } catch (error) {
       console.error("Sign in error:", error);
-      setError("An error occurred during sign in");
+      setError(error instanceof Error ? error.message : "An error occurred during sign in");
+      // Reset reCAPTCHA on error
+      recaptchaRef.current?.reset();
+      setCaptchaToken(null);
       setLoading(false);
     }
   }
@@ -78,16 +125,16 @@ function LoginContent() {
     <div className="min-h-screen flex items-center justify-center bg-[#0A0A0A]">
       <div className="max-w-md w-full space-y-8 p-8">
         <div className="text-center">
-          <h2 className="mt-6 text-3xl font-bold text-white">
+          <h2 className="mt-6 text-3xl font-bold text-foreground">
             Welcome back
           </h2>
-          <p className="mt-2 text-sm text-white/60">
+          <p className="mt-2 text-sm text-foreground/60">
             Sign in to your account
           </p>
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-lg text-sm">
+          <div className="bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 p-4 rounded-lg text-sm">
             {error}
           </div>
         )}
@@ -96,7 +143,7 @@ function LoginContent() {
           onClick={handleGoogleSignIn}
           disabled={loading}
           type="button"
-          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg border border-white/10 bg-white/5 text-white hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg border border-white/10 bg-background/5 text-foreground hover:bg-background/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -124,14 +171,14 @@ function LoginContent() {
             <div className="w-full border-t border-white/10"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-[#0A0A0A] text-white/60">Or continue with email</span>
+            <span className="px-2 bg-[#0A0A0A] text-foreground/60">Or continue with email</span>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-6">
           <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-white/80">
+              <label htmlFor="email" className="block text-sm font-medium text-foreground/80">
                 Email address
               </label>
               <input
@@ -140,12 +187,12 @@ function LoginContent() {
                 type="email"
                 autoComplete="email"
                 required
-                className="mt-1 block w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-1 block w-full px-3 py-2 bg-background/5 border border-white/10 rounded-lg text-foreground placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter your email"
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-white/80">
+              <label htmlFor="password" className="block text-sm font-medium text-foreground/80">
                 Password
               </label>
               <input
@@ -154,13 +201,13 @@ function LoginContent() {
                 type="password"
                 autoComplete="current-password"
                 required
-                className="mt-1 block w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="mt-1 block w-full px-3 py-2 bg-background/5 border border-white/10 rounded-lg text-foreground placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter your password"
               />
               <div className="mt-2 text-right">
                 <Link 
                   href="/auth/forgot-password"
-                  className="text-sm text-blue-500 hover:text-blue-400"
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-400"
                 >
                   Forgot password?
                 </Link>
@@ -168,20 +215,29 @@ function LoginContent() {
             </div>
           </div>
 
+          <div className="mt-6 flex justify-center">
+            <ReCAPTCHA
+              ref={recaptchaRef}
+              sitekey={RECAPTCHA_SITE_KEY}
+              onChange={handleCaptchaChange}
+              theme="dark"
+            />
+          </div>
+
           <div>
             <button
               type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={loading || !captchaToken}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-foreground bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Signing in..." : "Sign in"}
             </button>
           </div>
         </form>
 
-        <p className="mt-4 text-center text-sm text-white/60">
+        <p className="mt-4 text-center text-sm text-foreground/60">
           Don't have an account?{" "}
-          <Link href="/register" className="font-medium text-blue-500 hover:text-blue-400">
+          <Link href="/register" className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-400">
             Sign up
           </Link>
         </p>
@@ -196,7 +252,7 @@ export default function LoginPage() {
       <div className="min-h-screen flex items-center justify-center bg-[#0A0A0A]">
         <div className="max-w-md w-full space-y-8 p-8">
           <div className="text-center">
-            <h2 className="mt-6 text-3xl font-bold text-white">Loading...</h2>
+            <h2 className="mt-6 text-3xl font-bold text-foreground">Loading...</h2>
             <div className="mt-4 animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto" />
           </div>
         </div>

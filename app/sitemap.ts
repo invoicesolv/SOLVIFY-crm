@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next'
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://crm.solvify.se'
+  const baseUrl = 'https://solvify.com'
   const lastModified = new Date()
   
   // Define pages that exist in both languages
@@ -38,25 +38,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority,
   }))
   
-  // Swedish pages
-  const svPages = pages.map(({ path, priority }) => {
-    // Special case for root in Swedish
-    const svPath = path === '/' ? '/sv' : `${path}/sv`
-    return {
-      url: `${baseUrl}${svPath}`,
-      lastModified,
-      changeFrequency: path.includes('landing') || path.includes('blog') ? 'weekly' : 'monthly' as 'weekly' | 'monthly',
-      priority: priority - 0.1, // Slightly lower priority for non-default language
-    }
-  })
-  
-  // Swedish blog posts
-  const svBlogPosts = blogPosts.map(({ slug, priority }) => ({
-    url: `${baseUrl}/blog/sv/${slug}`,
-    lastModified,
-    changeFrequency: 'weekly' as 'weekly',
-    priority: priority - 0.1,
-  }))
-  
-  return [...enPages, ...enBlogPosts, ...svPages, ...svBlogPosts]
+  return [...enPages, ...enBlogPosts]
 } 

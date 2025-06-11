@@ -246,21 +246,21 @@ Your Company Name`
           <div className="flex items-center gap-4">
             <Link
               href="/invoices"
-              className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+              className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
               Back to Invoices
             </Link>
             <div className="space-y-1">
-              <h1 className="text-2xl font-semibold text-white">Invoice Reminders</h1>
-              <p className="text-sm text-neutral-400">
+              <h1 className="text-2xl font-semibold text-foreground">Invoice Reminders</h1>
+              <p className="text-sm text-muted-foreground">
                 Send payment reminders for unpaid invoices
               </p>
             </div>
           </div>
         </div>
 
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
+        <Card className="bg-background border-border dark:border-border p-6">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -268,7 +268,7 @@ Your Company Name`
                   checked={selectedInvoices.length === unpaidInvoices.length}
                   onCheckedChange={handleSelectAll}
                 />
-                <span className="text-sm text-neutral-400">
+                <span className="text-sm text-muted-foreground">
                   Select All ({unpaidInvoices.length} unpaid invoices)
                 </span>
               </div>
@@ -284,13 +284,13 @@ Your Company Name`
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-neutral-400">
+                <label className="text-sm font-medium text-muted-foreground">
                   Template
                 </label>
                 <select
                   value={selectedTemplate}
                   onChange={(e) => setSelectedTemplate(e.target.value)}
-                  className="w-full px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white"
+                  className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground"
                 >
                   {templates.map(template => (
                     <option key={template.id} value={template.id}>
@@ -301,33 +301,33 @@ Your Company Name`
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-neutral-400">
+                <label className="text-sm font-medium text-muted-foreground">
                   Custom Message (Optional)
                 </label>
                 <textarea
                   value={customMessage}
                   onChange={(e) => setCustomMessage(e.target.value)}
                   placeholder="Enter a custom message or leave blank to use the template..."
-                  className="w-full h-40 px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                  className="w-full h-40 px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                 />
               </div>
             </div>
 
-            <div className="border-t border-neutral-700 pt-4">
+            <div className="border-t border-border dark:border-border pt-4">
               <div className="space-y-4">
                 {loading ? (
                   <div className="flex justify-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-400"></div>
                   </div>
                 ) : unpaidInvoices.length === 0 ? (
-                  <div className="text-center py-8 text-neutral-400">
+                  <div className="text-center py-8 text-muted-foreground">
                     No unpaid invoices found
                   </div>
                 ) : (
                   unpaidInvoices.map((invoice) => (
                     <div
                       key={invoice.DocumentNumber}
-                      className="flex items-center justify-between p-4 bg-neutral-900 rounded-lg"
+                      className="flex items-center justify-between p-4 bg-background rounded-lg"
                     >
                       <div className="flex items-center gap-4">
                         <Checkbox
@@ -337,20 +337,20 @@ Your Company Name`
                           }
                         />
                         <div>
-                          <p className="text-white font-medium">
+                          <p className="text-foreground font-medium">
                             {invoice.CustomerName}
                           </p>
-                          <p className="text-sm text-neutral-400">
+                          <p className="text-sm text-muted-foreground">
                             Invoice #{invoice.DocumentNumber} - Due: {new Date(invoice.DueDate).toLocaleDateString('sv-SE')}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-white font-medium">
+                        <p className="text-foreground font-medium">
                           {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: invoice.Currency })
                             .format(invoice.Balance)}
                         </p>
-                        <p className="text-sm text-neutral-400">
+                        <p className="text-sm text-muted-foreground">
                           {new Date(invoice.DueDate) < new Date() ? 'Overdue' : 'Due soon'}
                         </p>
                       </div>

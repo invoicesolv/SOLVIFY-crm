@@ -28,7 +28,8 @@ import {
   Download,
   FileUp,
   HelpCircle,
-  Loader2
+  Loader2,
+  FolderOpen
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from '@/lib/supabase';
@@ -59,6 +60,10 @@ interface DomainData {
   original_domain?: string;
   display_domain?: string;
   lStatus?: string;
+  linked_projects?: Array<{
+    id: string;
+    name: string;
+  }>;
 }
 
 interface Filters {
@@ -182,6 +187,53 @@ export default function DomainsPage() {
     checkUserPermissions();
   }, [session?.user?.id, activeWorkspace]);
 
+  // Function to load project connections for existing domains
+  const loadProjectConnections = async () => {
+    if (!activeWorkspace) return;
+    
+    try {
+      const domainsWithProjects = await Promise.all(
+        domains.map(async (domain) => {
+          try {
+            // Get project links for this domain
+            const { data: projectLinks, error: linksError } = await supabase
+              .from('project_domain_links')
+              .select(`
+                project_id,
+                projects:project_id (
+                  id,
+                  name
+                )
+              `)
+              .eq('domain_id', domain.domain);
+
+            if (linksError) {
+              console.error('Error fetching project links for domain:', domain.domain, linksError);
+              return { ...domain, linked_projects: [] };
+            }
+
+            const linkedProjects = projectLinks?.map(link => ({
+              id: link.projects?.id || link.project_id,
+              name: link.projects?.name || 'Unnamed Project'
+            })) || [];
+
+            return {
+              ...domain,
+              linked_projects: linkedProjects
+            };
+          } catch (error) {
+            console.error('Error processing domain:', domain.domain, error);
+            return { ...domain, linked_projects: [] };
+          }
+        })
+      );
+
+      setDomains(domainsWithProjects);
+    } catch (error) {
+      console.error('Error loading project connections:', error);
+    }
+  };
+
   const loadDomains = async () => {
     if (!hasPermission || !activeWorkspace) {
       setLoading(false);
@@ -254,7 +306,45 @@ export default function DomainsPage() {
         return ahrefs || loopia;
       }).filter((domain): domain is DomainData => domain !== null);
 
-      setDomains(mergedDomains);
+      // Fetch project connections for each domain
+      console.log('Loading project connections for domains...');
+      const domainsWithProjects = await Promise.all(
+        mergedDomains.map(async (domain) => {
+          try {
+            // Get project links for this domain
+            const { data: projectLinks, error: linksError } = await supabase
+              .from('project_domain_links')
+              .select(`
+                project_id,
+                projects:project_id (
+                  id,
+                  name
+                )
+              `)
+              .eq('domain_id', domain.domain);
+
+            if (linksError) {
+              console.error('Error fetching project links for domain:', domain.domain, linksError);
+              return { ...domain, linked_projects: [] };
+            }
+
+            const linkedProjects = projectLinks?.map(link => ({
+              id: link.projects?.id || link.project_id,
+              name: link.projects?.name || 'Unnamed Project'
+            })) || [];
+
+            return {
+              ...domain,
+              linked_projects: linkedProjects
+            };
+          } catch (error) {
+            console.error('Error processing domain:', domain.domain, error);
+            return { ...domain, linked_projects: [] };
+          }
+        })
+      );
+
+      setDomains(domainsWithProjects);
     } catch (error) {
       toast.error('Failed to load domains');
     } finally {
@@ -344,7 +434,7 @@ export default function DomainsPage() {
           updatedGroups[normalized].push(domain);
         });
 
-        return Object.entries(updatedGroups).map(([key, group]) => {
+        const mergedDomains = Object.entries(updatedGroups).map(([key, group]) => {
           const ahrefs = group.find(d => d.source === 'ahrefs');
           const loopia = group.find(d => d.source === 'Loopia');
 
@@ -372,7 +462,15 @@ export default function DomainsPage() {
           }
           return ahrefs || loopia;
         }).filter((domain): domain is DomainData => domain !== null);
+
+        return mergedDomains;
       });
+
+      // Load project connections for all domains after upload
+      setTimeout(async () => {
+        await loadProjectConnections();
+      }, 100);
+
       toast.success(`Successfully uploaded ${newDomains.length} domains`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to parse CSV file');
@@ -817,12 +915,12 @@ domain.com,75,12000,18000,1200,8000`;
     if (!hasPermission) return null;
     
     return (
-      <Card className="bg-neutral-900 border-neutral-800 mb-6">
+      <Card className="bg-background border-border mb-6">
         <div className="px-6 py-5">
-          <h3 className="text-lg font-medium text-white flex items-center gap-2">
-            <Globe className="text-neutral-400" /> Loopia API Connection
+          <h3 className="text-lg font-medium text-foreground flex items-center gap-2">
+            <Globe className="text-muted-foreground" /> Loopia API Connection
           </h3>
-          <p className="text-sm text-neutral-400 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Connect to your Loopia account to manage your domains
           </p>
         </div>
@@ -831,12 +929,12 @@ domain.com,75,12000,18000,1200,8000`;
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="text-green-500 h-5 w-5" />
-                  <span className="text-neutral-300">Connected to Loopia account: {loopiaApiUser}</span>
+                  <CheckCircle className="text-green-600 dark:text-green-400 h-5 w-5" />
+                  <span className="text-foreground dark:text-neutral-300">Connected to Loopia account: {loopiaApiUser}</span>
                 </div>
                 <Button
                   variant="outline"
-                  className="border-neutral-700 text-neutral-300"
+                  className="border-border text-foreground dark:text-neutral-300"
                   onClick={fetchLoopiaDomainsIfConnected}
                   disabled={loopiaDomainsLoading}
                 >
@@ -851,7 +949,7 @@ domain.com,75,12000,18000,1200,8000`;
                   )}
                 </Button>
               </div>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-foreground0">
                 To update your Loopia API credentials, please visit the Settings page.
               </p>
             </div>
@@ -865,7 +963,7 @@ domain.com,75,12000,18000,1200,8000`;
               </div>
               <Button
                 variant="outline" 
-                className="border-neutral-700 text-neutral-300"
+                className="border-border text-foreground dark:text-neutral-300"
                 onClick={() => window.location.href = '/settings'}
               >
                 Go to Settings
@@ -897,9 +995,9 @@ domain.com,75,12000,18000,1200,8000`;
     return (
       <SidebarDemo>
         <div className="p-6">
-          <Card className="p-8 bg-neutral-800 border-neutral-700">
-            <h1 className="text-xl font-semibold text-white mb-4">Access Denied</h1>
-            <p className="text-neutral-400">
+          <Card className="p-8 bg-muted border-border">
+            <h1 className="text-xl font-semibold text-foreground mb-4">Access Denied</h1>
+            <p className="text-muted-foreground">
               You do not have permission to view the domains page. Please contact your workspace administrator.
             </p>
           </Card>
@@ -913,22 +1011,22 @@ domain.com,75,12000,18000,1200,8000`;
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-white">Domain Portfolio</h1>
-            <p className="text-sm text-neutral-400">
+            <h1 className="text-2xl font-semibold text-foreground">Domain Portfolio</h1>
+            <p className="text-sm text-muted-foreground">
               Manage and monitor your domain metrics from Ahrefs and Loopia
             </p>
           </div>
         </div>
 
-        <Card className="bg-neutral-900 border-neutral-800">
+        <Card className="bg-background border-border text-foreground">
           <div className="p-6">
             <div className="flex flex-col gap-6">
-              <div className="bg-neutral-800/50 rounded-lg p-4 space-y-3">
+              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <Info className="h-5 w-5 text-blue-400" />
-                  <h3 className="text-sm font-medium text-white">CSV Upload Instructions</h3>
+                  <h3 className="text-sm font-medium text-foreground">CSV Upload Instructions</h3>
                 </div>
-                <div className="text-sm text-neutral-400 space-y-2">
+                <div className="text-sm text-muted-foreground space-y-2">
                   <p>1. Export your domains from Ahrefs in CSV format</p>
                   <p>2. Ensure the CSV is saved with UTF-8 encoding</p>
                   <p>3. Required columns: Target, Domain Rating, Traffic Value, Total Traffic (desc), Ref domains Dofollow, Total Keywords</p>
@@ -937,7 +1035,7 @@ domain.com,75,12000,18000,1200,8000`;
                       variant="outline"
                       size="sm"
                       onClick={handleDownloadExample}
-                      className="text-xs bg-neutral-800 border-neutral-700 hover:bg-neutral-700"
+                      className="text-xs bg-muted border-border hover:bg-gray-200 dark:bg-muted"
                     >
                       Download Example CSV
                     </Button>
@@ -946,12 +1044,12 @@ domain.com,75,12000,18000,1200,8000`;
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-white">Filters</h3>
+                <h3 className="text-sm font-medium text-foreground">Filters</h3>
                 <div className="grid grid-cols-3 gap-8">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <Label className="text-neutral-400">Min Domain Rating</Label>
-                      <span className="text-sm text-neutral-400">{filters.minDomainRating}</span>
+                      <Label className="text-muted-foreground">Min Domain Rating</Label>
+                      <span className="text-sm text-muted-foreground">{filters.minDomainRating}</span>
                     </div>
                     <Slider
                       value={[filters.minDomainRating]}
@@ -963,8 +1061,8 @@ domain.com,75,12000,18000,1200,8000`;
                   </div>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <Label className="text-neutral-400">Min Traffic Value ($)</Label>
-                      <span className="text-sm text-neutral-400">${filters.minTrafficValue.toLocaleString()}</span>
+                      <Label className="text-muted-foreground">Min Traffic Value ($)</Label>
+                      <span className="text-sm text-muted-foreground">${filters.minTrafficValue.toLocaleString()}</span>
                     </div>
                     <Slider
                       value={[filters.minTrafficValue]}
@@ -976,8 +1074,8 @@ domain.com,75,12000,18000,1200,8000`;
                   </div>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <Label className="text-neutral-400">Min Keywords</Label>
-                      <span className="text-sm text-neutral-400">{filters.minKeywords.toLocaleString()}</span>
+                      <Label className="text-muted-foreground">Min Keywords</Label>
+                      <span className="text-sm text-muted-foreground">{filters.minKeywords.toLocaleString()}</span>
                     </div>
                     <Slider
                       value={[filters.minKeywords]}
@@ -993,18 +1091,18 @@ domain.com,75,12000,18000,1200,8000`;
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="relative w-64">
-                    <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                    <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       placeholder="Search domains..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 bg-neutral-800 border-neutral-700 focus:border-neutral-600 text-white placeholder:text-neutral-400"
+                      className="pl-10 bg-muted border-border focus:border-gray-400 dark:border-border text-foreground placeholder:text-muted-foreground"
                     />
                   </div>
                   <Button
                     variant="outline"
                     onClick={() => document.getElementById('ahrefs-upload')?.click()}
-                    className="flex items-center gap-2 bg-neutral-800 border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600"
+                    className="flex items-center gap-2 bg-muted border-border hover:bg-gray-200 dark:bg-muted hover:border-gray-400 dark:border-border"
                   >
                     <Upload className="h-4 w-4" />
                     Upload Ahrefs Data
@@ -1021,8 +1119,8 @@ domain.com,75,12000,18000,1200,8000`;
                     onClick={syncLoopiaData}
                     className={`flex items-center gap-2 ${
                       syncing 
-                        ? 'bg-red-900/20 border-red-700 hover:bg-red-900/40 hover:border-red-600'
-                        : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600'
+                        ? 'bg-red-100 dark:bg-red-900/20 border-red-700 hover:bg-red-900/40 hover:border-red-600'
+                        : 'bg-muted border-border hover:bg-gray-200 dark:bg-muted hover:border-gray-400 dark:border-border'
                     }`}
                   >
                     <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
@@ -1031,7 +1129,7 @@ domain.com,75,12000,18000,1200,8000`;
                   <Button
                     variant="outline"
                     onClick={handleSaveDomains}
-                    className="flex items-center gap-2 bg-neutral-800 border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600"
+                    className="flex items-center gap-2 bg-muted border-border hover:bg-gray-200 dark:bg-muted hover:border-gray-400 dark:border-border"
                   >
                     <Save className="h-4 w-4" />
                     Save Domains
@@ -1040,7 +1138,7 @@ domain.com,75,12000,18000,1200,8000`;
                 <Button
                   variant="outline"
                   onClick={() => setDomains([])}
-                  className="flex items-center gap-2 bg-neutral-800 border-neutral-700 hover:bg-neutral-700 hover:border-neutral-600"
+                  className="flex items-center gap-2 bg-muted border-border hover:bg-gray-200 dark:bg-muted hover:border-gray-400 dark:border-border"
                 >
                   <RefreshCw className="h-4 w-4" />
                   Clear All
@@ -1048,7 +1146,7 @@ domain.com,75,12000,18000,1200,8000`;
               </div>
 
               {syncing && (
-                <div className="text-sm text-neutral-400">
+                <div className="text-sm text-muted-foreground">
                   Syncing domains... Updates will appear automatically
                 </div>
               )}
@@ -1059,9 +1157,9 @@ domain.com,75,12000,18000,1200,8000`;
                 </div>
               ) : filteredDomains.length === 0 ? (
                 <div className="text-center py-12">
-                  <Globe className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-white mb-2">No domains found</h3>
-                  <p className="text-neutral-400">
+                  <Globe className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-foreground mb-2">No domains found</h3>
+                  <p className="text-muted-foreground">
                     {domains.length === 0 
                       ? 'Upload your Ahrefs data to get started'
                       : 'No domains match your search criteria'
@@ -1069,74 +1167,77 @@ domain.com,75,12000,18000,1200,8000`;
                   </p>
                 </div>
               ) : (
-                <div className="rounded-md border border-neutral-800">
+                <div className="rounded-md border border-border">
                   <Table>
                     <TableHeader>
-                      <TableRow className="border-neutral-800">
-                        <TableHead className="text-neutral-200 w-14">
+                      <TableRow className="border-border">
+                        <TableHead className="text-foreground w-14">
                           #
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('domain')}
                         >
                           Domain {sortConfig.key === 'domain' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('status')}
                         >
                           Status {sortConfig.key === 'status' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('loopia_account')}
                         >
                           Account {sortConfig.key === 'loopia_account' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('customer_number')}
                         >
                           Customer {sortConfig.key === 'customer_number' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('expiry_date')}
                         >
                           Expiry Date {sortConfig.key === 'expiry_date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
+                        <TableHead className="text-foreground">
+                          Projects
+                        </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('domain_rating')}
                         >
                           DR {sortConfig.key === 'domain_rating' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('traffic_value')}
                         >
                           Traffic Value {sortConfig.key === 'traffic_value' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('organic_traffic')}
                         >
                           Organic Traffic {sortConfig.key === 'organic_traffic' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('organic_keywords')}
                         >
                           Keywords {sortConfig.key === 'organic_keywords' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
                         <TableHead 
-                          className="text-neutral-200 cursor-pointer hover:text-white"
+                          className="text-foreground cursor-pointer hover:text-foreground"
                           onClick={() => handleSort('last_updated')}
                         >
                           Last Updated {sortConfig.key === 'last_updated' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </TableHead>
-                        <TableHead className="text-neutral-200"></TableHead>
+                        <TableHead className="text-foreground"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1146,51 +1247,79 @@ domain.com,75,12000,18000,1200,8000`;
                           (domain.domain.startsWith('xn--') ? punycode.toUnicode(domain.domain) : domain.domain);
 
                         return (
-                          <TableRow key={domain.domain} className="border-neutral-800">
-                            <TableCell className="text-neutral-400 w-14">
+                          <TableRow key={domain.domain} className="border-border">
+                            <TableCell className="text-muted-foreground w-14">
                               {index + 1}
                             </TableCell>
-                            <TableCell className="font-medium text-white">
+                            <TableCell className="font-medium text-foreground">
                               {displayDomain}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2" title={statusInfo.tooltip}>
                                 {statusInfo.statusColor === 'emerald' && <CheckCircle className="h-4 w-4 text-emerald-500" />}
                                 {statusInfo.statusColor === 'yellow' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
-                                {statusInfo.statusColor === 'red' && <XCircle className="h-4 w-4 text-red-500" />}
-                                {statusInfo.statusColor === 'neutral' && <AlertTriangle className="h-4 w-4 text-neutral-400" />}
+                                {statusInfo.statusColor === 'red' && <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />}
+                                {statusInfo.statusColor === 'neutral' && <AlertTriangle className="h-4 w-4 text-muted-foreground" />}
                                 <span className={`text-sm ${
                                   statusInfo.statusColor === 'emerald' ? 'text-emerald-500' :
                                   statusInfo.statusColor === 'yellow' ? 'text-yellow-500' :
-                                  statusInfo.statusColor === 'red' ? 'text-red-500' :
-                                  'text-neutral-400'
+                                  statusInfo.statusColor === 'red' ? 'text-red-600 dark:text-red-400' :
+                                  'text-muted-foreground'
                                 }`}>
                                   {statusInfo.status}
                                 </span>
                               </div>
                             </TableCell>
-                            <TableCell className="text-neutral-200">
+                            <TableCell className="text-foreground">
                               {domain.loopia_account || '-'}
                             </TableCell>
-                            <TableCell className="text-neutral-200">
+                            <TableCell className="text-foreground">
                               {domain.customer_number || '-'}
                             </TableCell>
-                            <TableCell className="text-neutral-200">
+                            <TableCell className="text-foreground">
                               {domain.expiry_date ? new Date(domain.expiry_date).toLocaleDateString() : '-'}
                             </TableCell>
-                            <TableCell className="text-neutral-200">
+                            <TableCell className="text-foreground">
+                              {domain.linked_projects && domain.linked_projects.length > 0 ? (
+                                <div className="flex flex-wrap gap-1 max-w-48">
+                                  {domain.linked_projects.map((project, idx) => (
+                                    <span
+                                      key={project.id}
+                                      className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 border border-blue-200 dark:border-blue-800"
+                                      title={`Linked to project: ${project.name}`}
+                                    >
+                                      <FolderOpen className="h-3 w-3 mr-1" />
+                                      {project.name}
+                                    </span>
+                                  ))}
+                                  <div className="text-xs text-green-600 dark:text-green-400 font-medium mt-1 w-full">
+                                    ✓ Worth renewing ({domain.linked_projects.length} active project{domain.linked_projects.length > 1 ? 's' : ''})
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs text-red-600 dark:text-red-400 font-medium">
+                                    ⚠️ Not linked to any projects
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    (Consider if renewal is needed)
+                                  </span>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-foreground">
                               {domain.domain_rating || '-'}
                             </TableCell>
-                            <TableCell className="text-neutral-200">
+                            <TableCell className="text-foreground">
                               {domain.traffic_value ? `$${domain.traffic_value.toLocaleString()}` : '-'}
                             </TableCell>
-                            <TableCell className="text-neutral-200">
+                            <TableCell className="text-foreground">
                               {domain.organic_traffic?.toLocaleString() || '-'}
                             </TableCell>
-                            <TableCell className="text-neutral-200">
+                            <TableCell className="text-foreground">
                               {domain.organic_keywords?.toLocaleString() || '-'}
                             </TableCell>
-                            <TableCell className="text-neutral-400">
+                            <TableCell className="text-muted-foreground">
                               {new Date(domain.last_updated).toLocaleDateString()}
                             </TableCell>
                             <TableCell>
@@ -1203,7 +1332,7 @@ domain.com,75,12000,18000,1200,8000`;
                                       window.open(`https://${displayDomain}`, '_blank');
                                     }
                                   }}
-                                  className="flex items-center gap-1 hover:bg-neutral-800 text-neutral-200 hover:text-white"
+                                  className="flex items-center gap-1 hover:bg-muted text-foreground hover:text-foreground"
                                 >
                                   <ArrowUpRight className="h-4 w-4" />
                                 </Button>
@@ -1212,7 +1341,7 @@ domain.com,75,12000,18000,1200,8000`;
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleDomainAction(domain.domain, 'order')}
-                                    className="flex items-center gap-1 hover:bg-neutral-800 text-neutral-200 hover:text-white"
+                                    className="flex items-center gap-1 hover:bg-muted text-foreground hover:text-foreground"
                                     title={domain.loopia_account ? "Renew domain" : "Order domain"}
                                   >
                                     <Save className="h-4 w-4" />
@@ -1223,7 +1352,7 @@ domain.com,75,12000,18000,1200,8000`;
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleDomainAction(domain.domain, 'renew', domain.loopia_account)}
-                                    className="flex items-center gap-1 hover:bg-neutral-800 text-yellow-500 hover:text-yellow-400"
+                                    className="flex items-center gap-1 hover:bg-muted text-yellow-500 hover:text-yellow-400"
                                     title="Renew domain"
                                   >
                                     <RefreshCw className="h-4 w-4" />

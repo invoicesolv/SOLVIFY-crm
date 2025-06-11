@@ -38,8 +38,8 @@ export const getStripeSession = async (
           quantity: 1,
         },
       ],
-      success_url: `${baseUrl}?success=true`,
-      cancel_url: `${baseUrl}/pricing`,
+      success_url: `${baseUrl}/settings/billing?success=true`,
+      cancel_url: `${baseUrl}/settings/billing`,
       customer: customerId,
       metadata: metadata,
       subscription_data: {

@@ -197,7 +197,7 @@ export function TrialCountdown() {
   // Show loading state until we've completed initialization
   if (loading && !initialized) {
     return (
-      <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-white py-2 px-4">
+      <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-foreground py-2 px-4">
         <div className="container mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="font-medium">Loading plan information...</span>
@@ -237,7 +237,7 @@ export function TrialCountdown() {
   if (error) {
     console.error('Trial countdown error:', error)
     return (
-      <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-white py-2 px-4">
+      <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-foreground py-2 px-4">
         <div className="container mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="font-medium">Free Plan</span>
@@ -250,14 +250,14 @@ export function TrialCountdown() {
             <button
               onClick={handlePayNow}
               disabled={paymentLoading}
-              className="bg-white text-indigo-600 hover:bg-white/90 px-3 py-1 rounded-md text-sm font-medium flex items-center space-x-1"
+              className="bg-background text-indigo-600 hover:bg-background/90 px-3 py-1 rounded-md text-sm font-medium flex items-center space-x-1"
             >
               <CreditCard className="h-3 w-3 mr-1" />
               {paymentLoading ? 'Processing...' : 'Pay Now for Full Access'}
             </button>
             <button
               onClick={handleDismiss}
-              className="text-white/80 hover:text-white"
+              className="text-foreground/80 hover:text-foreground"
               aria-label="Dismiss"
             >
               <X className="h-4 w-4" />
@@ -271,7 +271,7 @@ export function TrialCountdown() {
   // Show default if no preferences yet
   if (!preferences) {
     return (
-      <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-white py-2 px-4">
+      <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-foreground py-2 px-4">
         <div className="container mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="font-medium">Free Plan</span>
@@ -284,20 +284,20 @@ export function TrialCountdown() {
             <button
               onClick={handlePayNow}
               disabled={paymentLoading}
-              className="bg-white text-indigo-600 hover:bg-white/90 px-3 py-1 rounded-md text-sm font-medium flex items-center space-x-1"
+              className="bg-background text-indigo-600 hover:bg-background/90 px-3 py-1 rounded-md text-sm font-medium flex items-center space-x-1"
             >
               <CreditCard className="h-3 w-3 mr-1" />
               {paymentLoading ? 'Processing...' : 'Pay Now for Full Access'}
             </button>
             <a 
               href="/checkout" 
-              className="text-xs text-white/70 hover:text-white underline"
+              className="text-xs text-foreground/70 hover:text-foreground underline"
             >
               Direct link
             </a>
             <button
               onClick={handleDismiss}
-              className="text-white/80 hover:text-white"
+              className="text-foreground/80 hover:text-foreground"
               aria-label="Dismiss"
             >
               <X className="h-4 w-4" />
@@ -311,7 +311,7 @@ export function TrialCountdown() {
   const planName = planNames[preferences.plan_id as keyof typeof planNames] || 'Free'
   
   return (
-    <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-white py-2 px-4">
+    <div className="w-full bg-gradient-to-r from-violet-500 to-indigo-500 text-foreground py-2 px-4">
       <div className="container mx-auto flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <span className="font-medium">
@@ -335,20 +335,20 @@ export function TrialCountdown() {
           <button
             onClick={handlePayNow}
             disabled={paymentLoading}
-            className="bg-white text-indigo-600 hover:bg-white/90 px-3 py-1 rounded-md text-sm font-medium flex items-center space-x-1"
+            className="bg-background text-indigo-600 hover:bg-background/90 px-3 py-1 rounded-md text-sm font-medium flex items-center space-x-1"
           >
             <CreditCard className="h-3 w-3 mr-1" />
             {paymentLoading ? 'Processing...' : 'Pay Now for Full Access'}
           </button>
           <a 
             href="/checkout" 
-            className="text-xs text-white/70 hover:text-white underline"
+            className="text-xs text-foreground/70 hover:text-foreground underline"
           >
             Direct link
           </a>
           <button
             onClick={handleDismiss}
-            className="text-white/80 hover:text-white"
+            className="text-foreground/80 hover:text-foreground"
             aria-label="Dismiss"
           >
             <X className="h-4 w-4" />

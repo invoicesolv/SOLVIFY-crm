@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-This document outlines the requirements for improving animations and adding smoother movements to the Vibe CRM application. The goal is to enhance the user experience by making the interface feel more polished, responsive, and engaging.
+This document outlines the requirements for improving animations and adding smoother movements to the Solvify CRM application. The goal is to enhance the user experience by making the interface feel more polished, responsive, and engaging.
 
 ## 2. Goals
 
@@ -14,7 +14,7 @@ This document outlines the requirements for improving animations and adding smoo
 
 ## 3. Target Audience
 
-All users of the Vibe CRM application.
+All users of the Solvify CRM application.
 
 ## 4. Scope
 

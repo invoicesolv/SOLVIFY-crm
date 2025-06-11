@@ -97,7 +97,7 @@ export function HeroCRM({
   const solutionBadgeText = isSwedish ? "Komplett Affärslösning" : "All-In-One Business Solution";
 
   return (
-    <section className="relative bg-neutral-950 text-white overflow-hidden min-h-screen flex flex-col items-center justify-center py-16 px-4 pt-32">
+    <section className="relative bg-background text-foreground overflow-hidden min-h-screen flex flex-col items-center justify-center py-16 px-4 pt-24 md:pt-32">
       {/* Dark background with blue accent gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-neutral-950 to-indigo-900/20 pointer-events-none" />
       
@@ -108,7 +108,7 @@ export function HeroCRM({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/30 border border-blue-700/20 mb-8"
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-200 dark:bg-blue-900/30 border border-blue-700/20 mb-8"
           >
             <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
             <span className="text-sm text-blue-300 tracking-wide">
@@ -133,7 +133,7 @@ export function HeroCRM({
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
-            className="text-lg md:text-xl text-neutral-400 mb-8 max-w-2xl"
+            className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl"
           >
             {displaySubtitle}
           </motion.p>
@@ -146,7 +146,7 @@ export function HeroCRM({
             animate="visible"
             className="mb-10 w-full max-w-6xl"
           >
-            <div className="text-2xl md:text-3xl font-bold text-white mb-12">
+            <div className="text-2xl md:text-3xl font-bold text-foreground mb-12">
               {replaceText}
             </div>
             
@@ -156,19 +156,20 @@ export function HeroCRM({
                 {replacedSoftware.map((software, index) => (
                   <div 
                     key={index} 
-                    className="relative bg-neutral-900 border border-neutral-800 rounded-xl p-4 flex flex-col items-center justify-center h-[180px]"
+                    className="relative bg-background border border-border rounded-xl p-4 flex flex-col items-center justify-center h-[180px]"
                   >
                     <div className="relative w-20 h-20 mb-3 flex items-center justify-center">
                       <Image
                         src={software.logo}
                         alt={software.name}
                         fill
-                        style={{ objectFit: software.name === "Atlassian" ? "contain" : "contain" }}
+                        style={{ objectFit: "contain" }}
                         className="p-1"
+                        unoptimized
                       />
                     </div>
-                    <p className="text-lg font-medium text-white">{software.name}</p>
-                    <p className="text-sm text-neutral-400">{software.category}</p>
+                    <p className="text-lg font-medium text-foreground">{software.name}</p>
+                    <p className="text-sm text-muted-foreground">{software.category}</p>
                   </div>
                 ))}
               </div>
@@ -177,29 +178,11 @@ export function HeroCRM({
               <div className="absolute top-1/2 left-0 right-0 h-3 bg-red-600 transform -translate-y-1/2 -rotate-[2deg]"></div>
             </div>
             
-            <div className="text-2xl md:text-3xl font-bold text-white mt-16 mb-8">
+            <div className="text-2xl md:text-3xl font-bold text-foreground mt-16 mb-8">
               {withText}
             </div>
           </motion.div>
 
-          {/* CTA Button */}
-          <motion.div
-            custom={2}
-            variants={fadeUpVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            <Button
-              size="lg"
-              asChild
-              className="bg-primary hover:bg-primary/90 text-white px-8 py-6 h-12 text-lg font-medium group"
-            >
-              <a href={ctaHref}>
-                {displayCtaText}
-                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
-              </a>
-            </Button>
-          </motion.div>
         </div>
 
         {/* Dashboard Mockup */}
@@ -210,92 +193,15 @@ export function HeroCRM({
           >
             <Mockup>
               {mounted && (
-                <div className="relative bg-neutral-950 p-8" style={{ minHeight: "500px" }}>
-                  {/* Custom Dashboard Implementation */}
-                  <div className="grid grid-cols-4 gap-4 mb-6">
-                    <div className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <BarChart2 className="h-5 w-5 text-blue-400" />
-                        <div>
-                          <p className="text-xs text-neutral-500">Revenue</p>
-                          <p className="font-medium text-white">+24%</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <Users className="h-5 w-5 text-indigo-400" />
-                        <div>
-                          <p className="text-xs text-neutral-500">Customers</p>
-                          <p className="font-medium text-white">2,834</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <PieChart className="h-5 w-5 text-cyan-400" />
-                        <div>
-                          <p className="text-xs text-neutral-500">Conversion</p>
-                          <p className="font-medium text-white">12.5%</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-lg p-4">
-                      <div className="flex items-center gap-3">
-                        <Activity className="h-5 w-5 text-blue-500" />
-                        <div>
-                          <p className="text-xs text-neutral-500">Activity</p>
-                          <p className="font-medium text-white">High</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Main Content Area */}
-                  <div className="grid grid-cols-3 gap-4">
-                    {/* Chart Section */}
-                    <div className="col-span-2 bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-lg p-6">
-                      <h3 className="text-lg font-medium text-white mb-4">Revenue Overview</h3>
-                      <div className="h-[200px] flex items-end gap-2">
-                        {[40, 65, 50, 80, 95, 70, 85, 75, 90, 60, 80, 75].map((height, i) => (
-                          <div key={i} className="flex-1 flex flex-col items-center">
-                            <div 
-                              className="w-full bg-blue-500/20 rounded-t-sm" 
-                              style={{ height: `${height}%` }}
-                            >
-                              <div 
-                                className="w-full bg-blue-500 rounded-t-sm" 
-                                style={{ height: `${height * 0.7}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-neutral-500 mt-2">
-                              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][i]}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Activity Section */}
-                    <div className="bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 rounded-lg p-6">
-                      <h3 className="text-lg font-medium text-white mb-4">Recent Activity</h3>
-                      <div className="space-y-4">
-                        {[
-                          { action: 'New Customer', value: 'Acme Corp', time: '2h ago' },
-                          { action: 'Revenue Update', value: '+$12,500', time: '4h ago' },
-                          { action: 'Conversion Rate', value: '12.5%', time: 'Today' },
-                        ].map((item, i) => (
-                          <div key={i} className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm text-white">{item.action}</p>
-                              <p className="text-xs text-neutral-500">{item.time}</p>
-                            </div>
-                            <p className="text-sm font-medium text-white">{item.value}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                <div className="relative bg-background overflow-hidden rounded-lg">
+                  <Image
+                    src="/dashboard.png"
+                    alt="Solvify CRM Dashboard"
+                    width={1200}
+                    height={800}
+                    className="w-full h-auto object-cover"
+                    priority
+                  />
                 </div>
               )}
             </Mockup>
@@ -305,6 +211,25 @@ export function HeroCRM({
             className="opacity-0 animate-[appear-zoom_1.5s_forwards_1s]"
           />
         </div>
+
+        {/* CTA Button - Below Dashboard */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 1.5 }}
+          className="flex justify-center mt-12"
+        >
+          <Button
+            size="lg"
+            asChild
+            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 h-14 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 group"
+          >
+            <a href={ctaHref}>
+              {displayCtaText}
+              <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+            </a>
+          </Button>
+        </motion.div>
       </div>
     </section>
   );

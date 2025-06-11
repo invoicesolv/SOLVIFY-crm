@@ -71,47 +71,52 @@ export default function ProfilePage() {
 
     try {
       console.log('Fetching profile for user:', session.user.id);
-      // Fetch profile from Supabase
+      
+      // Use RPC call to our custom function to avoid ambiguous column reference
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .single();
+        .rpc('get_profile_by_id', {
+          p_user_id: session.user.id
+        });
 
       console.log('Fetch result:', { data, error });
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          console.log('No profile exists, creating default...');
-          // No profile exists yet, create one with default values
-          const { data: newProfile, error: createError } = await supabase
-            .from('profiles')
-            .insert([{
-              user_id: session.user.id,
-              name: session.user.name || '',
-              email: session.user.email || '',
-              phone: '',
-              company: '',
-              role: 'User',
-              address: '',
-              city: '',
-              country: '',
-              website: '',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }])
-            .select()
-            .single();
+        console.error('Error from RPC call:', error);
+        toast.error('Failed to fetch profile');
+        return;
+      }
 
-          console.log('Create result:', { newProfile, createError });
+      if (data) {
+        setProfile(data);
+        setEditedProfile(data);
+      } else {
+        // No profile exists yet, create one with default values
+          console.log('No profile exists, creating default...');
+        const { data: createdProfile, error: createError } = await supabase
+          .rpc('update_profile_by_id', {
+            p_user_id: session.user.id,
+            p_name: session.user.name || '',
+            p_email: session.user.email || '',
+            p_phone: '',
+            p_company: '',
+            p_role: 'User',
+            p_address: '',
+            p_city: '',
+            p_country: '',
+            p_website: ''
+          });
+
+        console.log('Create result:', { createdProfile, createError });
 
           if (createError) {
             console.error('Error creating profile:', createError);
-            throw createError;
+          toast.error('Failed to create profile');
+          return;
           }
-          if (newProfile) {
-            setProfile(newProfile);
-            setEditedProfile(newProfile);
+        
+        if (createdProfile) {
+          setProfile(createdProfile);
+          setEditedProfile(createdProfile);
             
             // Also update the auth metadata if needed
             const { error: updateError } = await supabase.auth.updateUser({
@@ -125,14 +130,6 @@ export default function ProfilePage() {
               console.error('Error updating auth metadata:', updateError);
             }
           }
-          return;
-        }
-        throw error;
-      }
-
-      if (data) {
-        setProfile(data);
-        setEditedProfile(data);
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -159,69 +156,33 @@ export default function ProfilePage() {
     console.log('Starting save process...', { editedProfile, isEditing });
     setIsSaving(true);
     try {
-      // First check if profile exists
-      const { data: existingProfile, error: checkError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .single();
+      // Use our new RPC function to handle profile updates safely
+      const { data, error } = await supabase
+        .rpc('update_profile_by_id', {
+          p_user_id: session.user.id,
+          p_name: editedProfile.name,
+          p_email: editedProfile.email,
+          p_phone: editedProfile.phone,
+          p_company: editedProfile.company,
+          p_role: editedProfile.role,
+          p_address: editedProfile.address,
+          p_city: editedProfile.city,
+          p_country: editedProfile.country,
+          p_website: editedProfile.website
+        });
 
-      console.log('Check existing profile:', { existingProfile, checkError });
+      console.log('Update profile result:', { data, error });
 
-      if (checkError && checkError.code === 'PGRST116') {
-        // Profile doesn't exist, create it
-        console.log('Profile does not exist, creating...');
-        const { data: newProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert([{
-            user_id: session.user.id,
-            name: editedProfile.name,
-            email: editedProfile.email,
-            phone: editedProfile.phone,
-            company: editedProfile.company,
-            role: editedProfile.role,
-            address: editedProfile.address,
-            city: editedProfile.city,
-            country: editedProfile.country,
-            website: editedProfile.website
-          }])
-          .select()
-          .single();
-
-        console.log('Create result:', { newProfile, createError });
-
-        if (createError) throw createError;
-        if (newProfile) {
-          setProfile(newProfile);
-          setEditedProfile(newProfile);
-        }
+      if (error) throw error;
+      
+      if (data) {
+        setProfile(data);
+        setEditedProfile(data);
+        setIsEditing(false);
+        toast.success('Profile updated successfully');
       } else {
-        // Profile exists, update it
-        console.log('Profile exists, updating...', existingProfile.id);
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            name: editedProfile.name,
-            email: editedProfile.email,
-            phone: editedProfile.phone,
-            company: editedProfile.company,
-            role: editedProfile.role,
-            address: editedProfile.address,
-            city: editedProfile.city,
-            country: editedProfile.country,
-            website: editedProfile.website
-          })
-          .eq('id', existingProfile.id)
-          .eq('user_id', session.user.id);
-
-        console.log('Update result:', { updateError });
-
-        if (updateError) throw updateError;
-        setProfile({ ...editedProfile, id: existingProfile.id });
+        throw new Error('Failed to update profile - no data returned');
       }
-
-      setIsEditing(false);
-      toast.success('Profile updated successfully');
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error('Failed to update profile');
@@ -261,16 +222,22 @@ export default function ProfilePage() {
         .from('avatars')
         .getPublicUrl(fileName);
 
-      // Update profile with new avatar URL
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ avatarUrl: publicUrl })
-        .eq('user_id', session.user.id);
+      // Update profile with new avatar URL using our RPC function
+      const { data: updatedProfile, error: updateError } = await supabase
+        .rpc('update_profile_avatar', {
+          p_user_id: session.user.id,
+          p_avatar_url: publicUrl
+        });
 
       if (updateError) throw updateError;
 
-      setProfile(prev => ({ ...prev, avatarUrl: publicUrl }));
+      // Update the UI with the new avatar
+      if (updatedProfile) {
+        setProfile(updatedProfile);
       toast.success('Avatar uploaded successfully');
+      } else {
+        toast.error('Failed to update profile avatar');
+      }
     } catch (error) {
       console.error('Error uploading avatar:', error);
       toast.error('Failed to upload avatar');
@@ -300,8 +267,8 @@ export default function ProfilePage() {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-white">Profile</h1>
-            <p className="text-sm text-neutral-400">
+            <h1 className="text-2xl font-semibold text-foreground">Profile</h1>
+            <p className="text-sm text-muted-foreground">
               Manage your personal information and preferences
             </p>
           </div>
@@ -367,10 +334,10 @@ export default function ProfilePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Avatar Card */}
-          <Card className="bg-neutral-800 border-neutral-700 p-6 lg:col-span-1">
+          <Card className="bg-background border-border dark:border-border p-6 lg:col-span-1">
             <div className="flex flex-col items-center space-y-4">
               <div className="relative">
-                <div className="h-32 w-32 rounded-full bg-neutral-700 flex items-center justify-center overflow-hidden">
+                <div className="h-32 w-32 rounded-full bg-gray-200 dark:bg-muted flex items-center justify-center overflow-hidden">
                   {profile.avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -379,18 +346,18 @@ export default function ProfilePage() {
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    <User className="h-16 w-16 text-neutral-500" />
+                    <User className="h-16 w-16 text-foreground0" />
                   )}
                 </div>
                 {isEditing && (
                   <label
                     htmlFor="avatar-upload"
-                    className="absolute bottom-0 right-0 p-2 bg-neutral-900 rounded-full cursor-pointer hover:bg-neutral-700 transition-colors"
+                    className="absolute bottom-0 right-0 p-2 bg-background rounded-full cursor-pointer hover:bg-gray-200 dark:bg-muted transition-colors"
                   >
                     {isUploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                     ) : (
-                      <Camera className="h-4 w-4 text-neutral-400" />
+                      <Camera className="h-4 w-4 text-muted-foreground" />
                     )}
                     <input
                       id="avatar-upload"
@@ -404,70 +371,70 @@ export default function ProfilePage() {
                 )}
               </div>
               <div className="text-center">
-                <h2 className="text-xl font-semibold text-white">{profile.name}</h2>
-                <p className="text-sm text-neutral-400">{profile.role}</p>
+                <h2 className="text-xl font-semibold text-foreground">{profile.name}</h2>
+                <p className="text-sm text-muted-foreground">{profile.role}</p>
               </div>
             </div>
           </Card>
 
           {/* Details Card */}
-          <Card className="bg-neutral-800 border-neutral-700 p-6 lg:col-span-2">
+          <Card className="bg-background border-border dark:border-border p-6 lg:col-span-2">
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Personal Information */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-white">Personal Information</h3>
+                  <h3 className="text-lg font-medium text-foreground">Personal Information</h3>
                   
                   <div className="space-y-2">
-                    <label className="text-sm text-neutral-400">Full Name</label>
+                    <label className="text-sm text-muted-foreground">Full Name</label>
                     <div className="flex items-center gap-2">
-                      <User className="h-4 w-4 text-neutral-500" />
+                      <User className="h-4 w-4 text-foreground0" />
                       {isEditing ? (
                         <input
                           type="text"
                           name="name"
                           value={editedProfile.name}
                           onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground"
                         />
                       ) : (
-                        <span className="text-white">{profile.name}</span>
+                        <span className="text-foreground">{profile.name}</span>
                       )}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm text-neutral-400">Email</label>
+                    <label className="text-sm text-muted-foreground">Email</label>
                     <div className="flex items-center gap-2">
-                      <Mail className="h-4 w-4 text-neutral-500" />
+                      <Mail className="h-4 w-4 text-foreground0" />
                       {isEditing ? (
                         <input
                           type="email"
                           name="email"
                           value={editedProfile.email}
                           onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground"
                         />
                       ) : (
-                        <span className="text-white">{profile.email}</span>
+                        <span className="text-foreground">{profile.email}</span>
                       )}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm text-neutral-400">Phone</label>
+                    <label className="text-sm text-muted-foreground">Phone</label>
                     <div className="flex items-center gap-2">
-                      <Phone className="h-4 w-4 text-neutral-500" />
+                      <Phone className="h-4 w-4 text-foreground0" />
                       {isEditing ? (
                         <input
                           type="tel"
                           name="phone"
                           value={editedProfile.phone}
                           onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground"
                         />
                       ) : (
-                        <span className="text-white">{profile.phone}</span>
+                        <span className="text-foreground">{profile.phone}</span>
                       )}
                     </div>
                   </div>
@@ -475,58 +442,58 @@ export default function ProfilePage() {
 
                 {/* Company Information */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-white">Company Information</h3>
+                  <h3 className="text-lg font-medium text-foreground">Company Information</h3>
                   
                   <div className="space-y-2">
-                    <label className="text-sm text-neutral-400">Company</label>
+                    <label className="text-sm text-muted-foreground">Company</label>
                     <div className="flex items-center gap-2">
-                      <Building className="h-4 w-4 text-neutral-500" />
+                      <Building className="h-4 w-4 text-foreground0" />
                       {isEditing ? (
                         <input
                           type="text"
                           name="company"
                           value={editedProfile.company}
                           onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground"
                         />
                       ) : (
-                        <span className="text-white">{profile.company}</span>
+                        <span className="text-foreground">{profile.company}</span>
                       )}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm text-neutral-400">Address</label>
+                    <label className="text-sm text-muted-foreground">Address</label>
                     <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-neutral-500" />
+                      <MapPin className="h-4 w-4 text-foreground0" />
                       {isEditing ? (
                         <input
                           type="text"
                           name="address"
                           value={editedProfile.address}
                           onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground"
                         />
                       ) : (
-                        <span className="text-white">{profile.address}</span>
+                        <span className="text-foreground">{profile.address}</span>
                       )}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm text-neutral-400">Website</label>
+                    <label className="text-sm text-muted-foreground">Website</label>
                     <div className="flex items-center gap-2">
-                      <Globe className="h-4 w-4 text-neutral-500" />
+                      <Globe className="h-4 w-4 text-foreground0" />
                       {isEditing ? (
                         <input
                           type="text"
                           name="website"
                           value={editedProfile.website}
                           onChange={handleInputChange}
-                          className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground"
                         />
                       ) : (
-                        <span className="text-white">{profile.website}</span>
+                        <span className="text-foreground">{profile.website}</span>
                       )}
                     </div>
                   </div>

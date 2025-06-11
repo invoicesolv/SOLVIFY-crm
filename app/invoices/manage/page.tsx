@@ -85,7 +85,7 @@ export default function ManageInvoicesPage() {
                 <p className="text-gray-600">
                   Invoice list feature is under development.
                 </p>
-                <p className="text-sm text-gray-500 mt-2">
+                <p className="text-sm text-foreground0 mt-2">
                   You can view invoices in your Fortnox account for now.
                 </p>
               </div>
@@ -96,8 +96,8 @@ export default function ManageInvoicesPage() {
       
       <Separator className="my-8" />
       
-      <div className="text-sm text-gray-500">
-        <h3 className="font-medium text-gray-700 mb-2">About Invoicing</h3>
+      <div className="text-sm text-foreground0">
+        <h3 className="font-medium text-foreground mb-2">About Invoicing</h3>
         <p className="mb-2">
           This page allows you to create both outgoing (customer) invoices and record incoming 
           (supplier) invoices in your Fortnox account.

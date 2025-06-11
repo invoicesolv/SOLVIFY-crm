@@ -51,7 +51,7 @@ export function AnimatedBorderCard({
         <div 
           className={`
             absolute inset-0 -z-10
-            border border-neutral-700 group-hover:border-neutral-600
+            border border-border dark:border-border group-hover:border-gray-400 dark:border-border
             transition-colors rounded-lg
           `}
         />

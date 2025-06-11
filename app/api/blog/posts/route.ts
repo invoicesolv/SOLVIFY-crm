@@ -59,6 +59,32 @@ async function getUnsplashApiKey(supabase: any): Promise<string | null> {
   }
 }
 
+// Add a helper function to properly clean markdown from content
+function cleanMarkdownContent(content: string): string {
+  if (!content) return '';
+  
+  // Clean markdown image syntax ![alt](url)
+  let cleaned = content.replace(/!\[(.*?)\]\((.*?)\)/g, '');
+  
+  // Clean markdown links [text](url)
+  cleaned = cleaned.replace(/\[(.*?)\]\((.*?)\)/g, '$1');
+  
+  // Clean markdown headings (# Title)
+  cleaned = cleaned.replace(/^#+\s+(.*)$/gm, '$1');
+  
+  // Clean markdown bold/italic
+  cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '$1');
+  cleaned = cleaned.replace(/\*(.*?)\*/g, '$1');
+  
+  // Clean HTML tags
+  cleaned = cleaned.replace(/<[^>]*>/g, '');
+  
+  // Clean extra whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  return cleaned;
+}
+
 /**
  * GET endpoint to fetch all published blog posts
  * This endpoint is public and doesn't require authentication
@@ -99,7 +125,7 @@ export async function GET(req: Request) {
       console.log('Fetching single post with slug pattern:', `%/${cleanSlug}`);
       const { data: post, error } = await supabase
         .from('generated_content')
-        .select('id, title, content, blog_post_url, created_at, updated_at')
+        .select('id, title, content, blog_post_url, created_at, updated_at, featured_image_url, featured_image_alt, featured_image_attribution')
         .eq('published_to_blog', true)
         .filter('blog_post_url', 'ilike', `%/${cleanSlug}`)
         .maybeSingle();
@@ -127,6 +153,9 @@ export async function GET(req: Request) {
       // Extract a formatted excerpt from the content with proper styling
       let excerpt = '';
       if (post.content) {
+        // First clean any markdown
+        const cleanedContent = cleanMarkdownContent(post.content);
+        
         // Check if content has proper headings
         const hasHeadings = /<h[1-3][^>]*>/i.test(post.content);
         
@@ -140,11 +169,11 @@ export async function GET(req: Request) {
             const firstParagraph = post.content.match(/<p>(.+?)<\/p>/i);
             excerpt = firstParagraph 
               ? `<p class="text-gray-300">${firstParagraph[1].substring(0, 150)}...</p>` 
-              : `<p class="text-gray-300">${post.content.replace(/<[^>]*>/g, '').substring(0, 150)}...</p>`;
+              : `<p class="text-gray-300">${cleanedContent.substring(0, 150)}...</p>`;
           }
         } else {
           // No headings, just get the beginning text
-          excerpt = `<p class="text-gray-300">${post.content.replace(/<[^>]*>/g, '').substring(0, 150)}...</p>`;
+          excerpt = `<p class="text-gray-300">${cleanedContent.substring(0, 150)}...</p>`;
         }
       }
       
@@ -176,26 +205,45 @@ export async function GET(req: Request) {
       const wordCount = post.content ? post.content.replace(/<[^>]*>/g, '').split(/\s+/).length : 0;
       const readTimeMinutes = Math.max(1, Math.round(wordCount / 200));
       
-      // Get a keyword from the title or use a default one
-      const titleWords = post.title.toLowerCase().split(/\s+/);
-      const keyword = titleWords.find(word => 
-        word.length > 3 && IMAGE_KEYWORDS.includes(word)
-      ) || 'business';
-      
-      // Fetch a relevant image from Unsplash
+      // Use the featured image from the generated content if available
       let featuredImage: UnsplashImage | null = null;
-      try {
-        // Pass the API key directly to ensure it's used for this request
-        featuredImage = await getRandomImage(keyword, unsplashApiKey || undefined);
+      
+      if (post.featured_image_url) {
+        // Use the existing featured image from the content
+        featuredImage = {
+          id: 'generated-content',
+          url: post.featured_image_url,
+          small_url: post.featured_image_url,
+          download_url: post.featured_image_url,
+          alt_text: post.featured_image_alt || post.title,
+          width: 1080,
+          height: 720,
+          author: {
+            name: post.featured_image_attribution?.authorName || 'Unknown',
+            username: post.featured_image_attribution?.authorName || 'unknown',
+            link: post.featured_image_attribution?.authorLink || '#'
+          }
+        };
+      } else {
+        // Fallback: Get a keyword from the title and fetch from Unsplash
+        const titleWords = post.title.toLowerCase().split(/\s+/);
+        const keyword = titleWords.find(word => 
+          word.length > 3 && IMAGE_KEYWORDS.includes(word)
+        ) || 'business';
         
-        if (featuredImage && featuredImage.id !== 'local-fallback') {
-          // Track the download as required by Unsplash API terms
-          // (only for actual Unsplash images, not our local fallbacks)
-          await trackDownload(featuredImage.id);
+        try {
+          // Pass the API key directly to ensure it's used for this request
+          featuredImage = await getRandomImage(keyword, unsplashApiKey || undefined);
+          
+          if (featuredImage && featuredImage.id !== 'local-fallback') {
+            // Track the download as required by Unsplash API terms
+            // (only for actual Unsplash images, not our local fallbacks)
+            await trackDownload(featuredImage.id);
+          }
+        } catch (imageError) {
+          console.error('Error fetching image for post:', imageError);
+          // Continue without image if there's an error
         }
-      } catch (imageError) {
-        console.error('Error fetching image for post:', imageError);
-        // Continue without image if there's an error
       }
       
       // Format content with proper headings and structure for API response
@@ -288,7 +336,7 @@ export async function GET(req: Request) {
     console.log('Fetching all published blog posts');
     const { data: posts, error } = await supabase
       .from('generated_content')
-      .select('id, title, content, blog_post_url, is_featured, created_at, updated_at')
+      .select('id, title, content, blog_post_url, is_featured, created_at, updated_at, featured_image_url, featured_image_alt, featured_image_attribution')
       .eq('published_to_blog', true)
       .order('updated_at', { ascending: false });
     
@@ -327,6 +375,9 @@ export async function GET(req: Request) {
       // Extract a formatted excerpt from the content with proper styling
       let excerpt = '';
       if (post.content) {
+        // First clean any markdown
+        const cleanedContent = cleanMarkdownContent(post.content);
+        
         // Check if content has proper headings
         const hasHeadings = /<h[1-3][^>]*>/i.test(post.content);
         
@@ -340,11 +391,11 @@ export async function GET(req: Request) {
             const firstParagraph = post.content.match(/<p>(.+?)<\/p>/i);
             excerpt = firstParagraph 
               ? `<p class="text-gray-300">${firstParagraph[1].substring(0, 150)}...</p>` 
-              : `<p class="text-gray-300">${post.content.replace(/<[^>]*>/g, '').substring(0, 150)}...</p>`;
+              : `<p class="text-gray-300">${cleanedContent.substring(0, 150)}...</p>`;
           }
         } else {
           // No headings, just get the beginning text
-          excerpt = `<p class="text-gray-300">${post.content.replace(/<[^>]*>/g, '').substring(0, 150)}...</p>`;
+          excerpt = `<p class="text-gray-300">${cleanedContent.substring(0, 150)}...</p>`;
         }
       }
       
@@ -376,22 +427,41 @@ export async function GET(req: Request) {
       const wordCount = post.content ? post.content.replace(/<[^>]*>/g, '').split(/\s+/).length : 0;
       const readTimeMinutes = Math.max(1, Math.round(wordCount / 200));
       
-      // Get a keyword from the title or use a default one
-      const titleWords = post.title.toLowerCase().split(/\s+/);
-      const keyword = titleWords.find(word => 
-        word.length > 3 && IMAGE_KEYWORDS.includes(word)
-      ) || 'business';
-      
-      // Fetch a relevant image from Unsplash
+      // Use the featured image from the generated content if available
       let featuredImage: UnsplashImage | null = null;
-      try {
-        // Pass the API key directly to ensure it's used for this request
-        featuredImage = await getRandomImage(keyword, unsplashApiKey || undefined);
-        // Note: We're not tracking downloads here to avoid hitting Unsplash rate limits
-        // The actual download/usage will be tracked when viewing the individual post
-      } catch (imageError) {
-        console.error('Error fetching image for post list:', imageError);
-        // Continue without image if there's an error
+      
+      if (post.featured_image_url) {
+        // Use the existing featured image from the content
+        featuredImage = {
+          id: 'generated-content',
+          url: post.featured_image_url,
+          small_url: post.featured_image_url,
+          download_url: post.featured_image_url,
+          alt_text: post.featured_image_alt || post.title,
+          width: 1080,
+          height: 720,
+          author: {
+            name: post.featured_image_attribution?.authorName || 'Unknown',
+            username: post.featured_image_attribution?.authorName || 'unknown',
+            link: post.featured_image_attribution?.authorLink || '#'
+          }
+        };
+      } else {
+        // Fallback: Get a keyword from the title and fetch from Unsplash
+        const titleWords = post.title.toLowerCase().split(/\s+/);
+        const keyword = titleWords.find(word => 
+          word.length > 3 && IMAGE_KEYWORDS.includes(word)
+        ) || 'business';
+        
+        try {
+          // Pass the API key directly to ensure it's used for this request
+          featuredImage = await getRandomImage(keyword, unsplashApiKey || undefined);
+          // Note: We're not tracking downloads here to avoid hitting Unsplash rate limits
+          // The actual download/usage will be tracked when viewing the individual post
+        } catch (imageError) {
+          console.error('Error fetching image for post list:', imageError);
+          // Continue without image if there's an error
+        }
       }
       
       return {

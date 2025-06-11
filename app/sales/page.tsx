@@ -118,13 +118,10 @@ export default function SalesPage() {
 
   return (
     <SidebarDemo>
-      <div className="p-6 flex-1 overflow-auto bg-neutral-950">
+      <div className="p-6 flex-1 overflow-auto bg-background">
         <div className="max-w-7xl mx-auto">
           {/* Main content area with the same styling as dashboard */}
           <div className="rounded-xl overflow-hidden relative">
-            {/* Subtle gradient background */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-neutral-950 via-neutral-900 to-neutral-950 opacity-50"></div>
-
             {/* Content with proper z-index */}
             <div className="relative z-10">
           <motion.div
@@ -146,10 +143,10 @@ export default function SalesPage() {
                       variant="default"
                     />
                     <div className="relative z-20">
-              <h1 className="text-3xl font-bold mb-2 text-neutral-100">
+              <h1 className="text-3xl font-bold mb-2 text-foreground">
                 Sales Pipeline
               </h1>
-              <p className="text-neutral-400">
+              <p className="text-muted-foreground">
                 Track and manage your deals across different stages
               </p>
                     </div>
@@ -161,11 +158,11 @@ export default function SalesPage() {
                   <div className="group relative overflow-hidden rounded-lg">
                     <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                     
-                    <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                    <div className="relative z-10 m-[1px] bg-muted rounded-lg hover:bg-muted/80 transition-colors duration-300">
               <select
                 value={activeWorkspace || ""}
                 onChange={(e) => setActiveWorkspace(e.target.value)}
-                        className="h-10 px-3 text-sm font-medium bg-transparent border-0 rounded-lg text-neutral-200 focus:outline-none focus:ring-0 appearance-none pr-8"
+                        className="h-10 px-3 text-sm font-medium bg-transparent border-0 rounded-lg text-foreground focus:outline-none focus:ring-0 appearance-none pr-8"
               >
                 <option value="" disabled>
                   Select Workspace
@@ -176,7 +173,7 @@ export default function SalesPage() {
                   </option>
                 ))}
               </select>
-                      <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-neutral-400">
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-muted-foreground">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
@@ -188,11 +185,11 @@ export default function SalesPage() {
                   <div className="group relative overflow-hidden rounded-lg">
                     <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                     
-                    <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                    <div className="relative z-10 m-[1px] bg-muted rounded-lg hover:bg-muted/80 transition-colors duration-300">
                       <button 
                 onClick={() => setDealDialogOpen(true)}
                 disabled={!activeWorkspace}
-                        className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                        className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
               >
                 <Plus className="h-4 w-4" />
                 New Deal
@@ -209,50 +206,50 @@ export default function SalesPage() {
             variants={fadeInUp}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
           >
-                <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-0 p-6" gradient="blue-purple">
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="blue-purple">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-blue-500/10 rounded-lg">
                   <DollarSign className="h-5 w-5 text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-neutral-400">Total Pipeline</p>
-                  <p className="text-xl font-bold text-white">${metrics.totalRevenue.toLocaleString()}</p>
+                  <p className="text-sm text-muted-foreground">Total Pipeline</p>
+                  <p className="text-xl font-bold text-foreground">${metrics.totalRevenue.toLocaleString()}</p>
                 </div>
               </div>
                 </AnimatedBorderCard>
 
-                <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-0 p-6" gradient="purple-pink">
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="purple-pink">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-indigo-500/10 rounded-lg">
                   <BarChart2 className="h-5 w-5 text-indigo-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-neutral-400">Total Deals</p>
-                  <p className="text-xl font-bold text-white">{metrics.totalDeals}</p>
+                  <p className="text-sm text-muted-foreground">Total Deals</p>
+                  <p className="text-xl font-bold text-foreground">{metrics.totalDeals}</p>
                 </div>
               </div>
                 </AnimatedBorderCard>
 
-                <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-0 p-6" gradient="green-blue">
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="green-blue">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-cyan-500/10 rounded-lg">
                   <PieChart className="h-5 w-5 text-cyan-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-neutral-400">Average Deal</p>
-                  <p className="text-xl font-bold text-white">${metrics.averageDeal.toLocaleString()}</p>
+                  <p className="text-sm text-muted-foreground">Average Deal</p>
+                  <p className="text-xl font-bold text-foreground">${metrics.averageDeal.toLocaleString()}</p>
                 </div>
               </div>
                 </AnimatedBorderCard>
 
-                <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-0 p-6" gradient="orange-red">
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="orange-red">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-blue-500/10 rounded-lg">
                   <CheckCircle2 className="h-5 w-5 text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-neutral-400">Win Rate</p>
-                  <p className="text-xl font-bold text-white">{metrics.conversionRate.toFixed(1)}%</p>
+                  <p className="text-sm text-muted-foreground">Win Rate</p>
+                  <p className="text-xl font-bold text-foreground">{metrics.conversionRate.toFixed(1)}%</p>
                 </div>
               </div>
                 </AnimatedBorderCard>

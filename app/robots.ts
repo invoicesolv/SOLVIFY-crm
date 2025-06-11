@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: '/',
       disallow: ['/api/', '/dashboard/'],
     },
-    sitemap: 'https://vibe.solvify.com/sitemap.xml',
+    sitemap: 'https://solvify.com/sitemap.xml',
   }
 } 

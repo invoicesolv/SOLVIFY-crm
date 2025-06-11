@@ -8,6 +8,8 @@ import SupabaseSessionSync from "@/components/ui/SupabaseSessionSync"
 import { ChatWindow } from "@/components/ChatWindow"
 import dynamic from "next/dynamic"
 import { CustomerProvider } from './contexts/CustomerContext'
+import { ThemeProvider } from '../contexts/ThemeContext'
+import { NotificationProvider } from '@/lib/notification-context'
 
 // Dynamically import the FortnoxNotification component with SSR disabled
 const FortnoxNotification = dynamic(
@@ -18,18 +20,22 @@ const FortnoxNotification = dynamic(
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
+      <ThemeProvider>
       <ToastProvider>
         <SupabaseSessionSync>
-          <AnimatePresence mode="wait">
-            <CustomerProvider>
-              {children}
-            </CustomerProvider>
-          </AnimatePresence>
-          <Toaster richColors position="top-right" />
-          <ChatWindow />
-          <FortnoxNotification />
+          <NotificationProvider>
+            <AnimatePresence mode="wait">
+              <CustomerProvider>
+                {children}
+              </CustomerProvider>
+            </AnimatePresence>
+            <Toaster richColors position="top-right" />
+            <ChatWindow />
+            <FortnoxNotification />
+          </NotificationProvider>
         </SupabaseSessionSync>
       </ToastProvider>
+      </ThemeProvider>
     </SessionProvider>
   )
 } 

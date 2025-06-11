@@ -62,7 +62,7 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 bg-neutral-850 rounded-lg p-6 relative overflow-hidden">
+    <form onSubmit={handleSubmit} className="space-y-4 bg-gray-200 dark:bg-neutral-850 rounded-lg p-6 relative overflow-hidden">
       <div className="relative">
         <div className="relative z-10">
       <div className="flex items-center justify-between">
@@ -71,7 +71,7 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Task title"
-          className="text-lg font-medium text-white bg-transparent border-none focus:outline-none focus:ring-0 placeholder-neutral-500 w-full"
+          className="text-lg font-medium text-foreground bg-transparent border-none focus:outline-none focus:ring-0 placeholder-neutral-500 w-full"
           required
         />
         <div className="flex items-center gap-2">
@@ -79,11 +79,11 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
                 <div className="group relative overflow-hidden rounded-full">
                   <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-red-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-full"></div>
                   
-                  <div className="relative z-10 m-[1px] bg-neutral-800 rounded-full hover:bg-neutral-750 transition-colors duration-300">
+                  <div className="relative z-10 m-[1px] bg-background rounded-full hover:bg-neutral-750 transition-colors duration-300">
             <button
               type="button"
               onClick={onDelete}
-                      className="p-2 border-0 bg-transparent text-neutral-400 hover:bg-transparent hover:text-white"
+                      className="p-2 border-0 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground"
             >
               <Trash2 className="h-5 w-5" />
             </button>
@@ -93,11 +93,11 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
               <div className="group relative overflow-hidden rounded-full">
                 <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-full"></div>
                 
-                <div className="relative z-10 m-[1px] bg-neutral-800 rounded-full hover:bg-neutral-750 transition-colors duration-300">
+                <div className="relative z-10 m-[1px] bg-background rounded-full hover:bg-neutral-750 transition-colors duration-300">
           <button
             type="button"
             onClick={onCancel}
-                    className="p-2 border-0 bg-transparent text-neutral-400 hover:bg-transparent hover:text-white"
+                    className="p-2 border-0 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground"
           >
             <X className="h-5 w-5" />
           </button>
@@ -111,7 +111,7 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
           type="date"
           value={deadline}
           onChange={(e) => setDeadline(e.target.value)}
-          className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+          className="px-3 py-1.5 bg-background border border-border dark:border-border rounded text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
         />
       </div>
 
@@ -124,24 +124,24 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
                 value={item.text}
                 onChange={(e) => updateChecklistItem(index, { text: e.target.value })}
                 placeholder="Checklist item"
-                className="w-full px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="w-full px-3 py-1.5 bg-background border border-border dark:border-border rounded text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                 required
               />
               <input
                 type="date"
                 value={item.deadline || ''}
                 onChange={(e) => updateChecklistItem(index, { deadline: e.target.value })}
-                className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="px-3 py-1.5 bg-background border border-border dark:border-border rounded text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
               />
             </div>
                 <div className="group relative overflow-hidden rounded-full">
                   <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-red-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-full"></div>
                   
-                  <div className="relative z-10 m-[1px] bg-neutral-800 rounded-full hover:bg-neutral-750 transition-colors duration-300">
+                  <div className="relative z-10 m-[1px] bg-background rounded-full hover:bg-neutral-750 transition-colors duration-300">
             <button
               type="button"
               onClick={() => removeChecklistItem(index)}
-                      className="p-2 border-0 bg-transparent text-neutral-400 hover:bg-transparent hover:text-white"
+                      className="p-2 border-0 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -152,11 +152,11 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
             <div className="group relative overflow-hidden rounded-lg inline-block">
               <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-blue-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
               
-              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
         <button
           type="button"
           onClick={addChecklistItem}
-                  className="flex items-center gap-2 px-3 py-1 text-sm border-0 bg-transparent text-neutral-400 hover:bg-transparent hover:text-white"
+                  className="flex items-center gap-2 px-3 py-1 text-sm border-0 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground"
         >
           <Plus className="h-4 w-4" />
           Add checklist item
@@ -169,11 +169,11 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
             <div className="group relative overflow-hidden rounded-lg">
               <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
               
-              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
         <button
           type="button"
           onClick={onCancel}
-                  className="px-4 py-2 text-sm border-0 bg-transparent text-neutral-400 hover:bg-transparent hover:text-white"
+                  className="px-4 py-2 text-sm border-0 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground"
         >
           Cancel
         </button>
@@ -183,10 +183,10 @@ export function TaskForm({ task, onSubmit, onCancel, onDelete }: TaskFormProps) 
             <div className="group relative overflow-hidden rounded-lg">
               <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-green-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
               
-              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
         <button
           type="submit"
-                  className="px-4 py-2 text-sm border-0 bg-transparent text-neutral-400 hover:bg-transparent hover:text-white"
+                  className="px-4 py-2 text-sm border-0 bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground"
         >
           {task ? 'Save changes' : 'Create task'}
         </button>

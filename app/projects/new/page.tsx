@@ -41,12 +41,12 @@ export default function NewProjectPage() {
     }
   }, [session?.user?.id]);
 
-  // Fetch customers when workspace ID is available
+  // Fetch customers when user session is available
   useEffect(() => {
-    if (workspaceId) {
+    if (session?.user?.id) {
       fetchCustomers();
     }
-  }, [workspaceId]);
+  }, [session?.user?.id]);
 
   const fetchWorkspaceId = async () => {
     if (!session?.user?.id) return;
@@ -67,31 +67,67 @@ export default function NewProjectPage() {
       return;
     }
 
-    if (!workspaceId) {
-      console.log('Waiting for workspace ID before fetching customers');
-      return;
-    }
-
     try {
-      console.log('Fetching customers for workspace:', workspaceId);
+      console.log('Fetching all customers for user:', session.user.id);
       
-      const { data: customers, error } = await supabase
+      // Fetch ALL customers that this user has access to, regardless of workspace_id
+      const { data: allCustomers, error: customersError } = await supabase
         .from('customers')
         .select('*')
-        .eq('workspace_id', workspaceId)
         .order('name');
 
-      if (error) {
-        console.error('Error fetching customers:', error);
+      if (customersError) {
+        console.error('Error fetching customers:', customersError);
         setError('Failed to fetch customers');
         return;
       }
 
-      console.log(`Fetched ${customers?.length || 0} customers for workspace`);
-      setCustomers(customers || []);
+      console.log(`Fetched ${allCustomers?.length || 0} total customers`);
+      
+      // Filter out customers with empty names and provide fallbacks for the rest
+      const customersWithNames = (allCustomers || [])
+        .filter(customer => customer.name && customer.name.trim() !== '')
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+      console.log(`Filtered to ${customersWithNames.length} customers with valid names`);
+      
+      setCustomers(customersWithNames);
     } catch (error) {
       console.error('Error in fetchCustomers:', error);
       setError('Failed to fetch customers');
+    }
+  };
+
+  const fixCustomerWorkspaces = async () => {
+    if (!session?.user?.id) {
+      toast.error('Please sign in to fix customer data');
+      return;
+    }
+
+    try {
+      toast.info('Fixing customer data issues...');
+      
+      const response = await fetch('/api/customers/fix-workspace', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast.success(result.message || 'Customer data fixed successfully');
+        // Refresh customers after fixing
+        if (result.fixed_count > 0) {
+          await fetchCustomers();
+        }
+      } else {
+        toast.error(result.error || 'Failed to fix customer data');
+      }
+    } catch (error) {
+      console.error('Error fixing customer data:', error);
+      toast.error('Failed to fix customer data');
     }
   };
 
@@ -191,15 +227,15 @@ export default function NewProjectPage() {
         <div className="flex items-center gap-4">
           <Link
             href="/projects"
-            className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Projects
           </Link>
         </div>
 
-        <Card className="bg-neutral-800 border-neutral-700 p-6">
-          <h1 className="text-2xl font-semibold text-white mb-6">New Project</h1>
+        <Card className="bg-background border-border dark:border-border p-6">
+          <h1 className="text-2xl font-semibold text-foreground mb-6">New Project</h1>
           {error && (
             <div className="mb-6 p-3 bg-red-500/20 border border-red-500/50 text-red-200 rounded-md">
               {error}
@@ -208,7 +244,7 @@ export default function NewProjectPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label htmlFor="name" className="block text-sm font-medium text-neutral-400">
+                <label htmlFor="name" className="block text-sm font-medium text-muted-foreground">
                   Project Name
                 </label>
                 <input
@@ -216,31 +252,54 @@ export default function NewProjectPage() {
                   id="name"
                   name="name"
                   required
-                  className="w-full px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                  className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="customer_id" className="block text-sm font-medium text-neutral-400">
+                <label htmlFor="customer_id" className="block text-sm font-medium text-muted-foreground">
                   Customer
                 </label>
-                <select
-                  id="customer_id"
-                  name="customer_id"
-                  required
-                  className="w-full px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
-                >
-                  <option value="">Select a customer</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <select
+                    id="customer_id"
+                    name="customer_id"
+                    required
+                    className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                  >
+                    <option value="">Select a customer</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.name}
+                      </option>
+                    ))}
+                  </select>
+                  {customers.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={fixCustomerWorkspaces}
+                      className="text-sm text-blue-600 hover:text-blue-400 underline"
+                    >
+                      Fix customer workspace assignments
+                    </button>
+                  )}
+                  {customers.length > 0 && customers.some(c => !c.name || c.name.trim() === '') && (
+                    <div className="mt-2 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
+                      <p className="text-sm text-yellow-400 mb-2">⚠️ Some customers have empty names</p>
+                      <button
+                        type="button"
+                        onClick={fixCustomerWorkspaces}
+                        className="text-sm text-blue-600 hover:text-blue-400 underline"
+                      >
+                        Fix customer data issues
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="status" className="block text-sm font-medium text-neutral-400">
+                <label htmlFor="status" className="block text-sm font-medium text-muted-foreground">
                   Status
                 </label>
                 <select
@@ -248,7 +307,7 @@ export default function NewProjectPage() {
                   name="status"
                   required
                   defaultValue="active"
-                  className="w-full px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                  className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                 >
                   <option value="active">Active</option>
                   <option value="on-hold">On Hold</option>
@@ -257,7 +316,7 @@ export default function NewProjectPage() {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="start_date" className="block text-sm font-medium text-neutral-400">
+                <label htmlFor="start_date" className="block text-sm font-medium text-muted-foreground">
                   Start Date
                 </label>
                 <input
@@ -266,32 +325,32 @@ export default function NewProjectPage() {
                   name="start_date"
                   required
                   defaultValue={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                  className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                 />
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="end_date" className="block text-sm font-medium text-neutral-400">
+                <label htmlFor="end_date" className="block text-sm font-medium text-muted-foreground">
                   End Date
                 </label>
                 <input
                   type="date"
                   id="end_date"
                   name="end_date"
-                  className="w-full px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                  className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="description" className="block text-sm font-medium text-neutral-400">
+              <label htmlFor="description" className="block text-sm font-medium text-muted-foreground">
                 Description
               </label>
               <textarea
                 id="description"
                 name="description"
                 rows={4}
-                className="w-full px-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
               />
             </div>
 
@@ -299,7 +358,7 @@ export default function NewProjectPage() {
               <button
                 type="submit"
                 disabled={loading || !workspaceId}
-                className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 disabled:bg-neutral-800 disabled:cursor-not-allowed border border-neutral-600 rounded-md text-sm text-white transition-colors"
+                className="px-4 py-2 bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 disabled:bg-muted dark:disabled:bg-neutral-800 disabled:cursor-not-allowed border border-gray-400 dark:border-border rounded-md text-sm text-foreground transition-colors"
               >
                 {loading ? "Creating..." : "Create Project"}
               </button>

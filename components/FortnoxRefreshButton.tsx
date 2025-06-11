@@ -46,7 +46,7 @@ export default function FortnoxRefreshButton() {
     <Button 
       onClick={fetchAllFortnoxCustomers}
       disabled={isCheckingFortnox}
-      className="bg-neutral-700 hover:bg-neutral-600 border-neutral-600"
+      className="bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 border-gray-400 dark:border-border"
     >
       {isCheckingFortnox ? (
         <>

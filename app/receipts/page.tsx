@@ -49,19 +49,19 @@ export default function ReceiptsPage() {
   return (
     <SidebarDemo>
       <div className="p-6">
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-6">
+        <div className="rounded-xl border border-border bg-background p-6">
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-semibold text-white">Receipts</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Receipts</h1>
             {timestamp && (
-              <span className="text-sm text-neutral-400">
+              <span className="text-sm text-muted-foreground">
                 Last updated: {new Date(timestamp).toLocaleString()}
               </span>
             )}
           </div>
           {loading ? (
-            <div className="text-neutral-400">Loading receipts...</div>
+            <div className="text-muted-foreground">Loading receipts...</div>
           ) : error ? (
-            <div className="text-red-500">{error}</div>
+            <div className="text-red-600 dark:text-red-400">{error}</div>
           ) : (
             <ReceiptsTable receipts={receipts} />
           )}

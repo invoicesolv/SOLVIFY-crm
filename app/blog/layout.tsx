@@ -9,7 +9,6 @@ export const metadata: Metadata = {
     canonical: 'https://crm.solvify.se/blog',
     languages: {
       'en-US': 'https://crm.solvify.se/blog',
-      'sv-SE': 'https://crm.solvify.se/blog/sv',
     },
   },
   openGraph: {

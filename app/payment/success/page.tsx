@@ -39,12 +39,12 @@ function PaymentSuccessContent() {
   }, [payment_intent, payment_intent_client_secret]);
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="max-w-md w-full space-y-8 text-center">
         {status === 'processing' && (
           <>
-            <h1 className="text-2xl font-bold text-white">Processing your payment...</h1>
-            <p className="text-neutral-400">Please wait while we confirm your payment.</p>
+            <h1 className="text-2xl font-bold text-foreground">Processing your payment...</h1>
+            <p className="text-muted-foreground">Please wait while we confirm your payment.</p>
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto" />
           </>
         )}
@@ -52,12 +52,12 @@ function PaymentSuccessContent() {
         {status === 'success' && (
           <>
             <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-8 h-8 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-white">Payment Successful!</h1>
-            <p className="text-neutral-400">Thank you for your purchase.</p>
+            <h1 className="text-2xl font-bold text-foreground">Payment Successful!</h1>
+            <p className="text-muted-foreground">Thank you for your purchase.</p>
             <Button asChild className="mt-8">
               <a href="/dashboard">Go to Dashboard</a>
             </Button>
@@ -67,12 +67,12 @@ function PaymentSuccessContent() {
         {status === 'error' && (
           <>
             <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-8 h-8 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-white">Payment Failed</h1>
-            <p className="text-neutral-400">There was an error processing your payment.</p>
+            <h1 className="text-2xl font-bold text-foreground">Payment Failed</h1>
+            <p className="text-muted-foreground">There was an error processing your payment.</p>
             <Button asChild className="mt-8">
               <a href="/pricing">Try Again</a>
             </Button>
@@ -86,9 +86,9 @@ function PaymentSuccessContent() {
 export default function PaymentSuccess() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="max-w-md w-full space-y-8 text-center">
-          <h1 className="text-2xl font-bold text-white">Loading...</h1>
+          <h1 className="text-2xl font-bold text-foreground">Loading...</h1>
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto" />
         </div>
       </div>

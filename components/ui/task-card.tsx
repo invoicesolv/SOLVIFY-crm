@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Minus, Plus, CheckCircle, X, Clock, ChevronRight, Pencil, User, UserPlus, AlertCircle } from "lucide-react";
+import { Minus, Plus, CheckCircle, X, Clock, ChevronRight, Pencil, User, UserPlus, AlertCircle, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Task } from "@/types/project";
@@ -11,14 +11,19 @@ import { useProjectAssignments } from "@/hooks/useProjectAssignments";
 import { useWorkspaceMembers } from "@/hooks/useWorkspaceMembers";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { TimeTracker } from "@/components/ui/TimeTracker";
+import { SubtaskCalendarScheduler } from "@/components/ui/SubtaskCalendarScheduler";
 
 interface TaskCardProps {
     task: Task;
     onUpdate?: (taskId: string, updates: Partial<Task>) => void;
     onDelete?: (taskId: string) => void;
+    onMoveTask?: (task: Task) => void;
+    onMoveSubtask?: (task: Task, subtask: any) => void;
+    projectName?: string;
 }
 
-export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
+export function TaskCard({ task, onUpdate, onDelete, onMoveTask, onMoveSubtask, projectName }: TaskCardProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [newSubtask, setNewSubtask] = useState("");
     const [isAddingSubtask, setIsAddingSubtask] = useState(false);
@@ -159,7 +164,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                 },
                 opacity: { duration: 0.3 }
             }}
-            className="w-full bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden relative"
+            className="w-full bg-background border border-border rounded-lg overflow-hidden relative"
         >
             <div className="p-4 relative z-10">
             <div 
@@ -177,7 +182,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                     >
                         <ChevronRight className={cn(
                             "h-4 w-4",
-                            task.progress === 100 ? "text-green-500" : "text-neutral-400"
+                            task.progress === 100 ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
                         )} />
                     </motion.div>
                     {editingTaskTitle ? (
@@ -185,7 +190,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                             <Input
                                 value={editedTaskTitle}
                                 onChange={(e) => setEditedTaskTitle(e.target.value)}
-                                className="bg-neutral-800 border-neutral-700 text-white"
+                                className="bg-background border-border dark:border-border text-foreground"
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                         e.preventDefault();
@@ -205,7 +210,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                     setEditingTaskTitle(false);
                                     setEditedTaskTitle(task.title);
                                 }}
-                                className="text-neutral-400 hover:text-neutral-300"
+                                className="text-muted-foreground hover:text-foreground dark:text-neutral-300"
                             >
                                 <X className="h-4 w-4" />
                             </Button>
@@ -213,7 +218,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                 variant="ghost"
                                 size="sm"
                                 onClick={handleEditTaskTitle}
-                                className="text-green-500 hover:text-green-400"
+                                className="text-green-600 dark:text-green-400 hover:text-green-400"
                             >
                                 <CheckCircle className="h-4 w-4" />
                             </Button>
@@ -225,8 +230,8 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                 className={cn(
                                     "text-base transition-all duration-200",
                                     task.progress === 100 
-                                        ? "text-green-500 line-through opacity-70" 
-                                        : "text-white"
+                                        ? "text-green-600 dark:text-green-400 line-through opacity-70" 
+                                        : "text-foreground"
                                 )}
                             >
                                 {task.title}
@@ -240,7 +245,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
                                             <button 
-                                                className="flex items-center gap-1.5 p-1.5 text-neutral-400 hover:text-blue-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                                className="flex items-center gap-1.5 p-1.5 text-muted-foreground hover:text-blue-400 transition-colors rounded-md hover:bg-gray-200 dark:bg-muted/50"
                                             >
                                                 {assignedMember ? (
                                                     <div className="flex items-center gap-1 bg-blue-500/10 rounded-full px-2 py-0.5">
@@ -256,34 +261,34 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                             </button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent 
-                                            className="bg-neutral-800 border-neutral-700 w-56" 
+                                            className="bg-background border-border dark:border-border w-56" 
                                             align="start"
                                         >
                                             {members.length === 0 ? (
-                                                <div className="px-2 py-4 text-sm text-center text-neutral-400">
+                                                <div className="px-2 py-4 text-sm text-center text-muted-foreground">
                                                     No team members found
                                                 </div>
                                             ) : (
                                                 <>
-                                                    <div className="py-1 px-2 text-xs text-neutral-500 border-b border-neutral-700">
+                                                    <div className="py-1 px-2 text-xs text-foreground0 border-b border-border dark:border-border">
                                                         Assign to user
                                                     </div>
                                                     {members.map(member => (
                                                         <DropdownMenuItem 
                                                             key={member.id}
                                                             className={cn(
-                                                                "text-sm text-white flex items-center gap-2 cursor-pointer hover:bg-neutral-700",
-                                                                task.assigned_to === member.user_id && "bg-blue-900/20"
+                                                                "text-sm text-foreground flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted",
+                                                                task.assigned_to === member.user_id && "bg-blue-100 dark:bg-blue-900/20"
                                                             )}
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 onUpdate && onUpdate(task.id, { ...task, assigned_to: member.user_id });
                                                             }}
                                                         >
-                                                            <User className="h-4 w-4 mr-2 text-neutral-400" />
+                                                            <User className="h-4 w-4 mr-2 text-muted-foreground" />
                                                             {member.name}
                                                             {task.assigned_to === member.user_id && (
-                                                                <span className="ml-auto text-xs bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
+                                                                <span className="ml-auto text-xs bg-blue-200 dark:bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
                                                                     Current
                                                                 </span>
                                                             )}
@@ -292,9 +297,9 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                     
                                                     {task.assigned_to && (
                                                         <>
-                                                            <div className="h-px bg-neutral-700 my-1 mx-2" />
+                                                            <div className="h-px bg-gray-200 dark:bg-muted my-1 mx-2" />
                                                             <DropdownMenuItem 
-                                                                className="text-sm text-red-400 flex items-center gap-2 cursor-pointer hover:bg-neutral-700"
+                                                                className="text-sm text-red-400 flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     onUpdate && onUpdate(task.id, { ...task, assigned_to: undefined });
@@ -324,14 +329,14 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                     e.stopPropagation();
                                     setEditingTaskTitle(true);
                                 }}
-                                className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-300 transition-opacity duration-200"
+                                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground dark:text-neutral-300 transition-opacity duration-200"
                             >
                                 <Pencil className="h-3 w-3" />
                             </Button>
                         </div>
                     )}
                     {task.deadline && (
-                        <div className="flex items-center gap-1 text-xs text-neutral-400 ml-2">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
                             <Clock className="h-3 w-3" />
                             {new Date(task.deadline).toLocaleDateString()}
                         </div>
@@ -350,14 +355,14 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                             }}
                             className={cn(
                                 "text-sm",
-                                task.progress === 100 ? "text-green-500" : "text-neutral-400"
+                                task.progress === 100 ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
                             )}
                         >
                             {task.checklist.filter(item => item.done).length} / {task.checklist.length}
                         </motion.span>
                         <motion.span 
                             layout="position"
-                            className="text-sm text-neutral-500"
+                            className="text-sm text-foreground0"
                         >
                             ({task.progress}%)
                         </motion.span>
@@ -371,9 +376,24 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                 e.stopPropagation();
                                 onDelete(task.id);
                             }}
-                            className="text-neutral-400 hover:text-red-400"
+                            className="text-muted-foreground hover:text-red-400"
                         >
                             <X className="h-4 w-4" />
+                        </Button>
+                    )}
+                    
+                    {onMoveTask && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onMoveTask(task);
+                            }}
+                            className="text-muted-foreground hover:text-purple-400"
+                            title="Move task to another project"
+                        >
+                            <ArrowRightLeft className="h-4 w-4" />
                         </Button>
                     )}
                 </div>
@@ -393,7 +413,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                             },
                             opacity: { duration: 0.3 }
                         }}
-                        className="border-t border-neutral-800"
+                        className="border-t border-border"
                     >
                         <div className="p-4 space-y-4">
                             <div className="space-y-2">
@@ -420,10 +440,10 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                     onClick={() => handleToggleSubtask(item.id)}
                                                     className={cn(
                                                         "flex-shrink-0 w-5 h-5 rounded-full border transition-colors duration-200 flex items-center justify-center mt-0.5",
-                                                        item.done ? "bg-green-600 border-green-500" : "border-neutral-600 hover:border-white"
+                                                        item.done ? "bg-green-600 border-green-500" : "border-gray-400 dark:border-border hover:border-white"
                                                     )}
                                                 >
-                                                    {item.done && <CheckCircle className="h-4 w-4 text-white" />}
+                                                    {item.done && <CheckCircle className="h-4 w-4 text-foreground" />}
                                                 </button>
                                                 
                                                 <div className="ml-3 flex-1">
@@ -432,7 +452,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                             <Input
                                                                 value={editedSubtaskText}
                                                                 onChange={(e) => setEditedSubtaskText(e.target.value)}
-                                                                className="bg-neutral-800 border-neutral-700 text-white"
+                                                                className="bg-background border-border dark:border-border text-foreground"
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Enter') {
                                                                         e.preventDefault();
@@ -452,7 +472,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                                     setEditingSubtaskId(null);
                                                                     setEditedSubtaskText("");
                                                                 }}
-                                                                className="text-neutral-400 hover:text-neutral-300"
+                                                                className="text-muted-foreground hover:text-foreground dark:text-neutral-300"
                                                             >
                                                                 <X className="h-4 w-4" />
                                                             </Button>
@@ -460,7 +480,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 onClick={() => handleEditSubtask(item.id)}
-                                                                className="text-green-500 hover:text-green-400"
+                                                                className="text-green-600 dark:text-green-400 hover:text-green-400"
                                                             >
                                                                 <CheckCircle className="h-4 w-4" />
                                                             </Button>
@@ -470,7 +490,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                             <div className="flex flex-col">
                                                                 <span className={cn(
                                                                     "text-sm transition-all duration-200",
-                                                                    item.done ? "line-through text-neutral-500" : "text-white"
+                                                                    item.done ? "line-through text-foreground0" : "text-foreground"
                                                                 )}>
                                                                     {item.text}
                                                                 </span>
@@ -483,70 +503,97 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                             </div>
                                                             
                                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                                                    {/* Add subtask assignment dropdown */}
-                                                                    <div onClick={(e) => e.stopPropagation()}>
-                                                                        <DropdownMenu>
-                                                                            <DropdownMenuTrigger asChild>
-                                                                                <button 
-                                                                                    className="flex items-center gap-1 p-1 text-neutral-400 hover:text-blue-400 transition-colors rounded hover:bg-neutral-700/50"
-                                                                                >
-                                                                                    {itemAssignedMember ? (
-                                                                                        <User className="h-3.5 w-3.5 text-blue-400" />
-                                                                                    ) : (
-                                                                                        <UserPlus className="h-3.5 w-3.5" />
-                                                                                    )}
-                                                                                </button>
-                                                                            </DropdownMenuTrigger>
-                                                                            <DropdownMenuContent 
-                                                                                className="bg-neutral-800 border-neutral-700 w-48" 
-                                                                                align="end"
+                                                                {/* Time Tracker */}
+                                                                <div 
+                                                                    className="flex items-center rounded-md px-2 py-1 border border-border dark:border-border hover:border-blue-500 hover:bg-gray-200 dark:bg-muted cursor-pointer"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        e.preventDefault();
+                                                                    }}
+                                                                >
+                                                                    <TimeTracker 
+                                                                        projectId={task.project_id || ''} 
+                                                                        taskId={task.id} 
+                                                                        subtaskId={item.id} 
+                                                                        subtaskLabel={item.text}
+                                                                        className="!text-blue-400"
+                                                                    />
+                                                                </div>
+                                                                
+                                                                {/* Calendar Scheduler */}
+                                                                <SubtaskCalendarScheduler
+                                                                    subtaskText={item.text}
+                                                                    taskTitle={task.title}
+                                                                    projectName={projectName}
+                                                                    projectId={task.project_id}
+                                                                    taskId={task.id}
+                                                                    subtaskId={item.id}
+                                                                />
+                                                                
+                                                                {/* Add subtask assignment dropdown */}
+                                                                <div onClick={(e) => e.stopPropagation()}>
+                                                                    <DropdownMenu>
+                                                                        <DropdownMenuTrigger asChild>
+                                                                            <button 
+                                                                                className="flex items-center gap-1 p-1 text-muted-foreground hover:text-blue-400 transition-colors rounded hover:bg-gray-200 dark:bg-muted/50"
                                                                             >
-                                                                                {members.length === 0 ? (
-                                                                                    <div className="px-2 py-4 text-xs text-center text-neutral-400">
-                                                                                        No team members found
-                                                                                    </div>
+                                                                                {itemAssignedMember ? (
+                                                                                    <User className="h-3.5 w-3.5 text-blue-400" />
                                                                                 ) : (
-                                                                                    <>
-                                                                                        <div className="py-1 px-2 text-xs text-neutral-500 border-b border-neutral-700">
-                                                                                            Assign to user
-                                                                                        </div>
-                                                                                        {members.map(member => (
-                                                                                            <DropdownMenuItem 
-                                                                                                key={member.id}
-                                                                                                className={cn(
-                                                                                                    "text-xs text-white flex items-center gap-2 cursor-pointer hover:bg-neutral-700",
-                                                                                                    (itemAssignedMember?.user_id === member.user_id) && "bg-blue-900/20"
-                                                                                                )}
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    if (onUpdate) {
-                                                                                                        onUpdate(task.id, {
-                                                                                                            ...task,
-                                                                                                            // Update just this subtask assignment in the checklist
-                                                                                                            checklist: task.checklist.map(checkItem => 
-                                                                                                                checkItem.id === item.id 
-                                                                                                                    ? { ...checkItem, assigned_to: member.user_id } 
-                                                                                                                    : checkItem
-                                                                                                            )
-                                                                                                        });
-                                                                                                    }
-                                                                                                }}
-                                                                                            >
-                                                                                                <User className="h-3 w-3 text-neutral-400" />
-                                                                                                {member.name}
-                                                                                                {itemAssignedMember?.user_id === member.user_id && (
-                                                                                                    <span className="ml-auto text-xs bg-blue-900/30 text-blue-400 px-1 py-0.5 rounded text-[10px]">
-                                                                                                        Current
-                                                                                                    </span>
-                                                                                                )}
-                                                                                            </DropdownMenuItem>
-                                                                                        ))}
-                                                                                        
-                                                                                        {itemAssignedMember && (
-                                                                                            <>
-                                                                                                <div className="h-px bg-neutral-700 my-1 mx-2" />
+                                                                                    <UserPlus className="h-3.5 w-3.5" />
+                                                                                )}
+                                                                            </button>
+                                                                        </DropdownMenuTrigger>
+                                                                        <DropdownMenuContent 
+                                                                            className="bg-background border-border dark:border-border w-48" 
+                                                                            align="end"
+                                                                        >
+                                                                            {members.length === 0 ? (
+                                                                                <div className="px-2 py-4 text-xs text-center text-muted-foreground">
+                                                                                    No team members found
+                                                                                </div>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <div className="py-1 px-2 text-xs text-foreground0 border-b border-border dark:border-border">
+                                                                                        Assign to user
+                                                                                    </div>
+                                                                                    {members.map(member => (
+                                                                                        <DropdownMenuItem 
+                                                                                            key={member.id}
+                                                                                            className={cn(
+                                                                                                "text-xs text-foreground flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted",
+                                                                                                (itemAssignedMember?.user_id === member.user_id) && "bg-blue-100 dark:bg-blue-900/20"
+                                                                                            )}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (onUpdate) {
+                                                                                                    onUpdate(task.id, {
+                                                                                                        ...task,
+                                                                                                        // Update just this subtask assignment in the checklist
+                                                                                                        checklist: task.checklist.map(checkItem => 
+                                                                                                            checkItem.id === item.id 
+                                                                                                                ? { ...checkItem, assigned_to: member.user_id } 
+                                                                                                                : checkItem
+                                                                                                        )
+                                                                                                    });
+                                                                                                }
+                                                                                            }}
+                                                                                        >
+                                                                                            <User className="h-3 w-3 text-muted-foreground" />
+                                                                                            {member.name}
+                                                                                            {itemAssignedMember?.user_id === member.user_id && (
+                                                                                                <span className="ml-auto text-xs bg-blue-200 dark:bg-blue-900/30 text-blue-400 px-1 py-0.5 rounded text-[10px]">
+                                                                                                    Current
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </DropdownMenuItem>
+                                                                                    ))}
+                                                                                    
+                                                                                    {itemAssignedMember && (
+                                                                                        <>
+                                                                                            <div className="h-px bg-gray-200 dark:bg-muted my-1 mx-2" />
                                                                                                 <DropdownMenuItem 
-                                                                                                    className="text-xs text-red-400 flex items-center gap-2 cursor-pointer hover:bg-neutral-700"
+                                                                                                    className="text-xs text-red-400 flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted"
                                                                                                     onClick={(e) => {
                                                                                                         e.stopPropagation();
                                                                                                         if (onUpdate) {
@@ -565,14 +612,14 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                                                                     <AlertCircle className="h-3 w-3" />
                                                                                                     Unassign
                                                                                                 </DropdownMenuItem>
-                                                                                            </>
-                                                                                        )}
-                                                                                    </>
-                                                                                )}
-                                                                            </DropdownMenuContent>
-                                                                        </DropdownMenu>
-                                                                    </div>
-                                                                    
+                                                                                        </>
+                                                                                    )}
+                                                                                </>
+                                                                            )}
+                                                                        </DropdownMenuContent>
+                                                                    </DropdownMenu>
+                                                                </div>
+                                                                
                                                                 {onUpdate && (
                                                                     <Button
                                                                         variant="ghost"
@@ -581,7 +628,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                                             setEditingSubtaskId(item.id);
                                                                             setEditedSubtaskText(item.text);
                                                                         }}
-                                                                        className="text-neutral-400 hover:text-neutral-300 h-6 w-6 p-1"
+                                                                        className="text-muted-foreground hover:text-foreground dark:text-neutral-300 h-6 w-6 p-1"
                                                                     >
                                                                         <Pencil className="h-3 w-3" />
                                                                     </Button>
@@ -592,9 +639,21 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                                                         variant="ghost"
                                                                         size="sm"
                                                                         onClick={() => handleDeleteSubtask(item.id)}
-                                                                        className="text-neutral-400 hover:text-red-400 h-6 w-6 p-1"
+                                                                        className="text-muted-foreground hover:text-red-400 h-6 w-6 p-1"
                                                                     >
                                                                         <Minus className="h-3 w-3" />
+                                                                    </Button>
+                                                                )}
+                                                                
+                                                                {onMoveSubtask && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() => onMoveSubtask(task, item)}
+                                                                        className="text-muted-foreground hover:text-purple-400 h-6 w-6 p-1"
+                                                                        title="Move subtask to another project"
+                                                                    >
+                                                                        <ArrowRightLeft className="h-3 w-3" />
                                                                     </Button>
                                                                 )}
                                                             </div>
@@ -612,7 +671,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                         value={newSubtask}
                                         onChange={(e) => setNewSubtask(e.target.value)}
                                         placeholder="Enter subtask..."
-                                        className="flex-1 bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                                        className="flex-1 bg-background border-border dark:border-border text-foreground placeholder:text-foreground0"
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 e.preventDefault();
@@ -625,7 +684,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => setIsAddingSubtask(false)}
-                                        className="text-neutral-400 hover:text-neutral-300"
+                                        className="text-muted-foreground hover:text-foreground dark:text-neutral-300"
                                     >
                                         <X className="h-4 w-4" />
                                     </Button>
@@ -633,7 +692,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                         variant="ghost"
                                         size="sm"
                                         onClick={handleAddSubtask}
-                                        className="text-green-500 hover:text-green-400"
+                                        className="text-green-600 dark:text-green-400 hover:text-green-400"
                                     >
                                         <Plus className="h-4 w-4" />
                                     </Button>
@@ -643,7 +702,7 @@ export function TaskCard({ task, onUpdate, onDelete }: TaskCardProps) {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setIsAddingSubtask(true)}
-                                    className="w-full flex items-center gap-2 text-neutral-400 hover:text-neutral-300"
+                                    className="w-full flex items-center gap-2 text-muted-foreground hover:text-foreground dark:text-neutral-300"
                                 >
                                     <Plus className="h-4 w-4" />
                                     Add Subtask

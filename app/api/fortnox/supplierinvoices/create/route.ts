@@ -92,7 +92,15 @@ async function refreshFortnoxToken(refreshToken: string, userId: string) {
       return null;
     }
     
-    const tokenData = await response.json();
+    const newTokenData = await response.json();
+    
+    // Calculate expires_at
+    const expiresAt = new Date();
+    const oneWeekInSeconds = 7 * 24 * 60 * 60; // 1 week in seconds
+    const expiresInSeconds = newTokenData.expires_in || oneWeekInSeconds;
+    // Use the longer of either the provided expires_in or one week
+    const effectiveExpiresIn = Math.max(expiresInSeconds, oneWeekInSeconds);
+    expiresAt.setSeconds(expiresAt.getSeconds() + effectiveExpiresIn);
     
     // Store the new token in Supabase
     const supabase = getSupabaseAdmin();
@@ -100,17 +108,18 @@ async function refreshFortnoxToken(refreshToken: string, userId: string) {
       await supabase
         .from('user_integrations')
         .update({
-          access_token: tokenData.access_token,
-          refresh_token: tokenData.refresh_token,
-          updated_at: new Date().toISOString()
+          access_token: newTokenData.access_token,
+          refresh_token: newTokenData.refresh_token,
+          updated_at: new Date().toISOString(),
+          expires_at: expiresAt.toISOString()
         })
         .eq('user_id', userId)
         .eq('provider', 'fortnox');
     }
     
     return {
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token
+      access_token: newTokenData.access_token,
+      refresh_token: newTokenData.refresh_token
     };
   } catch (error) {
     console.error('Error refreshing Fortnox token:', error);

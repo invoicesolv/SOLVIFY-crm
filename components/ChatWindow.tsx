@@ -380,10 +380,10 @@ export function ChatWindow() {
             transition={{ duration: 0.2 }}
             className="fixed bottom-20 right-4 z-50 w-full max-w-md"
           >
-            <div className="flex h-[500px] flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-xl">
+            <div className="flex h-[500px] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl">
               {/* Header */}
-              <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-                <h2 className="text-lg font-medium text-white">AI Assistant</h2>
+              <div className="flex items-center justify-between border-b border-border px-4 py-3 flex-shrink-0">
+                <h2 className="text-lg font-medium text-foreground">AI Assistant</h2>
                 <div className="flex items-center gap-2">
                   {!hasApiKey && session && (
                     <Link href="/settings">
@@ -391,7 +391,7 @@ export function ChatWindow() {
                         variant="ghost"
                         size="sm"
                         title="Configure API Key in Settings"
-                        className="text-neutral-400 hover:text-white"
+                        className="text-muted-foreground hover:text-foreground"
                       >
                         <Settings className="size-5" />
                       </Button>
@@ -401,7 +401,7 @@ export function ChatWindow() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setIsOpen(false)}
-                    className="text-neutral-400 hover:text-white"
+                    className="text-muted-foreground hover:text-foreground"
                   >
                     <X className="size-5" />
                   </Button>
@@ -409,25 +409,25 @@ export function ChatWindow() {
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 {messages.map(message => (
                   <div
                     key={message.id}
                     className={cn(
-                      "flex w-full mb-4",
+                      "flex w-full",
                       message.role === "user" ? "justify-end" : "justify-start"
                     )}
                   >
                     <div
                       className={cn(
-                        "max-w-[80%] rounded-lg px-4 py-2",
+                        "max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm",
                         message.role === "user"
-                          ? "bg-neutral-900 text-primary-foreground border border-neutral-800"
-                          : "bg-neutral-900 text-white border border-neutral-800"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/80 text-foreground border border-border/50"
                       )}
                     >
                       {renderMessageContent(message.content)}
-                      <div className="mt-1 text-right text-xs opacity-70">
+                      <div className="mt-1.5 text-right text-xs opacity-70">
                         {message.timestamp.toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit"
@@ -437,11 +437,11 @@ export function ChatWindow() {
                   </div>
                 ))}
                 {isLoading && (
-                  <div className="flex w-full justify-start mb-4">
-                    <div className="max-w-[80%] rounded-lg px-4 py-2 bg-neutral-900 text-white border border-neutral-800">
+                  <div className="flex w-full justify-start">
+                    <div className="max-w-[85%] rounded-2xl px-4 py-2.5 bg-muted/80 text-foreground border border-border/50 shadow-sm">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <p>AI is thinking...</p>
+                        <p className="text-sm">AI is thinking...</p>
                       </div>
                     </div>
                   </div>
@@ -450,54 +450,59 @@ export function ChatWindow() {
               </div>
 
               {/* Input */}
-              <div className="border-t border-neutral-800 p-4">
+              <div className="border-t border-border/50 p-4 bg-card/50 flex-shrink-0">
                 {!hasApiKey && (
-                  <div className="mb-2 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm text-yellow-300">
+                  <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/20 rounded text-sm text-yellow-300">
                     <p className="flex items-center gap-2">
                       <Settings className="h-4 w-4" />
                       Please set your OpenAI API key in <Link href="/settings" className="underline hover:text-yellow-200">workspace settings</Link>.
                     </p>
                   </div>
                 )}
-                <PromptInput
-                  value={input}
-                  onValueChange={setInput}
-                  isLoading={isLoading}
-                  onSubmit={handleSubmit}
-                  className="w-full bg-neutral-900 border-neutral-800"
-                >
+                
+                <div className="relative">
                   {files.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pb-2">
+                    <div className="flex flex-wrap gap-2 mb-3">
                       {files.map((file, index) => (
                         <div
                           key={index}
-                          className="flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2 text-sm"
+                          className="flex items-center gap-2 bg-muted/80 rounded-xl px-3 py-1.5 text-sm border border-border/50"
                         >
-                          <Paperclip className="size-4" />
-                          <span className="max-w-[120px] truncate">{file.name}</span>
+                          <span className="truncate max-w-[150px]">{file.name}</span>
                           <button
                             onClick={() => handleRemoveFile(index)}
-                            className="rounded-full p-1 hover:bg-neutral-700"
+                            className="text-muted-foreground hover:text-foreground transition-colors"
                           >
-                            <X className="size-4" />
+                            <X className="h-3 w-3" />
                           </button>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  <PromptInputTextarea 
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSubmit()
+                      }
+                    }}
                     placeholder={hasApiKey ? "Ask about your CRM data..." : "Set API key in workspace settings to enable AI chat"}
-                    className="text-neutral-100 placeholder:text-neutral-500" 
+                    className="w-full px-4 py-3 pr-24 pb-12 border border-border/60 rounded-2xl resize-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 bg-background/80 backdrop-blur-sm text-foreground placeholder:text-muted-foreground transition-all duration-200 text-sm"
+                    rows={1}
+                    style={{ minHeight: '60px', maxHeight: '120px' }}
                     disabled={!hasApiKey}
                   />
 
-                  <PromptInputActions className="flex items-center justify-between gap-2 pt-2">
-                    <PromptInputAction tooltip="Attach files">
+                  {/* Bottom row with attach and send buttons */}
+                  <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       <label
                         htmlFor="chat-file-upload"
                         className={cn(
-                          "flex h-8 w-8 cursor-pointer items-center justify-center rounded-2xl hover:bg-neutral-800",
+                          "p-2 cursor-pointer rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground",
                           !hasApiKey && "opacity-50 cursor-not-allowed"
                         )}
                       >
@@ -510,29 +515,25 @@ export function ChatWindow() {
                           id="chat-file-upload"
                           disabled={!hasApiKey}
                         />
-                        <Paperclip className="size-5 text-neutral-400" />
+                        <Paperclip className="h-4 w-4" />
                       </label>
-                    </PromptInputAction>
+                    </div>
 
-                    <PromptInputAction
-                      tooltip={isLoading ? "Stop generation" : "Send message"}
+                    <Button
+                      variant="default"
+                      size="icon"
+                      className="h-8 w-8 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
+                      onClick={handleSubmit}
+                      disabled={!hasApiKey || isLoading || (!input.trim() && files.length === 0)}
                     >
-                      <Button
-                        variant="default"
-                        size="icon"
-                        className="h-8 w-8 rounded-full"
-                        onClick={handleSubmit}
-                        disabled={!hasApiKey || isLoading || (!input.trim() && files.length === 0)}
-                      >
-                        {isLoading ? (
-                          <Square className="size-5 fill-current" />
-                        ) : (
-                          <ArrowUp className="size-5" />
-                        )}
-                      </Button>
-                    </PromptInputAction>
-                  </PromptInputActions>
-                </PromptInput>
+                      {isLoading ? (
+                        <Square className="size-4 fill-current" />
+                      ) : (
+                        <ArrowUp className="size-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </motion.div>

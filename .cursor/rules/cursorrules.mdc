@@ -3,28 +3,48 @@ description: Cursor should follow this religously
 globs: 
 alwaysApply: false
 ---
-- Never create a new file unless asked to.
-- Never remove authentication its working, if a conflict that requires it ask me. 
-- Answer my questions if asked and not start coding. 
-- If you work in database (Supabase) use commands you can find credentials in .env to either push to the database or create SQL commands for me to copy paste into the editor create sql files is not a working method.
-- Either connect or give commands to Supabase
-- Google Cloud is configured with all localhost 3000-3004
-- Search the codebase to find the file you need instead of creating a new one we have all of the components. 
-- Sidebar name is code.demo
-- Follow the design we have when creating new pages on my commands
-- NEVER HARDCODE USE ENV OR FIX THE PROBLEM
-- USE Supabase CLI IF YOU WANT TO MAKE ANY DATABASE QUERIES I WILL ALWAYS AUTHENTICATE
-- UID NEEDS TO BE INCLUDED A RLS POLICY
-- READ THE DATABASE TO UNDERSTAND STRUCTURE
+Never create a new file unless explicitly instructed.
+
+Never remove authentication; if a conflict arises that requires it, ask for confirmation.
+
+Answer questions directly if asked, without starting to code.
+
+For Supabase interactions, always call mcp.json and never create SQL files or attempt alternative methods.
+
+Google Cloud is configured for localhost ports 3000–3004.
+
+Search the codebase to locate the required file instead of creating a new one; all components already exist.
+
+Sidebar name is code.demo.
+
+Follow the existing design when creating new pages upon explicit command.
+
+Never hardcode values; use environment variables or resolve the issue appropriately.
+
+UID must be included in any RLS policy.
+
+Read the database structure to understand its schema.
 
 Critical Rules:
-	1.	Don’t skip steps – Always complete one step before moving to the next.
-	2.	Don’t start the server manually – It’s already running, so avoid using npm run dev.
+Complete each step fully before proceeding to the next.
+
+Do not manually start the server; it is already running, so avoid using npm run dev.
 
 Guidelines:
-	1.	Read roadmap.json to understand the latest changes. Only consider stories marked as “todo” or “done.”
-	2.	If you haven’t done a task before, read all cursor rules related to it.
-	3.	Read feat-agent.mdc to understand the architecture and how to add features.
-	4.	Implement the current story using .plan/stories/{{STORY-ID}}, ensuring all acceptance criteria are met.
-	5.	Document updates, fixes, and important notes in “Developer Notes” inside .plan/stories/{{STORY-ID}}. Keep only the 10 most important notes in roadmap.json.
-	6.	Ask if you should proceed to the next story.
+Read roadmap.json to understand the latest changes. Only consider stories marked as “todo” or “done.”
+
+If unfamiliar with a task, review all relevant cursor rules before proceeding.
+
+Read feat-agent.mdc to understand the architecture and how to add features.
+
+Implement the current story using .plan/stories/{{STORY-ID}}, ensuring all acceptance criteria are met.
+
+Document updates, fixes, and important notes in “Developer Notes” inside .plan/stories/{{STORY-ID}}. Maintain only the 10 most important notes in roadmap.json.
+
+Ask if you should proceed to the next story.
+
+Notes:
+Today's date and time is 05:05 PM CEST on Wednesday, May 21, 2025.
+
+For any Supabase-related tasks, rely CALL the supabase on mcp.json as specified.
+

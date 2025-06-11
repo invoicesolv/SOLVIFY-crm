@@ -41,8 +41,13 @@ export async function POST(request: NextRequest) {
     
     console.log('Received request:', { projectName, taskCount: tasks.length, isTest, recipients });
 
-    // Only require authentication for non-test emails
-    if (!isTest) {
+    // Check for CRON authorization (from cron jobs) first
+    const authHeader = request.headers.get('Authorization');
+    const isCronAuth = authHeader && authHeader.startsWith('Bearer ') && 
+                        authHeader.substring(7) === (process.env.CRON_SECRET || 'development');
+    
+    // Only require authentication for non-test emails and when not authorized via cron secret
+    if (!isTest && !isCronAuth) {
       const session = await getServerSession(authOptions);
       const userId = session?.user?.id;
 

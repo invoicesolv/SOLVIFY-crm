@@ -1,6 +1,6 @@
-Vibe CRM: The All-in-One Business Solution
+Solvify CRM: The All-in-One Business Solution
 Problems Solved & Famous Software Replacements
-Vibe CRM is a comprehensive business management platform that consolidates multiple essential functions into one integrated solution, eliminating the need for various standalone applications.
+Solvify CRM is a comprehensive business management platform that consolidates multiple essential functions into one integrated solution, eliminating the need for various standalone applications.
 1. Customer Relationship Management
 Replaces: Salesforce, HubSpot CRM
 Complete contact management system
@@ -66,4 +66,4 @@ Mobile Access: Complete functionality on any device
 Customizable Dashboard: Personalized views for each team member
 Team Collaboration: Enhanced communication and task management
 Real-Time Analytics: Comprehensive reporting across all business aspects
-By providing a unified solution that replaces multiple standalone tools, Vibe CRM allows businesses to streamline operations, reduce costs, and gain a holistic view of their customer relationships and business performance.
+By providing a unified solution that replaces multiple standalone tools, Solvify CRM allows businesses to streamline operations, reduce costs, and gain a holistic view of their customer relationships and business performance.

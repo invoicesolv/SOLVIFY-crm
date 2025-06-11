@@ -327,12 +327,12 @@ export default function TeamPage() {
       });
 
       // Don't try to set Supabase session with Google OAuth token
-      // Instead use anonymous auth with RLS policies
+      // Instead skip authentication and rely on RLS policies
       const isGoogleAuth = !!session?.access_token && !(session as any).supabaseAccessToken;
       
       if (isGoogleAuth) {
-        console.log('[Team Page] Using anonymous auth with RLS policies for Google OAuth');
-        await supabase.auth.signInAnonymously();
+        console.log('[Team Page] Using RLS policies for Google OAuth without anonymous auth');
+        // Skip authentication - no anonymous auth
       } 
       else if ((session as any)?.supabaseAccessToken) {
         console.log('[Team Page] Using Supabase token from session');
@@ -344,20 +344,17 @@ export default function TeamPage() {
           
         if (authError) {
             console.error('[Team Page] Error setting Supabase session:', authError);
-            // Fall back to anonymous auth
-            await supabase.auth.signInAnonymously();
+            // Don't fall back to anonymous auth
       } else {
             console.log('[Team Page] Successfully set Supabase session');
           }
         } catch (err) {
           console.error('[Team Page] Exception setting Supabase session:', err);
-          // Fall back to anonymous auth
-          await supabase.auth.signInAnonymously();
+          // Don't fall back to anonymous auth
         }
       } 
       else {
-        console.log('[Team Page] No valid tokens. Using anonymous auth with RLS policies');
-        await supabase.auth.signInAnonymously();
+        console.log('[Team Page] No valid tokens. Skipping authentication (no anonymous auth)');
       }
 
       // First, get user's workspace memberships without joining workspaces
@@ -535,7 +532,23 @@ export default function TeamPage() {
         }
       }));
       
-      setTeamMembers(membersWithDefaultPermissions);
+      // Deduplicate team members by user_id to handle duplicate records
+      const deduplicatedMembers = membersWithDefaultPermissions.reduce((acc, member) => {
+        const existingIndex = acc.findIndex(m => m.user_id === member.user_id);
+        if (existingIndex === -1) {
+          acc.push(member);
+        } else {
+          // Keep the one that's an admin, or just keep the first one
+          const existing = acc[existingIndex];
+          if (member.is_admin && !existing.is_admin) {
+            acc[existingIndex] = member;
+          }
+          // Otherwise keep the existing one (first found)
+        }
+        return acc;
+      }, [] as typeof membersWithDefaultPermissions);
+      
+      setTeamMembers(deduplicatedMembers);
       
       // Check if user is admin or workspace owner
       const workspace = workspaces.find(w => w.id === workspaceId);
@@ -828,8 +841,8 @@ export default function TeamPage() {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-white">Team Management</h1>
-            <p className="text-sm text-neutral-400">
+            <h1 className="text-2xl font-semibold text-foreground">Team Management</h1>
+            <p className="text-sm text-muted-foreground">
               Manage your workspaces and team members
             </p>
           </div>
@@ -837,15 +850,15 @@ export default function TeamPage() {
 
         {loading ? (
           <div className="flex justify-center my-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-white"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white"></div>
           </div>
         ) : (
           <>
             {workspaces.length === 0 ? (
-              <Card className="bg-neutral-900 border-neutral-800 p-8 flex flex-col items-center justify-center">
-                <Building className="h-12 w-12 text-neutral-400 mb-4" />
-                <h2 className="text-xl font-medium text-white mb-2">No Workspaces Yet</h2>
-                <p className="text-neutral-400 text-center mb-6">
+              <Card className="bg-background border-border p-8 flex flex-col items-center justify-center">
+                <Building className="h-12 w-12 text-muted-foreground mb-4" />
+                <h2 className="text-xl font-medium text-foreground mb-2">No Workspaces Yet</h2>
+                <p className="text-muted-foreground text-center mb-6">
                   Create your first workspace to start collaborating with your team
                 </p>
                 <Button 
@@ -863,7 +876,7 @@ export default function TeamPage() {
                     <select
                       value={activeWorkspace || ''}
                       onChange={(e) => handleWorkspaceChange(e.target.value)}
-                      className="appearance-none bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 pr-8 text-white focus:outline-none focus:ring-2 focus:ring-neutral-600 min-w-64"
+                      className="appearance-none bg-background border border-border dark:border-border rounded-md px-4 py-2 pr-8 text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-600 min-w-64"
                     >
                       <option value="" disabled>Select Workspace</option>
                       {workspaces.map((workspace) => (
@@ -873,7 +886,7 @@ export default function TeamPage() {
                       ))}
                     </select>
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                      <svg className="h-4 w-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </div>
@@ -883,7 +896,7 @@ export default function TeamPage() {
                     <Button
                       onClick={() => setIsWorkspaceDialogOpen(true)}
                       variant="outline"
-                      className="bg-neutral-800 border-neutral-700 text-white hover:bg-neutral-700"
+                      className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
                     >
                       <Plus className="h-4 w-4 mr-2" />
                       New Workspace
@@ -904,28 +917,28 @@ export default function TeamPage() {
 
                 {hasActiveWorkspace() && (
                   <Tabs defaultValue="members" value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="bg-neutral-800">
-                      <TabsTrigger value="members" className="data-[state=active]:bg-neutral-700">
+                    <TabsList className="bg-background">
+                      <TabsTrigger value="members" className="data-[state=active]:bg-gray-200 dark:bg-muted">
                         <Users className="h-4 w-4 mr-2" />
                         Team Members
                       </TabsTrigger>
-                      <TabsTrigger value="permissions" className="data-[state=active]:bg-neutral-700">
+                      <TabsTrigger value="permissions" className="data-[state=active]:bg-gray-200 dark:bg-muted">
                         <Shield className="h-4 w-4 mr-2" />
                         Permissions
                       </TabsTrigger>
                     </TabsList>
                     
                     <TabsContent value="members" className="mt-4">
-                      <Card className="bg-neutral-900 border-neutral-800">
+                      <Card className="bg-background border-border text-foreground">
                         <div className="p-6">
                           <div className="flex items-center gap-2 mb-4">
-                            <Users className="h-5 w-5 text-neutral-400" />
-                            <h2 className="text-lg font-medium text-white">Team Members</h2>
+                            <Users className="h-5 w-5 text-muted-foreground" />
+                            <h2 className="text-lg font-medium text-foreground">Team Members</h2>
                           </div>
                           
                           {teamMembers.length === 0 ? (
                             <div className="py-8 text-center">
-                              <p className="text-neutral-400">No team members yet</p>
+                              <p className="text-muted-foreground">No team members yet</p>
                               <Button
                                 onClick={() => setIsInviteDialogOpen(true)}
                                 className="mt-4 bg-blue-600 hover:bg-blue-500"
@@ -940,23 +953,23 @@ export default function TeamPage() {
                               <div className="flex items-center py-4">
                                 <Input
                                   placeholder="Filter members..."
-                                  className="max-w-sm bg-neutral-800 border-neutral-700 text-white"
+                                  className="max-w-sm bg-background border-border dark:border-border text-foreground"
                                 />
                               </div>
-                              <div className="rounded-md border border-neutral-800">
+                              <div className="rounded-md border border-border">
                                 <Table>
                                   <TableHeader>
-                                    <TableRow className="hover:bg-neutral-800/50 border-neutral-800">
-                                      <TableHead className="text-neutral-400">Status</TableHead>
-                                      <TableHead className="text-neutral-400">Email</TableHead>
-                                      <TableHead className="text-neutral-400 text-right">Amount</TableHead>
-                                      <TableHead className="text-neutral-400"></TableHead>
+                                    <TableRow className="hover:bg-background/50 border-border">
+                                      <TableHead className="text-muted-foreground">Status</TableHead>
+                                      <TableHead className="text-muted-foreground">Email</TableHead>
+                                      <TableHead className="text-muted-foreground text-right">Amount</TableHead>
+                                      <TableHead className="text-muted-foreground"></TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
                                     {teamMembers.map((member) => (
-                                      <TableRow key={member.id} className="hover:bg-neutral-800/50 border-neutral-800">
-                                        <TableCell className="font-medium text-white">
+                                      <TableRow key={member.id} className="hover:bg-background/50 border-border">
+                                        <TableCell className="font-medium text-foreground">
                                           {member.is_admin ? (
                                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                               Admin
@@ -967,8 +980,8 @@ export default function TeamPage() {
                                             </span>
                                           )}
                                         </TableCell>
-                                        <TableCell className="text-neutral-300">{member.email}</TableCell>
-                                        <TableCell className="text-right text-neutral-300">
+                                        <TableCell className="text-foreground dark:text-neutral-300">{member.email}</TableCell>
+                                        <TableCell className="text-right text-foreground dark:text-neutral-300">
                                           {/* Add any relevant member data here */}
                                         </TableCell>
                                         <TableCell className="text-right">
@@ -978,7 +991,7 @@ export default function TeamPage() {
                                                 onClick={() => handleToggleAdmin(member.id, member.is_admin)}
                                                 variant="outline"
                                                 size="sm"
-                                                className="bg-neutral-800 border-neutral-700 text-white hover:bg-neutral-700"
+                                                className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
                                               >
                                                 {member.is_admin ? (
                                                   <>
@@ -997,7 +1010,7 @@ export default function TeamPage() {
                                                 onClick={() => handleRemoveMember(member.id)}
                                                 variant="outline"
                                                 size="sm"
-                                                className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20"
+                                                className="bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border-red-500/20"
                                               >
                                                 <Trash2 className="h-4 w-4" />
                                               </Button>
@@ -1010,7 +1023,7 @@ export default function TeamPage() {
                                 </Table>
                               </div>
                               <div className="flex items-center justify-between py-4">
-                                <p className="text-sm text-neutral-400">
+                                <p className="text-sm text-muted-foreground">
                                   {teamMembers.length} member{teamMembers.length === 1 ? '' : 's'}
                                 </p>
                               </div>
@@ -1021,14 +1034,14 @@ export default function TeamPage() {
                     </TabsContent>
                     
                     <TabsContent value="permissions" className="mt-4">
-                      <Card className="bg-neutral-900 border-neutral-800">
+                      <Card className="bg-background border-border text-foreground">
                         <div className="p-6">
                           <div className="flex items-center gap-2 mb-4">
-                            <Shield className="h-5 w-5 text-neutral-400" />
-                            <h2 className="text-lg font-medium text-white">Team Permissions</h2>
+                            <Shield className="h-5 w-5 text-muted-foreground" />
+                            <h2 className="text-lg font-medium text-foreground">Team Permissions</h2>
                           </div>
                           
-                          <p className="text-neutral-400 mb-6">
+                          <p className="text-muted-foreground mb-6">
                             Configure permissions for each team member
                           </p>
                           
@@ -1036,11 +1049,11 @@ export default function TeamPage() {
                             {teamMembers.map((member) => {
                               const effectiveIsAdmin = member.is_admin || (workspaces.find(w => w.id === activeWorkspace)?.owner_id === member.user_id);
                               return (
-                              <div key={member.id} className="p-4 rounded-lg bg-neutral-800/50">
+                              <div key={member.id} className="p-4 rounded-lg bg-background/50">
                                 <div className="flex items-center justify-between mb-4">
                                   <div>
-                                    <h3 className="text-white font-medium">{member.name || 'Unknown User'}</h3>
-                                    <p className="text-sm text-neutral-400">{member.email || 'No email'}</p>
+                                    <h3 className="text-foreground font-medium">{member.name || 'Unknown User'}</h3>
+                                    <p className="text-sm text-muted-foreground">{member.email || 'No email'}</p>
                                   </div>
                                     <div className="flex items-center space-x-2">
                                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${effectiveIsAdmin ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
@@ -1087,7 +1100,7 @@ export default function TeamPage() {
                                         />
                                         <label 
                                               htmlFor={`${member.id}-${perm.key}`}
-                                              className="text-sm font-medium leading-none text-neutral-300 peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                              className="text-sm font-medium leading-none text-foreground dark:text-neutral-300 peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                                         >
                                               {perm.label}
                                         </label>
@@ -1113,39 +1126,39 @@ export default function TeamPage() {
 
       {/* Invite Member Dialog */}
       <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
-        <DialogContent className="bg-neutral-900 border-neutral-800 text-white">
+        <DialogContent className="bg-background border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Invite Team Member</DialogTitle>
-            <DialogDescription className="text-neutral-400">
+            <DialogDescription className="text-muted-foreground">
               Send an invitation to join {getActiveWorkspaceName()}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">Email Address</label>
+              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Email Address</label>
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="colleague@example.com"
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
               />
             </div>
             
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">Name (Optional)</label>
+              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Name (Optional)</label>
               <input
                 type="text"
                 value={inviteName}
                 onChange={(e) => setInviteName(e.target.value)}
                 placeholder="John Doe"
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
               />
             </div>
             
             <div className="space-y-4">
-              <label className="text-sm font-medium text-neutral-200">Role</label>
+              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Role</label>
               <div className="grid grid-cols-3 gap-4">
                 {(Object.entries(ROLE_DEFINITIONS) as [Role, RoleDefinition][]).map(([role, definition]) => (
                   <div
@@ -1153,7 +1166,7 @@ export default function TeamPage() {
                     className={`p-4 rounded-lg border cursor-pointer transition-colors ${
                       selectedRole === role
                         ? 'bg-blue-500/10 border-blue-500/50'
-                        : 'bg-neutral-800 border-neutral-700 hover:border-neutral-600'
+                        : 'bg-background border-border hover:border-gray-400'
                     }`}
                     onClick={() => {
                       setSelectedRole(role);
@@ -1162,19 +1175,19 @@ export default function TeamPage() {
                   >
                     <div className="flex items-center gap-2">
                       <div className={`w-3 h-3 rounded-full ${
-                        selectedRole === role ? 'bg-blue-500' : 'bg-neutral-600'
+                        selectedRole === role ? 'bg-blue-500' : 'bg-gray-300 dark:bg-muted-foreground'
                       }`} />
-                      <h3 className="font-medium text-white">{definition.label}</h3>
+                      <h3 className="font-medium text-foreground">{definition.label}</h3>
                     </div>
-                    <p className="mt-2 text-sm text-neutral-400">{definition.description}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{definition.description}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="space-y-3 border border-neutral-700 rounded-md p-4">
+            <div className="space-y-3 border border-border rounded-md p-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-neutral-200">Page Access</p>
+                <p className="text-sm font-medium text-gray-800 dark:text-foreground">Page Access</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1185,8 +1198,8 @@ export default function TeamPage() {
                 </Button>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2 p-3 rounded-md bg-neutral-800/50">
-                  <h4 className="text-sm font-medium text-white mb-3">Projects</h4>
+                <div className="col-span-2 p-3 rounded-md bg-background/50">
+                  <h4 className="text-sm font-medium text-foreground mb-3">Projects</h4>
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -1199,7 +1212,7 @@ export default function TeamPage() {
                           }));
                         }}
                       />
-                      <label htmlFor="view_projects" className="text-sm text-neutral-300">View Projects</label>
+                      <label htmlFor="view_projects" className="text-sm text-foreground dark:text-neutral-300">View Projects</label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -1213,13 +1226,13 @@ export default function TeamPage() {
                         }}
                         disabled={!customPermissions.view_projects}
                       />
-                      <label htmlFor="edit_projects" className="text-sm text-neutral-300">Edit Projects</label>
+                      <label htmlFor="edit_projects" className="text-sm text-foreground dark:text-neutral-300">Edit Projects</label>
                     </div>
                   </div>
                 </div>
 
-                <div className="col-span-2 p-3 rounded-md bg-neutral-800/50">
-                  <h4 className="text-sm font-medium text-white mb-3">Customers</h4>
+                <div className="col-span-2 p-3 rounded-md bg-background/50">
+                  <h4 className="text-sm font-medium text-foreground mb-3">Customers</h4>
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -1232,7 +1245,7 @@ export default function TeamPage() {
                           }));
                         }}
                       />
-                      <label htmlFor="view_customers" className="text-sm text-neutral-300">View Customers</label>
+                      <label htmlFor="view_customers" className="text-sm text-foreground dark:text-neutral-300">View Customers</label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -1246,13 +1259,13 @@ export default function TeamPage() {
                         }}
                         disabled={!customPermissions.view_customers}
                       />
-                      <label htmlFor="edit_customers" className="text-sm text-neutral-300">Edit Customers</label>
+                      <label htmlFor="edit_customers" className="text-sm text-foreground dark:text-neutral-300">Edit Customers</label>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-md bg-neutral-800/50">
-                  <h4 className="text-sm font-medium text-white mb-3">Calendar</h4>
+                <div className="p-3 rounded-md bg-background/50">
+                  <h4 className="text-sm font-medium text-foreground mb-3">Calendar</h4>
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="view_calendar"
@@ -1264,12 +1277,12 @@ export default function TeamPage() {
                         }));
                       }}
                     />
-                    <label htmlFor="view_calendar" className="text-sm text-neutral-300">View Calendar</label>
+                    <label htmlFor="view_calendar" className="text-sm text-foreground dark:text-neutral-300">View Calendar</label>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-md bg-neutral-800/50">
-                  <h4 className="text-sm font-medium text-white mb-3">Analytics</h4>
+                <div className="p-3 rounded-md bg-background/50">
+                  <h4 className="text-sm font-medium text-foreground mb-3">Analytics</h4>
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="view_analytics"
@@ -1281,12 +1294,12 @@ export default function TeamPage() {
                         }));
                       }}
                     />
-                    <label htmlFor="view_analytics" className="text-sm text-neutral-300">View Analytics</label>
+                    <label htmlFor="view_analytics" className="text-sm text-foreground dark:text-neutral-300">View Analytics</label>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-md bg-neutral-800/50">
-                  <h4 className="text-sm font-medium text-white mb-3">Invoices</h4>
+                <div className="p-3 rounded-md bg-background/50">
+                  <h4 className="text-sm font-medium text-foreground mb-3">Invoices</h4>
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="view_invoices"
@@ -1298,12 +1311,12 @@ export default function TeamPage() {
                         }));
                       }}
                     />
-                    <label htmlFor="view_invoices" className="text-sm text-neutral-300">View Invoices</label>
+                    <label htmlFor="view_invoices" className="text-sm text-foreground dark:text-neutral-300">View Invoices</label>
                   </div>
                 </div>
 
-                <div className="p-3 rounded-md bg-neutral-800/50">
-                  <h4 className="text-sm font-medium text-white mb-3">Domains</h4>
+                <div className="p-3 rounded-md bg-background/50">
+                  <h4 className="text-sm font-medium text-foreground mb-3">Domains</h4>
                   <div className="space-y-2">
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -1316,7 +1329,7 @@ export default function TeamPage() {
                           }));
                         }}
                       />
-                      <label htmlFor="view_domains" className="text-sm text-neutral-300">View Domains</label>
+                      <label htmlFor="view_domains" className="text-sm text-foreground dark:text-neutral-300">View Domains</label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Checkbox
@@ -1330,7 +1343,7 @@ export default function TeamPage() {
                         }}
                         disabled={!customPermissions.view_domains}
                       />
-                      <label htmlFor="edit_domains" className="text-sm text-neutral-300">Edit Domains</label>
+                      <label htmlFor="edit_domains" className="text-sm text-foreground dark:text-neutral-300">Edit Domains</label>
                     </div>
                   </div>
                 </div>
@@ -1342,7 +1355,7 @@ export default function TeamPage() {
             <Button
               variant="outline"
               onClick={() => setIsInviteDialogOpen(false)}
-              className="bg-neutral-800 border-neutral-700 text-white hover:bg-neutral-700"
+              className="bg-background border-border text-foreground hover:bg-gray-200 dark:bg-muted"
             >
               Cancel
             </Button>
@@ -1353,7 +1366,7 @@ export default function TeamPage() {
             >
               {inviteLoading ? (
                 <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white" />
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white" />
                   Sending...
                 </div>
               ) : (
@@ -1369,23 +1382,23 @@ export default function TeamPage() {
 
       {/* Create Workspace Dialog */}
       <Dialog open={isWorkspaceDialogOpen} onOpenChange={setIsWorkspaceDialogOpen}>
-        <DialogContent className="bg-neutral-900 border-neutral-800 text-white">
+        <DialogContent className="bg-background border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Create New Workspace</DialogTitle>
-            <DialogDescription className="text-neutral-400">
+            <DialogDescription className="text-muted-foreground">
               Create a new workspace to collaborate with your team
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">Workspace Name</label>
+              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Workspace Name</label>
               <input
                 type="text"
                 value={newWorkspaceName}
                 onChange={(e) => setNewWorkspaceName(e.target.value)}
                 placeholder="My Team"
-                className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
               />
             </div>
           </div>
@@ -1394,7 +1407,7 @@ export default function TeamPage() {
             <Button
               variant="outline"
               onClick={() => setIsWorkspaceDialogOpen(false)}
-              className="bg-neutral-800 border-neutral-700 text-white hover:bg-neutral-700"
+              className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
             >
               Cancel
             </Button>
@@ -1405,7 +1418,7 @@ export default function TeamPage() {
             >
               {workspaceLoading ? (
                 <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white" />
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white" />
                   Creating...
                 </div>
               ) : (

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { CookieConsent } from "@/components/ui/cookie-consent";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -40,7 +41,6 @@ export const metadata: Metadata = {
     canonical: '/',
     languages: {
       'en-US': 'https://solvify.com',
-      'sv-SE': 'https://solvify.com/sv',
     },
   },
   openGraph: {
@@ -65,7 +65,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full bg-gray-100">
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
         <link rel="canonical" href="https://solvify.com" />
       </head>
@@ -73,6 +73,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        <CookieConsent />
         <div id="portal-root" />
       </body>
     </html>

@@ -36,7 +36,11 @@ async function saveTokenToSupabase(token: any, userId: string) {
   try {
     // Calculate expires_at
     const expiresAt = new Date();
-    expiresAt.setSeconds(expiresAt.getSeconds() + token.expires_in);
+    const oneWeekInSeconds = 7 * 24 * 60 * 60; // 1 week in seconds
+    const expiresInSeconds = token.expires_in || oneWeekInSeconds;
+    // Use the longer of either the provided expires_in or one week
+    const effectiveExpiresIn = Math.max(expiresInSeconds, oneWeekInSeconds);
+    expiresAt.setSeconds(expiresAt.getSeconds() + effectiveExpiresIn);
     
     // Prepare the data
     const settingsData = {

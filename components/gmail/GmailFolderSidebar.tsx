@@ -148,8 +148,8 @@ export function GmailFolderSidebar({
   };
 
   return (
-    <div className="w-64 bg-neutral-900/50 backdrop-blur-sm border-r border-neutral-800 h-full">
-      <div className="p-4 border-b border-neutral-800">
+    <div className="w-64 bg-background/50 backdrop-blur-sm border-r border-border h-full">
+      <div className="p-4 border-b border-border">
         <Button
           onClick={() => setIsNewFolderDialogOpen(true)}
           className="w-full flex items-center gap-2"
@@ -202,7 +202,7 @@ export function GmailFolderSidebar({
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => handleDeleteFolder(folder.id)}
-                    className="flex items-center gap-2 text-red-500 focus:text-red-500"
+                    className="flex items-center gap-2 text-red-600 dark:text-red-400 focus:text-red-600"
                   >
                     <Trash2 className="h-4 w-4" /> Delete
                   </DropdownMenuItem>
@@ -215,33 +215,33 @@ export function GmailFolderSidebar({
 
       {/* New Folder Dialog */}
       <Dialog open={isNewFolderDialogOpen} onOpenChange={setIsNewFolderDialogOpen}>
-        <DialogContent className="bg-neutral-900 border-neutral-800">
+        <DialogContent className="bg-background border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Create New Folder</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">
+              <label className="text-sm font-medium text-foreground">
                 Folder Name
               </label>
               <Input
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 placeholder="e.g., High Priority"
-                className="bg-neutral-800 border-neutral-700"
+                className="bg-background border-border dark:border-border"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">
+              <label className="text-sm font-medium text-foreground">
                 Search Query
               </label>
               <Input
                 value={newFolderQuery}
                 onChange={(e) => setNewFolderQuery(e.target.value)}
                 placeholder="e.g., subject:(urgent OR priority)"
-                className="bg-neutral-800 border-neutral-700"
+                className="bg-background border-border dark:border-border"
               />
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-foreground0">
                 Use Gmail search operators to filter emails
               </p>
             </div>
@@ -262,33 +262,33 @@ export function GmailFolderSidebar({
 
       {/* Edit Folder Dialog */}
       <Dialog open={!!editingFolder} onOpenChange={(open) => !open && setEditingFolder(null)}>
-        <DialogContent className="bg-neutral-900 border-neutral-800">
+        <DialogContent className="bg-background border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Edit Folder</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">
+              <label className="text-sm font-medium text-foreground">
                 Folder Name
               </label>
               <Input
                 value={editingFolder?.name || ''}
                 onChange={(e) => setEditingFolder(f => f ? {...f, name: e.target.value} : null)}
                 placeholder="e.g., High Priority"
-                className="bg-neutral-800 border-neutral-700"
+                className="bg-background border-border dark:border-border"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-neutral-200">
+              <label className="text-sm font-medium text-foreground">
                 Search Query
               </label>
               <Input
                 value={editingFolder?.query || ''}
                 onChange={(e) => setEditingFolder(f => f ? {...f, query: e.target.value} : null)}
                 placeholder="e.g., subject:(urgent OR priority)"
-                className="bg-neutral-800 border-neutral-700"
+                className="bg-background border-border dark:border-border"
               />
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-foreground0">
                 Use Gmail search operators to filter emails
               </p>
             </div>

@@ -340,8 +340,8 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
   if (loading) {
     return (
       <SidebarDemo>
-        <div className="p-6 flex items-center justify-center min-h-screen bg-black text-white">
-          <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+        <div className="p-6 flex items-center justify-center min-h-screen bg-gray-900 dark:bg-black text-foreground">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </SidebarDemo>
     );
@@ -350,12 +350,12 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
   if (error) {
     return (
       <SidebarDemo>
-        <div className="p-6 min-h-screen bg-black text-white">
+        <div className="p-6 min-h-screen bg-gray-900 dark:bg-black text-foreground">
           <div className="text-center py-12">
             <h2 className="text-2xl font-semibold text-red-400 mb-2">Error</h2>
-            <p className="text-neutral-400 mb-4">{error}</p>
+            <p className="text-muted-foreground mb-4">{error}</p>
             <Link href="/content-generator">
-              <Button className="bg-neutral-800 hover:bg-neutral-700">
+              <Button className="bg-background hover:bg-gray-200 dark:bg-muted">
                 <ArrowLeft className="h-4 w-4 mr-2" /> Back to Content Generator
               </Button>
             </Link>
@@ -368,12 +368,12 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
   if (!content) {
     return (
       <SidebarDemo>
-        <div className="p-6 min-h-screen bg-black text-white">
+        <div className="p-6 min-h-screen bg-gray-900 dark:bg-black text-foreground">
           <div className="text-center py-12">
-            <h2 className="text-2xl font-semibold text-neutral-300 mb-2">Content Not Found</h2>
-            <p className="text-neutral-400 mb-4">The requested article could not be found.</p>
+            <h2 className="text-2xl font-semibold text-foreground dark:text-neutral-300 mb-2">Content Not Found</h2>
+            <p className="text-muted-foreground mb-4">The requested article could not be found.</p>
             <Link href="/content-generator">
-              <Button className="bg-neutral-800 hover:bg-neutral-700">
+              <Button className="bg-background hover:bg-gray-200 dark:bg-muted">
                 <ArrowLeft className="h-4 w-4 mr-2" /> Back to Content Generator
               </Button>
             </Link>
@@ -385,10 +385,10 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
 
   return (
     <SidebarDemo>
-      <div className="p-6 bg-black text-white min-h-screen">
+      <div className="p-6 bg-gray-900 dark:bg-black text-foreground min-h-screen">
         <div className="mb-4 flex items-center justify-between">
           <Link href="/content-generator">
-            <Button variant="outline" className="border-neutral-700 text-neutral-300">
+            <Button variant="outline" className="border-border dark:border-border text-foreground dark:text-neutral-300">
               <ArrowLeft className="h-4 w-4 mr-2" /> Back
             </Button>
           </Link>
@@ -397,7 +397,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
             {!isEditing && (
               <Button 
                 variant="outline" 
-                className="border-neutral-700 text-neutral-300"
+                className="border-border dark:border-border text-foreground dark:text-neutral-300"
                 onClick={() => {
                   navigator.clipboard.writeText(content.content);
                   toast.success('Content copied to clipboard');
@@ -410,7 +410,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
             {isEditing ? (
                 <Button 
                   variant="outline" 
-                  className="border-neutral-700 text-neutral-300"
+                  className="border-border dark:border-border text-foreground dark:text-neutral-300"
                 onClick={() => setIsEditing(false)}
                 >
                   Cancel
@@ -418,7 +418,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
             ) : (
               <Button 
                 variant="outline" 
-                className="border-neutral-700 text-neutral-300"
+                className="border-border dark:border-border text-foreground dark:text-neutral-300"
                 onClick={() => setIsEditing(true)}
               >
                 <Pencil className="h-4 w-4 mr-2" /> Edit
@@ -427,16 +427,16 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
           </div>
         </div>
         
-        <Card className="bg-neutral-900 border-neutral-800 mb-4">
+        <Card className="bg-background border-border mb-4">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
+            <CardTitle className="text-foreground flex items-center gap-2">
               <FileText className="h-5 w-5" /> 
               {isEditing ? (
                 <input 
                   type="text" 
                   value={editedTitle} 
                   onChange={(e) => setEditedTitle(e.target.value)}
-                  className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-3 py-1 text-white"
+                  className="w-full bg-background border border-border dark:border-border rounded-md px-3 py-1 text-foreground"
                 />
               ) : (
                 safeContent.title
@@ -444,25 +444,25 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-sm text-neutral-400 grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
+            <div className="text-sm text-muted-foreground grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
               <div>
-                <span className="block text-neutral-500">Date</span>
+                <span className="block text-foreground0">Date</span>
                 <span>{safeContent.created_at ? new Date(safeContent.created_at).toLocaleDateString() : 'N/A'}</span>
               </div>
               <div>
-                <span className="block text-neutral-500">Language</span>
+                <span className="block text-foreground0">Language</span>
                 <span>{safeContent.language || 'N/A'}</span>
               </div>
               <div>
-                <span className="block text-neutral-500">Size</span>
+                <span className="block text-foreground0">Size</span>
                 <span>{safeContent.size || 'N/A'}</span>
               </div>
               <div>
-                <span className="block text-neutral-500">Type</span>
+                <span className="block text-foreground0">Type</span>
                 <span>{safeContent.article_type || 'N/A'}</span>
               </div>
               <div>
-                <span className="block text-neutral-500">Word Count</span>
+                <span className="block text-foreground0">Word Count</span>
                 <span>{wordCount}</span>
               </div>
             </div>
@@ -473,21 +473,21 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
             {isEditing ? (
             <div className="space-y-4">
               <div>
-                <Label htmlFor="title" className="text-white font-medium">Title</Label>
+                <Label htmlFor="title" className="text-foreground font-medium">Title</Label>
                 <input
                   type="text"
                   id="title"
-                  className="w-full bg-neutral-800 border border-neutral-700 rounded-md p-3 text-white mt-1"
+                  className="w-full bg-background border border-border dark:border-border rounded-md p-3 text-foreground mt-1"
                   value={editedTitle}
                   onChange={(e) => setEditedTitle(e.target.value)}
                 />
               </div>
               
               <div>
-                <Label htmlFor="content" className="text-white font-medium">Content</Label>
+                <Label htmlFor="content" className="text-foreground font-medium">Content</Label>
               <Textarea 
                   id="content"
-                  className="w-full h-[60vh] bg-neutral-800 border border-neutral-700 text-white font-mono mt-1"
+                  className="w-full h-[60vh] bg-background border border-border dark:border-border text-foreground font-mono mt-1"
                 value={editedContent}
                 onChange={(e) => setEditedContent(e.target.value)}
                 />
@@ -496,7 +496,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
               <div className="flex gap-2 justify-end">
                 <Button 
                   variant="outline" 
-                  className="border-neutral-700 text-neutral-300"
+                  className="border-border dark:border-border text-foreground dark:text-neutral-300"
                   onClick={() => setIsEditing(false)}
                 >
                   Cancel
@@ -521,9 +521,9 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
           ) : (
             <>
               <style dangerouslySetInnerHTML={{ __html: contentStyle }} />
-              <Card className="bg-neutral-900 border-neutral-800 text-white overflow-hidden">
+              <Card className="bg-background border-border text-foreground overflow-hidden">
                 {safeContent.featured_image_url && (
-                  <div className="relative w-full overflow-hidden border-b border-neutral-700">
+                  <div className="relative w-full overflow-hidden border-b border-border dark:border-border">
                     <div className="aspect-video max-h-[500px] w-full overflow-hidden">
                       <img
                         src={safeContent.featured_image_url}
@@ -533,7 +533,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
                       />
                     </div>
                     {safeContent.featured_image_attribution && (
-                      <div className="absolute bottom-0 right-0 bg-black bg-opacity-75 text-white text-xs p-2">
+                      <div className="absolute bottom-0 right-0 bg-gray-900 dark:bg-black bg-opacity-75 text-foreground text-xs p-2">
                         Photo by{' '}
                         <a 
                           href={`${safeContent.featured_image_attribution.author_link}?utm_source=app&utm_medium=referral`}
@@ -557,32 +557,32 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
                   </div>
                 )}
                 <CardHeader>
-                  <CardTitle className="text-2xl font-bold text-white">{safeContent.title || 'Untitled'}</CardTitle>
+                  <CardTitle className="text-2xl font-bold text-foreground">{safeContent.title || 'Untitled'}</CardTitle>
                 </CardHeader>
-                                  <CardContent>
-                   <div 
-                     className="content-container text-white prose prose-lg prose-invert max-w-none
-                       prose-headings:text-white prose-headings:font-bold
+                <CardContent>
+                  <div 
+                     className="content-container text-foreground prose prose-lg prose-invert max-w-none
+                       prose-headings:text-foreground prose-headings:font-bold
                        prose-h1:text-3xl prose-h1:font-bold prose-h1:mb-6 
                        prose-h2:text-2xl prose-h2:font-bold prose-h2:mb-4 prose-h2:mt-8
                        prose-h3:text-xl prose-h3:font-bold prose-h3:mb-4 prose-h3:mt-6
-                       prose-p:text-white prose-p:my-4 prose-p:opacity-90
-                       prose-li:text-white prose-li:opacity-90
-                       prose-strong:text-white prose-strong:font-bold
+                       prose-p:text-foreground prose-p:my-4 prose-p:opacity-90
+                       prose-li:text-foreground prose-li:opacity-90
+                       prose-strong:text-foreground prose-strong:font-bold
                        prose-a:text-blue-400 prose-a:hover:underline"
-                     dangerouslySetInnerHTML={{ 
+                    dangerouslySetInnerHTML={{ 
                        __html: marked.parse(cleanUnsplashUrls(safeContent.content || '')) 
-                     }} 
-                    />
-                  </CardContent>
+                    }} 
+                  />
+                </CardContent>
               </Card>
             </>
           )}
         </div>
 
-        <Card className="bg-neutral-900 border-neutral-800 mb-4">
+        <Card className="bg-background border-border mb-4">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
+            <CardTitle className="text-foreground flex items-center gap-2">
               <Globe className="h-5 w-5" /> Blog Publishing
             </CardTitle>
           </CardHeader>
@@ -648,19 +648,19 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="blog-category" className="text-neutral-300 mb-2 block">
+                        <Label htmlFor="blog-category" className="text-foreground dark:text-neutral-300 mb-2 block">
                           Blog Category
                         </Label>
                         <Select
                           value={selectedCategory}
                           onValueChange={setSelectedCategory}
                         >
-                          <SelectTrigger className="bg-neutral-800 border-neutral-700 text-neutral-300">
+                          <SelectTrigger className="bg-background border-border dark:border-border text-foreground dark:text-neutral-300">
                             <SelectValue placeholder="Select category" />
                           </SelectTrigger>
-                          <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
+                          <SelectContent className="bg-background border-border dark:border-border text-gray-800 dark:text-foreground">
                             {blogCategories.map(category => (
-                              <SelectItem key={category} value={category} className="hover:bg-neutral-700">
+                              <SelectItem key={category} value={category} className="hover:bg-gray-200 dark:bg-muted">
                                 {category.charAt(0).toUpperCase() + category.slice(1)}
                               </SelectItem>
                             ))}
@@ -721,7 +721,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
                       </div>
                     )}
                     
-                    <p className="text-xs text-neutral-500">
+                    <p className="text-xs text-foreground0">
                       Content will be published to {blogUrl} in the {selectedCategory} category.
                     </p>
                   </>

@@ -422,25 +422,25 @@ export function CustomersView({ className }: CustomersViewProps) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full w-full bg-neutral-900 text-neutral-400">
-        <Loader2 className="h-8 w-8 animate-spin text-neutral-400 mx-auto" />
-        <p className="mt-4 text-neutral-400">Loading customers...</p>
+      <div className="flex items-center justify-center h-full w-full bg-background text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+        <p className="mt-4 text-muted-foreground">Loading customers...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full w-full bg-neutral-900 text-neutral-400">
-        <AlertOctagon className="h-8 w-8 text-red-500 mx-auto" />
-        <p className="mt-4 text-neutral-400">Failed to load customers. Please try again later.</p>
+      <div className="flex items-center justify-center h-full w-full bg-background text-muted-foreground">
+        <AlertOctagon className="h-8 w-8 text-red-600 dark:text-red-400 mx-auto" />
+        <p className="mt-4 text-muted-foreground">Failed to load customers. Please try again later.</p>
       </div>
     );
   }
 
   if (!session?.user) {
     return (
-      <div className="flex items-center justify-center h-full w-full bg-neutral-900 text-neutral-400">
+      <div className="flex items-center justify-center h-full w-full bg-background text-muted-foreground">
         <p>Please sign in to view customers.</p>
       </div>
     );
@@ -449,14 +449,14 @@ export function CustomersView({ className }: CustomersViewProps) {
   return (
     <div className={cn("flex-1 pl-4 py-4 pr-4", className)}>
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-semibold text-white">Customers</h2>
+        <h2 className="text-2xl font-semibold text-foreground">Customers</h2>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-500" />
+            <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground0" />
             <input
               type="text"
               placeholder="Search customers..."
-              className="pl-10 pr-4 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-[250px] text-white"
+              className="pl-10 pr-4 py-2 bg-background border border-border dark:border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-[250px] text-foreground"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -465,11 +465,11 @@ export function CustomersView({ className }: CustomersViewProps) {
           <div className="group relative overflow-hidden rounded-lg">
             <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-purple-500 via-blue-500 to-purple-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
               <button
                 onClick={syncCustomerEmails}
                 disabled={isSyncingEmails}
-                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
               >
                 {isSyncingEmails ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -484,10 +484,10 @@ export function CustomersView({ className }: CustomersViewProps) {
           <div className="group relative overflow-hidden rounded-lg">
             <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
               <button
                 onClick={() => setCreateCustomerOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
               >
                 <PlusCircle className="h-4 w-4" />
                 Create Customer
@@ -498,11 +498,11 @@ export function CustomersView({ className }: CustomersViewProps) {
           <div className="group relative overflow-hidden rounded-lg">
             <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
               <button
                 onClick={checkForNewData}
                 disabled={isRefreshing}
-                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
               >
                 {isRefreshing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -517,11 +517,11 @@ export function CustomersView({ className }: CustomersViewProps) {
           <div className="group relative overflow-hidden rounded-lg">
             <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
               <button
                 onClick={handleSaveAll}
                 disabled={isSaving}
-                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                className="flex items-center gap-1.5 px-3 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
               >
                 {isSaving ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -536,9 +536,9 @@ export function CustomersView({ className }: CustomersViewProps) {
           <div className="group relative overflow-hidden rounded-lg">
             <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
               <label
-                className="flex items-center gap-1.5 px-3 py-2 cursor-pointer border-0 bg-transparent text-neutral-200 hover:text-white"
+                className="flex items-center gap-1.5 px-3 py-2 cursor-pointer border-0 bg-transparent text-gray-800 dark:text-foreground hover:text-foreground"
               >
                 <Upload className="h-4 w-4" />
                 Import CSV
@@ -556,16 +556,16 @@ export function CustomersView({ className }: CustomersViewProps) {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+          <Loader2 className="w-8 h-8 text-blue-600 dark:text-blue-400 animate-spin" />
         </div>
       ) : error ? (
-        <div className="flex items-center justify-center py-12 text-red-500">
+        <div className="flex items-center justify-center py-12 text-red-600 dark:text-red-400">
           <AlertOctagon className="w-6 h-6 mr-2" />
           <span>{error.message || "Failed to load customers"}</span>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6">
-          <AnimatedBorderCard className="overflow-hidden bg-neutral-900 border-0">
+          <AnimatedBorderCard className="overflow-hidden bg-background border-0">
             <div className="relative">
               <GlowingEffect 
                 spread={30} 
@@ -581,7 +581,7 @@ export function CustomersView({ className }: CustomersViewProps) {
                 <div className="rounded-lg overflow-hidden">
                   <table className="w-full">
                     <thead>
-                      <tr className="text-sm font-medium bg-neutral-800 text-neutral-300">
+                      <tr className="text-sm font-medium bg-background text-foreground dark:text-neutral-300">
                         <th className="text-left px-4 py-3">Customer Name</th>
                         <th className="text-left px-4 py-3">Customer Number</th>
                         <th className="text-left px-4 py-3">Email</th>
@@ -594,42 +594,42 @@ export function CustomersView({ className }: CustomersViewProps) {
                     {filteredCustomers.length > 0 ? (
                       <tbody className="divide-y divide-neutral-800">
                         {filteredCustomers.map((customer: ExtendedCustomer) => (
-                          <tr key={customer.id || customer.customer_number} className="hover:bg-neutral-800/50 transition-colors">
+                          <tr key={customer.id || customer.customer_number} className="hover:bg-background/50 transition-colors">
                             <td className="px-4 py-3">
-                              <Link href={`/customers/${customer.id}`} className="font-medium text-white hover:text-primary hover:underline">
+                              <Link href={`/customers/${customer.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
                                 {customer.name}
                               </Link>
                             </td>
-                            <td className="px-4 py-3 text-neutral-400">{customer.customer_number}</td>
-                            <td className="px-4 py-3 text-neutral-400">{customer.email || '-'}</td>
-                            <td className="px-4 py-3 text-white">
+                            <td className="px-4 py-3 text-muted-foreground">{customer.customer_number}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{customer.email || '-'}</td>
+                            <td className="px-4 py-3 text-foreground">
                               {customer.total ? `${customer.total.toLocaleString()} kr` : '0 kr'}
                             </td>
-                            <td className="px-4 py-3 text-neutral-400">
+                            <td className="px-4 py-3 text-muted-foreground">
                               {customer.invoice_count || 0}
                             </td>
-                            <td className="px-4 py-3 text-neutral-400">
+                            <td className="px-4 py-3 text-muted-foreground">
                               {customer.last_invoice_date ? new Date(customer.last_invoice_date).toLocaleDateString('sv-SE') : 'Never'}
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex justify-center gap-2">
                                 <button
                                   onClick={() => handleOpenTaskDialog(customer)}
-                                  className="text-neutral-400 hover:text-primary transition-colors"
+                                  className="text-muted-foreground hover:text-primary transition-colors"
                                   title="View Tasks"
                                 >
                                   <ListTodo size={18} />
                                 </button>
                                 <Link
                                   href={`/customers/${customer.id}`}
-                                  className="text-neutral-400 hover:text-primary transition-colors"
+                                  className="text-muted-foreground hover:text-primary transition-colors"
                                   title="View Details"
                                 >
                                   <ChevronRight size={18} />
                                 </Link>
                                 <button
                                   onClick={() => handleDeleteCustomer(customer)}
-                                  className="text-neutral-400 hover:text-destructive transition-colors"
+                                  className="text-muted-foreground hover:text-destructive transition-colors"
                                   title="Delete Customer"
                                   disabled={deletingCustomerId === customer.id}
                                 >
@@ -647,7 +647,7 @@ export function CustomersView({ className }: CustomersViewProps) {
                     ) : (
                       <tbody>
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
+                          <td colSpan={6} className="px-4 py-8 text-center text-foreground0">
                             No customers found. Try updating your search or importing customers.
                           </td>
                         </tr>
@@ -663,20 +663,20 @@ export function CustomersView({ className }: CustomersViewProps) {
 
       {/* Dialog for displaying customer details, tasks and projects */}
       <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
-        <DialogContent className="sm:max-w-[800px] bg-neutral-800 border-neutral-700 p-0 text-white">
-          <DialogHeader className="border-b border-neutral-700 p-6">
+        <DialogContent className="sm:max-w-[800px] bg-background border-border dark:border-border p-0 text-foreground">
+          <DialogHeader className="border-b border-border dark:border-border p-6">
             <div className="flex items-center justify-between">
               <div>
                 <DialogTitle className="text-xl font-semibold flex items-center gap-2">
                   <Users className="h-5 w-5 text-blue-400" />
                   {selectedCustomer?.name}
                   {selectedCustomer?.customer_number && (
-                    <span className="text-sm text-neutral-400 ml-2">
+                    <span className="text-sm text-muted-foreground ml-2">
                       #{selectedCustomer.customer_number}
                     </span>
                   )}
                 </DialogTitle>
-                <DialogDescription className="text-neutral-400 mt-1">
+                <DialogDescription className="text-muted-foreground mt-1">
                   Customer information, projects and tasks
                 </DialogDescription>
                 {selectedCustomer?.email && (
@@ -699,14 +699,14 @@ export function CustomersView({ className }: CustomersViewProps) {
           </DialogHeader>
           
           <Tabs defaultValue="invoices" value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="border-b border-neutral-700">
+            <div className="border-b border-border dark:border-border">
               <TabsList className="bg-transparent p-0 h-auto w-full rounded-none">
                 <div className="flex w-full">
                   <TabsTrigger 
                     value="invoices" 
                     className={cn(
                       "flex-1 rounded-none border-b-2 py-3 border-transparent data-[state=active]:border-purple-500",
-                      "hover:bg-neutral-700/20 data-[state=active]:bg-neutral-700/20"
+                      "hover:bg-gray-200 dark:bg-muted/20 data-[state=active]:bg-gray-200 dark:bg-muted/20"
                     )}
                   >
                     <BarChart3 className="h-4 w-4 mr-2 text-purple-400" />
@@ -716,17 +716,17 @@ export function CustomersView({ className }: CustomersViewProps) {
                     value="tasks" 
                     className={cn(
                       "flex-1 rounded-none border-b-2 py-3 border-transparent data-[state=active]:border-blue-500",
-                      "hover:bg-neutral-700/20 data-[state=active]:bg-neutral-700/20"
+                      "hover:bg-gray-200 dark:bg-muted/20 data-[state=active]:bg-gray-200 dark:bg-muted/20"
                     )}
                   >
-                    <CheckSquare className="h-4 w-4 mr-2 text-green-500" />
+                    <CheckSquare className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
                     Completed Tasks ({selectedCustomer?.completed_tasks?.length || 0})
                   </TabsTrigger>
                   <TabsTrigger 
                     value="projects" 
                     className={cn(
                       "flex-1 rounded-none border-b-2 py-3 border-transparent data-[state=active]:border-yellow-500",
-                      "hover:bg-neutral-700/20 data-[state=active]:bg-neutral-700/20"
+                      "hover:bg-gray-200 dark:bg-muted/20 data-[state=active]:bg-gray-200 dark:bg-muted/20"
                     )}
                   >
                     <Folder className="h-4 w-4 mr-2 text-yellow-400" />
@@ -738,13 +738,13 @@ export function CustomersView({ className }: CustomersViewProps) {
             
             <TabsContent value="invoices" className="max-h-[60vh] overflow-y-auto p-6 custom-scrollbar">
               {/* Debug logs moved to useEffect */}
-              <div className="mb-8 bg-neutral-900 rounded-lg p-6 border border-neutral-700">
+              <div className="mb-8 bg-background rounded-lg p-6 border border-border dark:border-border">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                   <div>
-                    <h2 className="text-xl font-semibold text-white">Revenue Summary</h2>
-                    <p className="text-sm text-neutral-400 mt-1">Financial overview for {selectedCustomer?.name}</p>
+                    <h2 className="text-xl font-semibold text-foreground">Revenue Summary</h2>
+                    <p className="text-sm text-muted-foreground mt-1">Financial overview for {selectedCustomer?.name}</p>
                   </div>
-                  <div className="text-2xl font-bold text-white">
+                  <div className="text-2xl font-bold text-foreground">
                     {typeof selectedCustomer?.total === 'number' ? 
                       new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
                         .format(selectedCustomer.total) : '0 SEK'}
@@ -752,20 +752,20 @@ export function CustomersView({ className }: CustomersViewProps) {
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
-                  <div className="bg-neutral-800 rounded-md p-4">
-                    <div className="text-sm text-neutral-400 mb-1">Total Invoices</div>
-                    <div className="text-xl font-semibold text-white">{selectedCustomer?.invoice_count || 0}</div>
+                  <div className="bg-background rounded-md p-4">
+                    <div className="text-sm text-muted-foreground mb-1">Total Invoices</div>
+                    <div className="text-xl font-semibold text-foreground">{selectedCustomer?.invoice_count || 0}</div>
                   </div>
-                  <div className="bg-neutral-800 rounded-md p-4">
-                    <div className="text-sm text-neutral-400 mb-1">Customer Since</div>
-                    <div className="text-xl font-semibold text-white">
+                  <div className="bg-background rounded-md p-4">
+                    <div className="text-sm text-muted-foreground mb-1">Customer Since</div>
+                    <div className="text-xl font-semibold text-foreground">
                       {selectedCustomer?.created_at ? 
                         new Date(selectedCustomer.created_at).toLocaleDateString() : 'Unknown'}
                     </div>
                   </div>
-                  <div className="bg-neutral-800 rounded-md p-4">
-                    <div className="text-sm text-neutral-400 mb-1">Last Invoice</div>
-                    <div className="text-xl font-semibold text-white">
+                  <div className="bg-background rounded-md p-4">
+                    <div className="text-sm text-muted-foreground mb-1">Last Invoice</div>
+                    <div className="text-xl font-semibold text-foreground">
                       {selectedCustomer?.last_invoice_date ? 
                         new Date(selectedCustomer.last_invoice_date).toLocaleDateString() : 'No invoices'}
                     </div>
@@ -774,41 +774,41 @@ export function CustomersView({ className }: CustomersViewProps) {
               </div>
               
               <div className="mb-2">
-                <h3 className="text-lg font-medium text-white mb-4">Invoices</h3>
+                <h3 className="text-lg font-medium text-foreground mb-4">Invoices</h3>
                 {!selectedCustomer?.invoices?.length ? (
-                  <div className="text-center py-8 bg-neutral-900 rounded-lg border border-neutral-700">
-                    <p className="text-neutral-400">No invoices found for this customer</p>
+                  <div className="text-center py-8 bg-background rounded-lg border border-border dark:border-border">
+                    <p className="text-muted-foreground">No invoices found for this customer</p>
                   </div>
                 ) : (
-                  <div className="border border-neutral-700 rounded-lg overflow-hidden">
+                  <div className="border border-border dark:border-border rounded-lg overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full">
-                        <thead className="bg-neutral-900">
-                          <tr className="border-b border-neutral-700">
-                            <th className="text-left py-3 px-4 text-xs font-medium text-neutral-400">Invoice #</th>
-                            <th className="text-left py-3 px-4 text-xs font-medium text-neutral-400">Date</th>
-                            <th className="text-left py-3 px-4 text-xs font-medium text-neutral-400">Due Date</th>
-                            <th className="text-right py-3 px-4 text-xs font-medium text-neutral-400">Amount</th>
-                            <th className="text-left py-3 px-4 text-xs font-medium text-neutral-400">Status</th>
+                        <thead className="bg-background">
+                          <tr className="border-b border-border dark:border-border">
+                            <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground">Invoice #</th>
+                            <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground">Date</th>
+                            <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground">Due Date</th>
+                            <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground">Amount</th>
+                            <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-neutral-700 bg-neutral-900">
+                        <tbody className="divide-y divide-neutral-700 bg-background">
                           {selectedCustomer.invoices.map(invoice => (
-                            <tr key={invoice.id} className="hover:bg-neutral-800 transition-colors">
-                              <td className="py-3 px-4 text-sm text-white">{invoice.document_number}</td>
-                              <td className="py-3 px-4 text-sm text-white">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
-                              <td className="py-3 px-4 text-sm text-white">{new Date(invoice.due_date).toLocaleDateString()}</td>
-                              <td className="py-3 px-4 text-sm text-white text-right">
+                            <tr key={invoice.id} className="hover:bg-background transition-colors">
+                              <td className="py-3 px-4 text-sm text-foreground">{invoice.document_number}</td>
+                              <td className="py-3 px-4 text-sm text-foreground">{new Date(invoice.invoice_date).toLocaleDateString()}</td>
+                              <td className="py-3 px-4 text-sm text-foreground">{new Date(invoice.due_date).toLocaleDateString()}</td>
+                              <td className="py-3 px-4 text-sm text-foreground text-right">
                                 {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(invoice.total)}
                               </td>
                               <td className="py-3 px-4 text-sm">
                                 <span className={cn(
                                   "px-2 py-1 rounded-full text-xs font-medium",
                                   {
-                                    "bg-green-900/20 text-green-400": invoice.status === "paid",
-                                    "bg-yellow-900/20 text-yellow-400": invoice.status === "partial",
-                                    "bg-red-900/20 text-red-400": invoice.status === "overdue",
-                                    "bg-neutral-700/20 text-neutral-400": invoice.status === "unpaid"
+                                    "bg-green-100 dark:bg-green-900/20 text-green-400": invoice.status === "paid",
+                                    "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400": invoice.status === "partial",
+                                    "bg-red-100 dark:bg-red-900/20 text-red-400": invoice.status === "overdue",
+                                    "bg-gray-200 dark:bg-muted/20 text-muted-foreground": invoice.status === "unpaid"
                                   }
                                 )}>
                                   {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
@@ -826,34 +826,34 @@ export function CustomersView({ className }: CustomersViewProps) {
             
             <TabsContent value="tasks" className="max-h-[60vh] overflow-y-auto p-6 custom-scrollbar">
               {!selectedCustomer?.completed_tasks?.length ? (
-                <div className="py-8 text-center text-neutral-400">
+                <div className="py-8 text-center text-muted-foreground">
                   <CheckSquare className="h-12 w-12 mx-auto mb-4 text-neutral-600" />
                   <p>No completed tasks found for this customer.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {selectedCustomer?.completed_tasks?.map((task: CompletedTask) => (
-                    <div key={task.id} className="bg-neutral-900 rounded-md p-4 border border-neutral-700 hover:border-neutral-600 transition-colors">
+                    <div key={task.id} className="bg-background rounded-md p-4 border border-border dark:border-border hover:border-gray-400 dark:border-border transition-colors">
                       <div className="flex justify-between mb-2">
-                        <h3 className="text-md font-medium text-white">{task.title}</h3>
-                        <span className="text-sm text-neutral-500">
+                        <h3 className="text-md font-medium text-foreground">{task.title}</h3>
+                        <span className="text-sm text-foreground0">
                           {new Date(task.completed_at).toLocaleDateString()}
                         </span>
                       </div>
                       <div className="mb-4">
-                        <div className="text-sm text-neutral-400 flex gap-1">
+                        <div className="text-sm text-muted-foreground flex gap-1">
                           <span className="font-medium">Project:</span>
                           <span>{task.project_name}</span>
                         </div>
                       </div>
                       {task.checklist && task.checklist.length > 0 && (
-                        <div className="border-t border-neutral-700 pt-3 mt-3">
-                          <h4 className="text-sm font-medium text-neutral-300 mb-2">Completed Items:</h4>
+                        <div className="border-t border-border dark:border-border pt-3 mt-3">
+                          <h4 className="text-sm font-medium text-foreground dark:text-neutral-300 mb-2">Completed Items:</h4>
                           <div className="space-y-2">
                             {task.checklist.filter((item: ChecklistItem) => item.done).map((item: ChecklistItem) => (
                               <div key={item.id} className="flex items-start gap-2">
-                                <CheckSquare size={14} className="text-green-500 mt-0.5 flex-shrink-0" />
-                                <span className="text-sm text-neutral-300">{item.text}</span>
+                                <CheckSquare size={14} className="text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-sm text-foreground dark:text-neutral-300">{item.text}</span>
                               </div>
                             ))}
                           </div>
@@ -867,42 +867,42 @@ export function CustomersView({ className }: CustomersViewProps) {
             
             <TabsContent value="projects" className="max-h-[60vh] overflow-y-auto p-6 custom-scrollbar">
               {!selectedCustomer?.linked_projects?.length ? (
-                <div className="py-8 text-center text-neutral-400">
+                <div className="py-8 text-center text-muted-foreground">
                   <Folder className="h-12 w-12 mx-auto mb-4 text-neutral-600" />
                   <p>No projects linked to this customer.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {selectedCustomer?.linked_projects?.map((project) => (
-                    <div key={project.id} className="bg-neutral-900 rounded-md overflow-hidden border border-neutral-700 hover:border-neutral-600 transition-colors">
+                    <div key={project.id} className="bg-background rounded-md overflow-hidden border border-border dark:border-border hover:border-gray-400 dark:border-border transition-colors">
                       <div className="flex justify-between items-center p-4">
                         <div>
-                          <h3 className="text-md font-medium text-white flex items-center">
+                          <h3 className="text-md font-medium text-foreground flex items-center">
                             {project.name}
                             <span className={cn(
                               "ml-3 px-2 py-0.5 rounded-full text-xs font-medium",
                               {
-                                "bg-green-900/20 text-green-400": project.status.toLowerCase() === "active",
-                                "bg-neutral-900/20 text-neutral-400": project.status.toLowerCase() === "completed",
-                                "bg-yellow-900/20 text-yellow-400": project.status.toLowerCase() === "on-hold"
+                                "bg-green-100 dark:bg-green-900/20 text-green-400": project.status.toLowerCase() === "active",
+                                "bg-background/20 text-muted-foreground": project.status.toLowerCase() === "completed",
+                                "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400": project.status.toLowerCase() === "on-hold"
                               }
                             )}>
                               {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
                             </span>
                           </h3>
-                          <p className="text-sm text-neutral-400 mt-1">
+                          <p className="text-sm text-muted-foreground mt-1">
                             {project.task_count} tasks
                           </p>
                         </div>
                         <div className="flex flex-col items-end">
                           <div className="flex items-center gap-2 mb-2">
-                            <div className="w-24 h-2 bg-neutral-700 rounded-full overflow-hidden">
+                            <div className="w-24 h-2 bg-gray-200 dark:bg-muted rounded-full overflow-hidden">
                               <div
                                 className="h-full bg-green-500 rounded-full"
                                 style={{ width: `${project.progress}%` }}
                               />
                             </div>
-                            <span className="text-xs text-neutral-400">{project.progress}%</span>
+                            <span className="text-xs text-muted-foreground">{project.progress}%</span>
                           </div>
                           <Link
                             href={`/projects?id=${project.id}`}
@@ -920,13 +920,13 @@ export function CustomersView({ className }: CustomersViewProps) {
             </TabsContent>
           </Tabs>
           
-          <div className="border-t border-neutral-700 p-4 flex justify-end">
+          <div className="border-t border-border dark:border-border p-4 flex justify-end">
             <div className="group relative overflow-hidden rounded-lg">
               <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-purple-500 via-blue-500 to-purple-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
               
-              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
                 <button 
-                  className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                  className="px-4 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
                   onClick={() => setTaskDialogOpen(false)}
                 >
                   Close

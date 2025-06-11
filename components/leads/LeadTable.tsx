@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
-import { MoveRight, Star, Calendar, Link2, Trash2, MoreHorizontal } from "lucide-react";
+import { MoveRight, Star, Calendar, Link2, Trash2, MoreHorizontal, Folder, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
+import { ExportLeadsButton } from "@/components/leads/ExportLeadsButton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,6 +37,12 @@ import {
   Checkbox,
 } from "@/components/ui/checkbox";
 
+interface Folder {
+  id: string;
+  name: string;
+  workspace_id: string;
+}
+
 interface Lead {
   id: string;
   lead_name: string;
@@ -56,6 +63,11 @@ interface Lead {
   status?: string;
   converted_to_deal?: boolean;
   deal_id?: string;
+  folder_id?: string;
+  folders?: {
+    id: string;
+    name: string;
+  };
 }
 
 interface LeadTableProps {
@@ -67,27 +79,82 @@ interface LeadTableProps {
     conversionRate: number;
     averageQualificationScore: number;
   }) => void;
+  onManageFolders: () => void;
+  selectedFolder?: string | null;
 }
 
 export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTableProps>(
-  ({ workspaceId, userId, onMetricsChange }, ref) => {
+  ({ workspaceId, userId, onMetricsChange, onManageFolders, selectedFolder }, ref) => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(true);
+
+  const loadFolders = async () => {
+    if (!workspaceId) return;
+    
+    try {
+      setLoadingFolders(true);
+      const { data, error } = await supabase
+        .from("lead_folders")
+        .select("*")
+        .eq("workspace_id", workspaceId)
+        .order("name", { ascending: true });
+
+      if (error) throw error;
+      console.log("Loaded folders:", data);
+      setFolders(data || []);
+    } catch (error) {
+      console.error("Error loading folders:", error);
+      toast.error("Failed to load folders");
+    } finally {
+      setLoadingFolders(false);
+    }
+  };
 
   const loadLeads = async () => {
-    if (!workspaceId) return;
+    if (!workspaceId) {
+      console.log('[LeadTable] No workspaceId provided');
+      return;
+    }
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      console.log(`[LeadTable] Loading leads for workspace: ${workspaceId}`);
+      
+      let query = supabase
         .from("leads")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: false });
+        .select(`
+          *,
+          folders:folder_id (
+            id,
+            name
+          )
+        `)
+        .eq("workspace_id", workspaceId);
+      
+      // Apply folder filter if selected
+      if (selectedFolder) {
+        if (selectedFolder === 'unassigned') {
+          // More explicit null check for folder_id
+          query = query.is("folder_id", null);
+          console.log("[LeadTable] Filtering for unassigned leads (folder_id is null)");
+        } else {
+          query = query.eq("folder_id", selectedFolder);
+          console.log(`[LeadTable] Filtering for folder_id = ${selectedFolder}`);
+        }
+      }
+      
+      const { data, error } = await query.order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[LeadTable] Error loading leads:', error);
+        throw error;
+      }
+      
+      console.log(`[LeadTable] Loaded ${data?.length || 0} leads for workspace ${workspaceId}`);
       setLeads(data || []);
 
       // Calculate metrics
@@ -123,8 +190,9 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
   }));
 
   useEffect(() => {
+    loadFolders();
     loadLeads();
-  }, [workspaceId]);
+  }, [workspaceId, selectedFolder]);
 
   const convertToDeal = async (leadId: string) => {
     const lead = leads.find(l => l.id === leadId);
@@ -191,78 +259,162 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
     }
   };
 
+  const assignToFolder = async (leadId: string, folderId: string | null) => {
+    try {
+      console.log("Assigning lead to folder:", { leadId, folderId });
+      
+      const { error } = await supabase
+        .from("leads")
+        .update({ folder_id: folderId })
+        .eq("id", leadId);
+
+      if (error) throw error;
+      
+      toast.success(folderId ? "Lead assigned to folder successfully" : "Lead removed from folder");
+      loadLeads(); // Refresh the leads list
+    } catch (error) {
+      console.error("Error assigning lead to folder:", error);
+      toast.error("Failed to assign lead to folder");
+    }
+  };
+
+  const assignSelectedToFolder = async (folderId: string | null) => {
+    if (selectedLeads.length === 0) {
+      toast.error("No leads selected");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("leads")
+        .update({ folder_id: folderId })
+        .in("id", selectedLeads);
+
+      if (error) throw error;
+      
+      toast.success(`${selectedLeads.length} leads assigned to folder`);
+      setSelectedLeads([]);
+      loadLeads();
+    } catch (error) {
+      console.error("Error bulk assigning leads to folder:", error);
+      toast.error("Failed to assign leads to folder");
+    }
+  };
+
   const getQualificationBadge = (score: number) => {
     if (score >= 8) return <Badge className="bg-green-500/10 text-green-400">High</Badge>;
     if (score >= 5) return <Badge className="bg-yellow-500/10 text-yellow-400">Medium</Badge>;
     return <Badge className="bg-red-500/10 text-red-400">Low</Badge>;
   };
 
-  if (loading) {
     return (
-      <Card className="p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
-        </div>
-      </Card>
-    );
-  }
+    <Card className="bg-background border-border overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center gap-4">
+          <h3 className="text-lg font-medium text-foreground">
+            {selectedFolder 
+              ? selectedFolder === "unassigned"
+                ? "Unassigned Leads" 
+                : `Leads in "${folders.find(f => f.id === selectedFolder)?.name || ''}"` 
+              : "All Leads"}
+          </h3>
 
-  return (
-    <Card className="bg-neutral-900/50 backdrop-blur-sm border-neutral-800">
-      <div className="p-4 border-b border-neutral-800">
-        <div className="flex justify-between items-center">
-          <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Leads</h2>
-            <p className="text-sm text-neutral-400">
-              Manage and qualify your leads
-            </p>
-          </div>
+        </div>
+        <div className="flex items-center gap-2">
           {selectedLeads.length > 0 && (
-            <Button
-              onClick={() => {
-                selectedLeads.forEach(leadId => convertToDeal(leadId));
-                setSelectedLeads([]);
-              }}
-              className="flex items-center gap-2"
-            >
-              <MoveRight className="h-4 w-4" />
-              Convert to Deals
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="flex items-center gap-2 bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border">
+                  <Folder className="h-4 w-4" />
+                  Assign to Folder
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="bg-background border-border dark:border-border">
+                <DropdownMenuItem 
+                  onClick={() => assignSelectedToFolder(null)}
+                  className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                >
+                  Unassign
+                </DropdownMenuItem>
+                {folders.map((folder) => (
+                  <DropdownMenuItem 
+                    key={folder.id} 
+                    onClick={() => assignSelectedToFolder(folder.id)}
+                    className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                  >
+                    {folder.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
+          <Button 
+            variant="outline" 
+            className="bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border flex items-center gap-2"
+            onClick={onManageFolders}
+            >
+            <FolderOpen className="h-4 w-4" />
+            Manage Folders
+            </Button>
+          <ExportLeadsButton 
+            leads={leads} 
+            selectedLeads={selectedLeads} 
+            clearSelection={() => setSelectedLeads([])}
+          />
         </div>
       </div>
 
-      <div className="rounded-md border border-neutral-800">
+      <div className="overflow-x-auto">
       <Table>
         <TableHeader>
-            <TableRow className="hover:bg-neutral-800/50">
-              <TableHead className="w-12">
+            <TableRow className="border-border hover:bg-background/50">
+              <TableHead className="w-[50px]">
                 <Checkbox
-                  checked={selectedLeads.length === leads.length && leads.length > 0}
+                  checked={selectedLeads.length > 0 && selectedLeads.length === leads.length}
                   onCheckedChange={(checked) => {
                     if (checked) {
-                      setSelectedLeads(leads.map(lead => lead.id));
+                      setSelectedLeads(leads.map((lead) => lead.id));
                     } else {
                       setSelectedLeads([]);
                     }
                   }}
-                  aria-label="Select all"
-                  className="translate-y-[2px]"
                 />
               </TableHead>
-              <TableHead className="text-white">Name</TableHead>
-              <TableHead className="text-white">Company</TableHead>
-              <TableHead className="text-white">Email</TableHead>
-              <TableHead className="text-white">Phone</TableHead>
-              <TableHead className="text-white">Source</TableHead>
-              <TableHead className="text-white">Service</TableHead>
-              <TableHead className="text-white">Status</TableHead>
-              <TableHead className="text-white text-right">Actions</TableHead>
+              <TableHead>Name / Company</TableHead>
+              <TableHead>Folder</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead>Service</TableHead>
+              <TableHead>Qualification</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {leads.map((lead) => (
-              <TableRow key={lead.id} className="hover:bg-neutral-800/50">
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={7} className="h-24 text-center">
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                    <span className="mt-2 text-sm text-muted-foreground">Loading leads...</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : leads.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="h-24 text-center">
+                  <div className="flex flex-col items-center justify-center">
+                    <p className="text-sm text-muted-foreground">No leads found</p>
+                    <Button 
+                      variant="default" 
+                      className="mt-2 text-blue-400"
+                    >
+                      No leads found
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              leads.map((lead) => (
+                <TableRow key={lead.id} className="border-border hover:bg-background/50">
               <TableCell>
                   <Checkbox
                     checked={selectedLeads.includes(lead.id)}
@@ -270,82 +422,121 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
                       if (checked) {
                         setSelectedLeads([...selectedLeads, lead.id]);
                       } else {
-                        setSelectedLeads(selectedLeads.filter(id => id !== lead.id));
+                          setSelectedLeads(selectedLeads.filter((id) => id !== lead.id));
                       }
                     }}
-                    aria-label={`Select ${lead.lead_name}`}
-                    className="translate-y-[2px]"
                   />
               </TableCell>
-                <TableCell className="font-medium text-white">
-                  <div className="truncate max-w-[150px]">{lead.lead_name}</div>
+                  <TableCell>
+                    <div>
+                      <p className="font-medium text-foreground">{lead.lead_name}</p>
+                      <p className="text-sm text-muted-foreground">{lead.company}</p>
+                    </div>
               </TableCell>
-                <TableCell className="text-white">
-                  <div className="truncate max-w-[220px]" title={lead.company || '-'}>{lead.company || '-'}</div>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {lead.folders ? (
+                        <Badge className="bg-blue-500/10 text-blue-400">
+                          {lead.folders.name}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground border-border dark:border-border">
+                          Unassigned
+                        </Badge>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            className="h-6 w-6 p-0 hover:bg-background text-blue-400 relative"
+                            title="Assign to folder"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                            <span className="absolute -top-1 -right-1 flex h-2 w-2 items-center justify-center rounded-full bg-blue-500 ring-1 ring-white" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="bg-background border-border dark:border-border w-56">
+                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                            Assign to folder
+                          </div>
+                          <DropdownMenuItem 
+                            onClick={() => assignToFolder(lead.id, null)}
+                            className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                          >
+                            <span className="text-muted-foreground mr-2">⦸</span>
+                            Unassign
+                          </DropdownMenuItem>
+                          {folders.map((folder) => (
+                            <DropdownMenuItem 
+                              key={folder.id} 
+                              onClick={() => assignToFolder(lead.id, folder.id)}
+                              className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                            >
+                              <Folder className="h-4 w-4 mr-2 text-blue-400" />
+                              {folder.name}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
               </TableCell>
-                <TableCell className="text-white">
-                  <div className="truncate max-w-[180px]">{lead.email || '-'}</div>
-              </TableCell>
-                <TableCell className="text-white">{lead.phone || '-'}</TableCell>
-                <TableCell className="text-white">
-                  <Badge variant="outline" className="bg-neutral-800 text-white">
+                  <TableCell>
+                    <Badge variant="outline" className="text-foreground border-border dark:border-border">
                     {lead.source}
                     </Badge>
                 </TableCell>
-                <TableCell className="text-white">
-                  <Badge variant="outline" className="bg-neutral-800 text-white">
+                  <TableCell>
+                    <Badge className="bg-purple-500/10 text-purple-400">
                     {lead.service_category}
                     </Badge>
               </TableCell>
-                <TableCell className="text-white">
-                  <Badge variant="outline" className="bg-neutral-800 text-white">
-                    {lead.status || 'New'}
-                  </Badge>
+                  <TableCell>
+                    {getQualificationBadge(lead.qualification_score)}
               </TableCell>
               <TableCell className="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="h-8 w-8 p-0 text-white">
-                        <span className="sr-only">Open menu</span>
-                        <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-neutral-900 border-neutral-800">
-                      <DropdownMenuItem 
-                        onClick={() => {
-                          setLeadToDelete(lead);
-                        }}
-                        className="text-red-500 hover:text-red-400 hover:bg-neutral-800 focus:bg-neutral-800 focus:text-red-400 cursor-pointer"
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-green-400 hover:text-green-300 hover:bg-green-100 dark:bg-green-900/20"
+                        onClick={() => convertToDeal(lead.id)}
+                        disabled={lead.converted_to_deal}
+                        title={lead.converted_to_deal ? "Already converted to deal" : "Convert to deal"}
                       >
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        <MoveRight className="h-4 w-4" />
+                    </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-100 dark:bg-red-900/20"
+                            title="Delete lead"
+                            onClick={() => setLeadToDelete(lead)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </AlertDialog>
+                    </div>
                 </TableCell>
               </TableRow>
-            ))}
+              ))
+            )}
           </TableBody>
         </Table>
                   </div>
 
-      <AlertDialog open={!!leadToDelete} onOpenChange={(open: boolean) => !open && setLeadToDelete(null)}>
-                  <AlertDialogContent className="bg-neutral-900 border-neutral-800">
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={!!leadToDelete} onOpenChange={(open) => !open && setLeadToDelete(null)}>
+                  <AlertDialogContent className="bg-background border-border text-foreground">
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                      <AlertDialogDescription className="text-neutral-400">
-              This action cannot be undone. This will permanently delete the lead{" "}
-              <strong className="text-white">{leadToDelete?.lead_name}</strong>.
+            <AlertDialogTitle className="text-foreground">Confirm Deletion</AlertDialogTitle>
+                      <AlertDialogDescription className="text-muted-foreground">
+              Are you sure you want to delete the lead "{leadToDelete?.lead_name}"? This action cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel 
-                        className="bg-neutral-800 hover:bg-neutral-700 border-neutral-700"
-                        onClick={() => setLeadToDelete(null)}
-                      >Cancel</AlertDialogCancel>
-                      <AlertDialogAction 
-                        className="bg-red-600 hover:bg-red-700"
-                        onClick={handleDeleteLead}
-                      >Delete</AlertDialogAction>
+            <AlertDialogCancel className="bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border text-foreground">Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDeleteLead}>Delete</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>

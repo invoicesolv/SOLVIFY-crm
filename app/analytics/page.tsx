@@ -22,7 +22,10 @@ import {
   Tablet,
   Monitor,
   Mail,
-  Settings2
+  Settings2,
+  ArrowUp,
+  ArrowDown,
+  Minus
 } from "lucide-react"
 import {
   Chart as ChartJS,
@@ -87,6 +90,31 @@ interface AnalyticsData {
     pageViews: number;
     sessions: number;
   }>;
+  byDatePrevious?: Array<{
+    date: string;
+    totalUsers: number;
+    activeUsers: number;
+    newUsers: number;
+    pageViews: number;
+    sessions: number;
+  }>;
+  previousPeriod?: {
+    totalUsers: number;
+    activeUsers: number;
+    newUsers: number;
+    pageViews: number;
+    sessions: number;
+    bounceRate: number;
+    engagementRate: number;
+    avgSessionDuration: number;
+    conversions?: number;
+    revenue?: number;
+    conversionRate?: number;
+    dateRange: {
+      start: string;
+      end: string;
+    };
+  } | null;
   bySource: Record<string, any>;
   byDevice: Record<string, DeviceStats>;
   byConversion: Record<string, {
@@ -107,14 +135,14 @@ interface AnalyticsData {
 
 interface CachedData {
   analyticsData: AnalyticsData | null;
-  properties: Array<{ id: string; name: string }>;
+  properties: Array<{ id: string; displayName: string; account?: string; accountDisplayName?: string }>;
   timestamp: number;
   expiresAt: number;
-  selectedProperty: { id: string; name: string } | null;
+  selectedProperty: { id: string; displayName: string; account?: string; accountDisplayName?: string } | null;
   user_id: string;
 }
 
-const StatsCard = ({ title, value, icon }: { title: string; value: number; icon: React.ReactNode }) => {
+const StatsCard = ({ title, value, icon, previousValue }: { title: string; value: number; icon: React.ReactNode; previousValue?: number }) => {
   const formatValue = (title: string, value: number) => {
     if (title.includes('Rate')) {
       return `${value.toFixed(1)}%`;
@@ -138,15 +166,41 @@ const StatsCard = ({ title, value, icon }: { title: string; value: number; icon:
     }).format(value);
   };
 
+  // Calculate percentage change if previous value is provided
+  const percentChange = previousValue !== undefined && previousValue !== 0
+    ? ((value - previousValue) / previousValue) * 100
+    : null;
+
+  // Assign different border colors based on title category
+  const getBorderColor = (title: string) => {
+    if (title.includes('User')) return 'border-blue-500/30';
+    if (title.includes('View') || title.includes('Session')) return 'border-purple-500/30';
+    if (title.includes('Conversion') || title.includes('Revenue')) return 'border-rose-500/30';
+    if (title.includes('Rate')) return 'border-green-500/30';
+    if (title.includes('Duration')) return 'border-cyan-500/30';
+    return 'border-border';
+  };
+
   return (
-    <div className="p-4 rounded-lg bg-neutral-800/50">
-      <div className="flex items-center gap-2 text-neutral-400 mb-2">
+    <div className={`p-4 rounded-lg bg-card border shadow-lg ${getBorderColor(title)}`}>
+      <div className="flex items-center gap-2 text-muted-foreground mb-2">
         {icon}
         <span>{title}</span>
       </div>
-      <div className="text-2xl font-semibold text-white">
+      <div className="text-2xl font-semibold text-foreground">
         {formatValue(title, value)}
       </div>
+      {percentChange !== null && (
+        <div className={cn(
+          "text-xs mt-2 flex items-center gap-1",
+          percentChange > 0 ? "text-emerald-400" : percentChange < 0 ? "text-rose-400" : "text-muted-foreground"
+        )}>
+          {percentChange > 0 ? <ArrowUp className="h-3 w-3" /> : 
+           percentChange < 0 ? <ArrowDown className="h-3 w-3" /> : 
+           <Minus className="h-3 w-3" />}
+          <span>{Math.abs(percentChange).toFixed(1)}% vs previous</span>
+        </div>
+      )}
     </div>
   );
 };
@@ -154,13 +208,13 @@ const StatsCard = ({ title, value, icon }: { title: string; value: number; icon:
 const getDeviceIcon = (device: string) => {
   switch (device.toLowerCase()) {
     case 'desktop':
-      return <Monitor className="h-4 w-4 text-blue-500" />;
+      return <Monitor className="h-4 w-4 text-blue-600 dark:text-blue-400" />;
     case 'mobile':
-      return <Smartphone className="h-4 w-4 text-green-500" />;
+      return <Smartphone className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />;
     case 'tablet':
-      return <Tablet className="h-4 w-4 text-purple-500" />;
+      return <Tablet className="h-4 w-4 text-purple-600 dark:text-purple-400" />;
     default:
-      return <Laptop className="h-4 w-4 text-neutral-500" />;
+      return <Laptop className="h-4 w-4 text-muted-foreground" />;
   }
 };
 
@@ -169,8 +223,10 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
-  const [properties, setProperties] = useState<Array<{ id: string; name: string }>>([]);
-  const [selectedProperty, setSelectedProperty] = useState<{ id: string; name: string } | null>(null);
+  const [properties, setProperties] = useState<Array<{ id: string; displayName: string; account?: string; accountDisplayName?: string }>>([]);
+  const [selectedProperty, setSelectedProperty] = useState<{ id: string; displayName: string; account?: string; accountDisplayName?: string } | null>(null);
+  const [gaPropertiesLoading, setGaPropertiesLoading] = useState(true);
+  const [gaPropertiesError, setGaPropertiesError] = useState<string | null>(null);
   const [showEmailSettings, setShowEmailSettings] = useState(false);
   const [emailSettings, setEmailSettings] = useState({
     enabled: false,
@@ -184,13 +240,66 @@ export default function AnalyticsPage() {
   const [cronJobs, setCronJobs] = useState<any[]>([]);
   const [dateRange, setDateRange] = useState('7days');
 
-  // Remove the separate useEffect for cron jobs and consolidate into one main effect
   useEffect(() => {
     if (session?.user?.id) {
-      console.log('[Analytics] Initial load or session changed');
-      loadData();
+      console.log('[Analytics] Session detected. Loading GA4 Properties...');
+      loadGa4Properties();
     }
-  }, [session?.user?.id]); // Only depend on session
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (session?.user?.id && selectedProperty?.id) {
+      console.log(`[Analytics] Property or DateRange changed. Loading data for: ${selectedProperty.displayName} (${selectedProperty.id}), Range: ${dateRange}`);
+      loadData(true);
+    } else if (!selectedProperty?.id) {
+      console.log('[Analytics] No property selected or available. Clearing analytics data.');
+      setAnalyticsData(null);
+      setLoading(false);
+    }
+  }, [session?.user?.id, selectedProperty, dateRange]);
+
+  useEffect(() => {
+    // Get current theme from CSS variables
+    const isDark = document.documentElement.classList.contains('dark');
+    
+    const colors = {
+      primary: '210, 100%, 65%',      // Bright blue
+      secondary: '150, 90%, 55%',     // Vibrant green
+      tertiary: '280, 90%, 70%',      // Rich purple
+      quaternary: '30, 95%, 65%',     // Bright orange
+      rose: '340, 95%, 65%',          // Hot pink
+      teal: '175, 85%, 50%',          // Teal
+      gold: '45, 95%, 65%',           // Gold/yellow
+      cyan: '190, 90%, 60%',          // Cyan blue
+      lime: '85, 90%, 55%',           // Lime green
+      magenta: '310, 90%, 65%',       // Magenta
+      background: isDark ? '220, 13%, 15%' : '0, 0%, 100%',    // Theme-aware background
+      card1: isDark ? '260, 15%, 18%' : '210, 20%, 98%',       // Theme-aware card
+      card2: isDark ? '210, 15%, 18%' : '210, 20%, 98%',       // Theme-aware card
+      card3: isDark ? '30, 15%, 18%' : '30, 20%, 98%',         // Theme-aware card
+      grid: isDark ? '220, 13%, 25%' : '220, 13%, 90%',        // Theme-aware grid
+      text: isDark ? '0, 0%, 95%' : '0, 0%, 10%',              // Theme-aware text
+      subtext: isDark ? '220, 10%, 80%' : '220, 10%, 40%'      // Theme-aware subtext
+    };
+
+    document.documentElement.style.setProperty('--chart-1', colors.primary);
+    document.documentElement.style.setProperty('--chart-2', colors.secondary);
+    document.documentElement.style.setProperty('--chart-3', colors.tertiary);
+    document.documentElement.style.setProperty('--chart-4', colors.quaternary);
+    document.documentElement.style.setProperty('--chart-5', colors.rose);
+    document.documentElement.style.setProperty('--chart-6', colors.teal);
+    document.documentElement.style.setProperty('--chart-7', colors.gold);
+    document.documentElement.style.setProperty('--chart-8', colors.cyan);
+    document.documentElement.style.setProperty('--chart-9', colors.lime);
+    document.documentElement.style.setProperty('--chart-10', colors.magenta);
+    document.documentElement.style.setProperty('--chart-bg', colors.background);
+    document.documentElement.style.setProperty('--card-bg-1', colors.card1);
+    document.documentElement.style.setProperty('--card-bg-2', colors.card2);
+    document.documentElement.style.setProperty('--card-bg-3', colors.card3);
+    document.documentElement.style.setProperty('--chart-grid', colors.grid);
+    document.documentElement.style.setProperty('--chart-text', colors.text);
+    document.documentElement.style.setProperty('--chart-subtext', colors.subtext);
+  }, []);
 
   const getCacheKey = () => {
     return `analytics_cache_${session?.user?.id}`;
@@ -202,32 +311,115 @@ export default function AnalyticsPage() {
     const cached = localStorage.getItem(getCacheKey());
     if (!cached) return null;
 
-    const data = JSON.parse(cached);
+    let data;
+    try {
+      data = JSON.parse(cached);
+    } catch (e) {
+      console.error("Failed to parse cached data:", e);
+      localStorage.removeItem(getCacheKey());
+      return null;
+    }
+
     if (Date.now() > data.expiresAt || data.user_id !== session?.user?.id) {
       localStorage.removeItem(getCacheKey());
       return null;
     }
 
-    // Convert selectedProperty from string to object if needed
-    if (data.selectedProperty && typeof data.selectedProperty === 'string') {
-      const property = data.properties.find((p: { id: string; name: string }) => p.id === data.selectedProperty);
-      data.selectedProperty = property || null;
+    // Ensure properties in cache have displayName
+    if (data.properties && Array.isArray(data.properties)) {
+      data.properties = data.properties.map((p: any) => ({
+        id: p.id,
+        displayName: p.displayName || p.name || 'Unknown Property', // Handle old cache with name
+        account: p.account,
+        accountDisplayName: p.accountDisplayName
+      }));
     }
 
-    return data;
+    // Ensure selectedProperty in cache has displayName
+    if (data.selectedProperty) {
+      data.selectedProperty = {
+        id: data.selectedProperty.id,
+        displayName: data.selectedProperty.displayName || data.selectedProperty.name || 'Unknown Property',
+        account: data.selectedProperty.account,
+        accountDisplayName: data.selectedProperty.accountDisplayName
+      };
+    }
+    
+    return data as CachedData; // Assert as CachedData after migration
   };
 
-  const setCachedData = (data: Partial<CachedData>) => {
+  const setCachedData = (dataToCache: Partial<Omit<CachedData, 'timestamp' | 'expiresAt' | 'user_id'> & { analyticsData?: AnalyticsData | null }>) => {
     if (typeof window === 'undefined' || !session?.user?.id) return;
 
-    const cacheData = {
-      ...data,
+    // Get the current full list of properties and selected property from component state
+    // to ensure we cache the most up-to-date versions of these.
+    const currentPropertiesToCache = properties;
+    const currentSelectedPropertyToCache = selectedProperty;
+
+    const cacheData: CachedData = {
+      analyticsData: dataToCache.analyticsData !== undefined ? dataToCache.analyticsData : getCachedData()?.analyticsData || null,
+      properties: currentPropertiesToCache, // Always use current state properties
+      selectedProperty: currentSelectedPropertyToCache, // Always use current state selectedProperty
       timestamp: Date.now(),
       expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
       user_id: session.user.id
     };
 
     localStorage.setItem(getCacheKey(), JSON.stringify(cacheData));
+  };
+
+  const loadGa4Properties = async () => {
+    if (!session?.user?.id) return;
+    setGaPropertiesLoading(true);
+    setGaPropertiesError(null);
+    console.log('[Analytics] Fetching GA4 properties...');
+    try {
+      const response = await fetch('/api/ga4/properties');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Failed to fetch GA4 properties');
+      }
+      const data = await response.json();
+      const fetchedProperties: Array<{ id: string; displayName: string; account?: string; accountDisplayName?: string }> = data.properties || [];
+      setProperties(fetchedProperties);
+      console.log('[Analytics] GA4 Properties fetched:', fetchedProperties);
+
+      const currentSelectedId = selectedProperty?.id;
+      if (fetchedProperties.length > 0) {
+        const stillExists = fetchedProperties.find(p => p.id === currentSelectedId);
+        if (!selectedProperty || !stillExists) {
+          const cachedData = getCachedData(); // Assuming getCachedData can give us a preferred last selected property
+          let lastSelectedPropId = cachedData?.selectedProperty?.id;
+          
+          let newSelectedProp = fetchedProperties.find(p => p.id === lastSelectedPropId);
+          if (!newSelectedProp) { // If not found in cache or not in fetched list, pick first
+             newSelectedProp = fetchedProperties[0];
+             console.log('[Analytics] Auto-selecting first GA4 property:', newSelectedProp);
+          } else {
+             console.log('[Analytics] Restoring previously selected GA4 property:', newSelectedProp);
+          }
+          setSelectedProperty(newSelectedProp);
+          // loadData will be triggered by the useEffect watching selectedProperty
+        } else {
+          console.log('[Analytics] Current selected property still valid:', selectedProperty);
+        }
+      } else {
+        setSelectedProperty(null); // No properties, so nothing can be selected
+        setAnalyticsData(null); // Clear analytics data if no properties
+        console.log('[Analytics] No GA4 properties found for this service account.');
+      }
+
+    } catch (error: any) {
+      console.error('[Analytics] Error fetching GA4 properties:', error);
+      const errorMessage = error.message || 'An unknown error occurred while fetching properties.';
+      setGaPropertiesError(errorMessage);
+      toast.error(`Error loading GA4 properties: ${errorMessage}`);
+      setProperties([]);
+      setSelectedProperty(null);
+      setAnalyticsData(null); // Clear analytics data on error
+    } finally {
+      setGaPropertiesLoading(false);
+    }
   };
 
   const loadData = async (forceRefresh = false) => {
@@ -238,12 +430,17 @@ export default function AnalyticsPage() {
       return;
     }
 
+    if (!selectedProperty?.id) {
+      console.log('[Analytics] No property selected. Skipping data load.');
+      setLoading(false);
+      setAnalyticsData(null);
+      return;
+    }
+
     if (!forceRefresh) {
       const cachedData = getCachedData();
-      if (cachedData) {
+      if (cachedData && cachedData.analyticsData && cachedData.selectedProperty?.id === selectedProperty.id) {
         setAnalyticsData(cachedData.analyticsData);
-        setProperties(cachedData.properties);
-        setSelectedProperty(cachedData.selectedProperty);
         setLoading(false);
         return;
       }
@@ -274,19 +471,9 @@ export default function AnalyticsPage() {
 
       const data = await response.json();
       
-      if (data.properties && Array.isArray(data.properties)) {
-        setProperties(data.properties);
-      } else {
-        setProperties([]);
-      }
-
       if (data.analytics) {
         setAnalyticsData(data.analytics);
-        setCachedData({
-          analyticsData: data.analytics,
-          properties: data.properties || [],
-          selectedProperty: selectedProperty
-        });
+        setCachedData({ analyticsData: data.analytics });
       } else {
         setAnalyticsData(null);
       }
@@ -311,7 +498,6 @@ export default function AnalyticsPage() {
     });
   };
 
-  // Add logging for render phase
   console.log('[Analytics] Render state:', {
     loading,
     isRefreshing,
@@ -324,7 +510,6 @@ export default function AnalyticsPage() {
     hasSourceData: analyticsData?.bySource && Object.keys(analyticsData.bySource || {}).length > 0
   });
 
-  // Debug data structure
   if (analyticsData) {
     console.log('[Analytics] Data structure:', {
       byDate: analyticsData.byDate?.slice(0, 2), // Show first two entries
@@ -333,7 +518,6 @@ export default function AnalyticsPage() {
     });
   }
 
-  // Debug device data
   if (analyticsData?.byDevice) {
     console.log('[Analytics] Device data:', {
       devices: Object.keys(analyticsData.byDevice),
@@ -341,7 +525,6 @@ export default function AnalyticsPage() {
       allDeviceData: analyticsData.byDevice
     });
     
-    // Loop through each device to check conversions specifically
     Object.entries(analyticsData.byDevice).forEach(([device, stats]) => {
       console.log(`[Analytics] Device ${device} stats:`, {
         device,
@@ -354,7 +537,6 @@ export default function AnalyticsPage() {
     });
   }
 
-  // Update handleShowEmailSettings to handle all loading
   const handleShowEmailSettings = async () => {
     try {
       if (!selectedProperty?.id) {
@@ -362,7 +544,6 @@ export default function AnalyticsPage() {
         return;
       }
 
-      // Load email settings and cron jobs in parallel
       const [settingsResponse, cronResponse] = await Promise.all([
         fetch(`/api/analytics/email-settings?propertyId=${selectedProperty.id}`),
         fetch(`/api/analytics/cron-jobs?propertyId=${selectedProperty.id}`)
@@ -397,7 +578,6 @@ export default function AnalyticsPage() {
     }
   };
 
-  // Update handleSaveEmailSettings
   const handleSaveEmailSettings = async () => {
     try {
       if (!selectedProperty?.id) {
@@ -433,7 +613,6 @@ export default function AnalyticsPage() {
         throw new Error(data.error || 'Failed to save settings');
       }
 
-      // Fetch updated cron jobs
       const cronResponse = await fetch(`/api/analytics/cron-jobs?propertyId=${selectedProperty.id}`);
       if (!cronResponse.ok) {
         throw new Error('Failed to fetch updated cron jobs');
@@ -449,16 +628,13 @@ export default function AnalyticsPage() {
     }
   };
 
-  // Add helper function to calculate next run time
   const calculateNextRunTime = (sendDay: string, sendTime: string) => {
     const [hours, minutes] = sendTime.split(':').map(Number);
     const now = new Date();
     const nextRun = new Date();
     
-    // Set the time
     nextRun.setHours(hours, minutes, 0, 0);
 
-    // Find the next occurrence of the specified day
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const today = now.getDay();
     const targetDay = days.indexOf(sendDay.toLowerCase());
@@ -472,16 +648,17 @@ export default function AnalyticsPage() {
     return nextRun;
   };
 
-  // Update property selection handler to load data immediately
   const handlePropertyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const propertyId = e.target.value;
-    const selectedProp = properties.find((p: { id: string; name: string }) => p.id === propertyId);
-    setSelectedProperty(selectedProp || null);
+    const selectedProp = properties.find((p) => p.id === propertyId);
     
-    // Load data when property changes
     if (selectedProp) {
-      console.log('[Analytics] Loading data for property:', selectedProp);
-      await loadData(true);
+      setSelectedProperty(selectedProp);
+      console.log('[Analytics] User selected property:', selectedProp);
+    } else if (propertyId === "") { // User selected "Select a property"
+        setSelectedProperty(null);
+        setAnalyticsData(null); // Clear data
+        console.log('[Analytics] User deselected property.');
     }
   };
 
@@ -489,20 +666,26 @@ export default function AnalyticsPage() {
     <SidebarDemo>
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">Analytics Dashboard</h1>
+          <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Analytics Dashboard</h1>
           <div className="flex items-center gap-4">
-            {properties.length > 0 ? (
+            {gaPropertiesLoading && !properties.length ? (
+              <p className="text-muted-foreground">Loading GA4 properties...</p>
+            ) : gaPropertiesError ? (
+              <p className="text-red-600 dark:text-red-400">Error loading properties: {gaPropertiesError}</p>
+            ) : properties.length > 0 ? (
               <>
                 <select
                   value={dateRange}
                   onChange={(e) => {
                     setDateRange(e.target.value);
-                    loadData(true); // Reload data when date range changes
                   }}
                   className={cn(
                     "px-3 py-2 rounded-md text-sm font-medium",
-                    "bg-neutral-800 text-white border border-neutral-700",
-                    "focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                    "bg-background text-foreground border",
+                    "focus:outline-none focus:ring-2 focus:ring-blue-500",
+                    "hover:border-blue-600 transition-colors",
+                    "border-l-blue-400 border-t-purple-400 border-r-pink-400 border-b-teal-400",
+                    "shadow-lg shadow-blue-900/10"
                   )}
                 >
                   <option value="7days">Last 7 days</option>
@@ -513,41 +696,41 @@ export default function AnalyticsPage() {
                 <select
                   value={selectedProperty?.id || ''}
                   onChange={handlePropertyChange}
+                  disabled={gaPropertiesLoading}
                   className={cn(
                     "px-3 py-2 rounded-md text-sm font-medium min-w-[200px]",
-                    "bg-neutral-800 text-white border border-neutral-700",
-                    "focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                    "bg-background text-foreground border",
+                    "focus:outline-none focus:ring-2 focus:ring-blue-500",
+                    "hover:border-blue-600 transition-colors",
+                    "border-l-blue-400 border-t-purple-400 border-r-pink-400 border-b-teal-400",
+                    "shadow-lg shadow-blue-900/10"
                   )}
                 >
-                  <option value="">Select a property</option>
+                  <option value="">Select a GA4 Property</option>
                   {properties.map((property) => (
                     <option key={property.id} value={property.id}>
-                      {property.name}
+                      {property.displayName} ({property.id.replace('properties/','')})
                     </option>
                   ))}
                 </select>
                 <button
                   onClick={() => {
                     if (!selectedProperty?.id) {
-                      toast.error('Please select a property first');
+                      toast.error('Please select a GA4 property first');
                       return;
                     }
                     if (!analyticsData) {
-                      toast.error('No analytics data available');
+                      toast.error('No analytics data available to generate a report');
                       return;
                     }
-
                     const testRecipients = emailSettings.testRecipients.split(',').map(email => email.trim()).filter(Boolean);
                     if (testRecipients.length === 0) {
                       toast.error('Please configure test recipients in Email Settings');
                       return;
                     }
-
                     fetch('/api/analytics/send-report', {
                       method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         propertyId: selectedProperty.id,
                         recipients: testRecipients,
@@ -558,20 +741,20 @@ export default function AnalyticsPage() {
                     })
                     .then(response => response.json())
                     .then(data => {
-                      if (data.success) {
-                        toast.success('Test report sent successfully');
-                      } else {
-                        throw new Error(data.error || 'Failed to send test report');
-                      }
+                      if (data.success) toast.success('Test report sent successfully');
+                      else throw new Error(data.error || 'Failed to send test report');
                     })
                     .catch(error => {
                       console.error('Error sending test report:', error);
-                      toast.error('Failed to send test report');
+                      toast.error('Failed to send test report: ' + error.message);
                     });
                   }}
+                  disabled={!selectedProperty || !analyticsData}
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                    "bg-gradient-to-r from-blue-600 to-indigo-600 text-foreground hover:from-blue-500 hover:to-indigo-500 transition-colors",
+                    "border border-blue-700 shadow-md shadow-blue-900/20",
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
                   )}
                 >
                   <Mail className="h-4 w-4" />
@@ -580,25 +763,21 @@ export default function AnalyticsPage() {
                 <button
                   onClick={() => {
                     if (!selectedProperty?.id) {
-                      toast.error('Please select a property first');
+                      toast.error('Please select a GA4 property first');
                       return;
                     }
                     if (!analyticsData) {
-                      toast.error('No analytics data available');
+                      toast.error('No analytics data available to generate a report');
                       return;
                     }
-
                     const manualRecipients = emailSettings.manualRecipients.split(',').map(email => email.trim()).filter(Boolean);
                     if (manualRecipients.length === 0) {
                       toast.error('Please configure manual report recipients in Email Settings');
                       return;
                     }
-
                     fetch('/api/analytics/send-report', {
                       method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
+                      headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
                         propertyId: selectedProperty.id,
                         recipients: manualRecipients,
@@ -609,20 +788,20 @@ export default function AnalyticsPage() {
                     })
                     .then(response => response.json())
                     .then(data => {
-                      if (data.success) {
-                        toast.success('Report sent successfully');
-                      } else {
-                        throw new Error(data.error || 'Failed to send report');
-                      }
+                      if (data.success) toast.success('Report sent successfully');
+                      else throw new Error(data.error || 'Failed to send report');
                     })
                     .catch(error => {
                       console.error('Error sending report:', error);
-                      toast.error('Failed to send report');
+                      toast.error('Failed to send report: ' + error.message);
                     });
                   }}
+                  disabled={!selectedProperty || !analyticsData}
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-green-600 text-white hover:bg-green-500 transition-colors"
+                    "bg-gradient-to-r from-emerald-600 to-teal-600 text-foreground hover:from-emerald-500 hover:to-teal-500 transition-colors",
+                    "border border-emerald-700 shadow-md shadow-emerald-900/20",
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
                   )}
                 >
                   <Mail className="h-4 w-4" />
@@ -630,9 +809,12 @@ export default function AnalyticsPage() {
                 </button>
                 <button
                   onClick={handleShowEmailSettings}
+                  disabled={!selectedProperty}
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-neutral-800 text-white hover:bg-neutral-700 transition-colors"
+                    "bg-gradient-to-r from-purple-600 to-violet-600 text-foreground hover:from-purple-500 hover:to-violet-500 transition-colors",
+                    "border border-purple-700 shadow-md shadow-purple-900/20",
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
                   )}
                 >
                   <Settings2 className="h-4 w-4" />
@@ -640,65 +822,57 @@ export default function AnalyticsPage() {
                 </button>
               </>
             ) : (
-              <div className="flex items-center gap-2 text-neutral-400">
-                <span>No properties found</span>
-                <a 
-                  href="/settings"
-                  className="text-blue-500 hover:text-blue-400 underline"
-                >
-                  Connect Google Analytics
-                </a>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span>No GA4 properties found for this account.</span>
               </div>
             )}
             <button
               onClick={handleRefresh}
               className={cn(
                 "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                "bg-neutral-800 text-white hover:bg-neutral-700 transition-colors",
+                "bg-gradient-to-r from-rose-600 to-orange-600 text-foreground hover:from-rose-500 hover:to-orange-500 transition-colors",
+                "border border-rose-700 shadow-md shadow-orange-900/20",
                 "disabled:opacity-50 disabled:cursor-not-allowed"
               )}
-              disabled={isRefreshing}
+              disabled={isRefreshing || gaPropertiesLoading || loading}
             >
-              <RefreshCw className={cn("h-4 w-4", { "animate-spin": isRefreshing })} />
+              <RefreshCw className={cn("h-4 w-4", { "animate-spin": isRefreshing || gaPropertiesLoading || loading })} />
               Refresh
             </button>
           </div>
         </div>
 
-        {/* Email Settings Modal */}
         {showEmailSettings && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-neutral-900 p-8 rounded-lg w-full max-w-md border border-neutral-800">
-              <h2 className="text-xl font-semibold text-white mb-6">Email Report Settings</h2>
+            <div className="bg-background p-8 rounded-lg w-full max-w-md border border-border">
+              <h2 className="text-xl font-semibold text-foreground mb-6">Email Report Settings</h2>
               
               <div className="space-y-6">
-                {/* Test Report Recipients */}
                 <div>
-                  <label className="block mb-2 text-sm font-medium text-neutral-200">Test Report Recipients</label>
+                  <label className="block mb-2 text-sm font-medium text-foreground">Test Report Recipients</label>
                   <input
                     type="text"
                     value={emailSettings.testRecipients}
                     onChange={(e) => setEmailSettings(prev => ({ ...prev, testRecipients: e.target.value }))}
-                    className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm placeholder:text-neutral-500"
+                    className="w-full p-3 rounded-md bg-background border border-border text-foreground text-sm placeholder:text-muted-foreground"
                     placeholder="email@example.com, another@example.com"
                   />
-                  <p className="mt-1 text-xs text-neutral-400">Recipients for test reports when using "Send Test Report"</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Recipients for test reports when using "Send Test Report"</p>
                 </div>
 
-                {/* Manual Report Recipients */}
                 <div>
-                  <label className="block mb-2 text-sm font-medium text-neutral-200">Manual Report Recipients</label>
+                  <label className="block mb-2 text-sm font-medium text-foreground">Manual Report Recipients</label>
                   <input
                     type="text"
                     value={emailSettings.manualRecipients}
                     onChange={(e) => setEmailSettings(prev => ({ ...prev, manualRecipients: e.target.value }))}
-                    className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm placeholder:text-neutral-500"
+                    className="w-full p-3 rounded-md bg-background border border-border text-foreground text-sm placeholder:text-muted-foreground"
                     placeholder="email@example.com, another@example.com"
                   />
-                  <p className="mt-1 text-xs text-neutral-400">Recipients for manual reports when using "Send Report Now"</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Recipients for manual reports when using "Send Report Now"</p>
                 </div>
 
-                <div className="p-4 bg-neutral-800 rounded-md border border-neutral-700">
+                <div className="p-4 bg-background rounded-md border border-border">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <Switch
@@ -707,8 +881,8 @@ export default function AnalyticsPage() {
                         className="data-[state=checked]:bg-blue-600"
                       />
                       <div>
-                        <label className="text-white text-sm font-medium">Enable Weekly Reports</label>
-                        <p className="text-xs text-neutral-400">Turn on to schedule automated weekly reports</p>
+                        <label className="text-foreground text-sm font-medium">Enable Weekly Reports</label>
+                        <p className="text-xs text-muted-foreground">Turn on to schedule automated weekly reports</p>
                       </div>
                     </div>
                   </div>
@@ -717,23 +891,23 @@ export default function AnalyticsPage() {
                 {emailSettings.enabled && (
                   <>
                     <div>
-                      <label className="block mb-2 text-sm font-medium text-neutral-200">Weekly Report Recipients</label>
+                      <label className="block mb-2 text-sm font-medium text-foreground">Weekly Report Recipients</label>
                       <input
                         type="text"
                         value={emailSettings.weeklyRecipients}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, weeklyRecipients: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm placeholder:text-neutral-500"
+                        className="w-full p-3 rounded-md bg-background border border-border text-foreground text-sm placeholder:text-muted-foreground"
                         placeholder="email@example.com, another@example.com"
                       />
-                      <p className="mt-1 text-xs text-neutral-400">Recipients for automated weekly reports</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Recipients for automated weekly reports</p>
                     </div>
 
                     <div>
-                      <label className="block mb-2 text-sm font-medium text-neutral-200">Send Day</label>
+                      <label className="block mb-2 text-sm font-medium text-foreground">Send Day</label>
                       <select
                         value={emailSettings.sendDay}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sendDay: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm"
+                        className="w-full p-3 rounded-md bg-background border border-border text-foreground text-sm"
                       >
                         <option value="monday">Monday</option>
                         <option value="tuesday">Tuesday</option>
@@ -746,30 +920,30 @@ export default function AnalyticsPage() {
                     </div>
 
                     <div>
-                      <label className="block mb-2 text-sm font-medium text-neutral-200">Send Time</label>
+                      <label className="block mb-2 text-sm font-medium text-foreground">Send Time</label>
                       <input
                         type="time"
                         value={emailSettings.sendTime}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sendTime: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm"
+                        className="w-full p-3 rounded-md bg-background border border-border text-foreground text-sm"
                       />
                     </div>
 
                     {cronJobs.length > 0 && (
-                      <div className="pt-4 border-t border-neutral-800">
-                        <h3 className="text-sm font-medium text-neutral-200 mb-3">Current Schedule</h3>
+                      <div className="pt-4 border-t border-border">
+                        <h3 className="text-sm font-medium text-foreground mb-3">Current Schedule</h3>
                         {cronJobs.map((job) => (
-                          <div key={job.id} className="p-3 rounded-md bg-neutral-800 border border-neutral-700">
+                          <div key={job.id} className="p-3 rounded-md bg-background border border-border">
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-white">Weekly Report</span>
+                              <span className="text-sm font-medium text-foreground">Weekly Report</span>
                               <span className={cn(
                                 "text-xs px-2 py-1 rounded-full",
-                                job.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-neutral-700 text-neutral-400'
+                                job.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-200 dark:bg-muted text-muted-foreground'
                               )}>
                                 {job.status}
                               </span>
                             </div>
-                            <div className="text-xs space-y-1 text-neutral-400">
+                            <div className="text-xs space-y-1 text-muted-foreground">
                               <p>Every {job.settings.send_day} at {job.settings.send_time}</p>
                               <p>Next run: {new Date(job.next_run).toLocaleString()}</p>
                               <p>Recipients: {job.settings.recipients.join(', ')}</p>
@@ -785,13 +959,13 @@ export default function AnalyticsPage() {
               <div className="mt-8 flex justify-end gap-3">
                 <button
                   onClick={() => setShowEmailSettings(false)}
-                  className="px-4 py-2 text-sm font-medium rounded-md bg-neutral-800 text-white hover:bg-neutral-700 transition-colors"
+                  className="px-4 py-2 text-sm font-medium rounded-md bg-background text-foreground hover:bg-gray-200 dark:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveEmailSettings}
-                  className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                  className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-foreground hover:bg-blue-500 transition-colors"
                 >
                   Save Schedule
                 </button>
@@ -800,52 +974,69 @@ export default function AnalyticsPage() {
           </div>
         )}
 
-        {loading ? (
+        {gaPropertiesLoading && !properties.length ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-white" />
           </div>
-        ) : (
+        ) : !selectedProperty && properties.length > 0 && !gaPropertiesError ? (
+          <Card className="bg-background border-border overflow-hidden">
+            <div className="p-6 flex flex-col items-center justify-center h-64 bg-muted/50">
+              <h2 className="text-lg font-medium text-foreground mb-4">Select a GA4 Property</h2>
+              <p className="text-muted-foreground text-center max-w-md mb-6">
+                Choose a Google Analytics property from the dropdown above to view its analytics data.
+              </p>
+            </div>
+          </Card>
+        ) : selectedProperty && loading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-muted-foreground border-t-foreground" />
+            <p className="ml-3 text-foreground">Loading analytics data for {selectedProperty.displayName}...</p>
+          </div>
+        ) : selectedProperty && !loading && !analyticsData && !gaPropertiesError ? (
+          <Card className="bg-background border-border overflow-hidden">
+            <div className="p-6 flex flex-col items-center justify-center h-64 bg-muted/50">
+              <h2 className="text-lg font-medium text-foreground mb-4">No Data Available</h2>
+              <p className="text-muted-foreground text-center max-w-md mb-6">
+                No analytics data found for "{selectedProperty.displayName}" for the selected date range.
+                Ensure the service account has access or try a different date range.
+              </p>
+            </div>
+          </Card>
+        ) : analyticsData && selectedProperty && !loading ? (
           <>
-            {!selectedProperty && (
-              <Card className="bg-neutral-900 border-neutral-800">
-                <div className="p-6 flex flex-col items-center justify-center h-64">
-                  <h2 className="text-lg font-medium text-white mb-4">Select a Property to View Analytics</h2>
-                  <p className="text-neutral-400 text-center max-w-md mb-6">
-                    Choose a Google Analytics property from the dropdown above to view analytics data.
-                  </p>
-                </div>
-              </Card>
-            )}
-          
-            {analyticsData?.overview && (
-              <Card className="bg-neutral-900 border-neutral-800">
-                <div className="p-6">
-                  <h2 className="text-lg font-medium text-white mb-4">Analytics Overview</h2>
+            {analyticsData.overview && (
+              <Card className="bg-background border-border overflow-hidden">
+                <div className="p-6 bg-muted/30">
+                  <h2 className="text-lg font-medium text-foreground mb-4">Analytics Overview</h2>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <StatsCard
                       title="Total Users"
                       value={analyticsData.overview.totalUsers}
                       icon={<Users className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.totalUsers}
                     />
                     <StatsCard
                       title="Active Users"
                       value={analyticsData.overview.activeUsers}
                       icon={<Users className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.activeUsers}
                     />
                     <StatsCard
                       title="New Users"
                       value={analyticsData.overview.newUsers}
                       icon={<Users className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.newUsers}
                     />
                     <StatsCard
                       title="Page Views"
                       value={analyticsData.overview.pageViews}
                       icon={<Eye className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.pageViews}
                     />
                     <StatsCard
                       title="Sessions"
                       value={analyticsData.overview.sessions}
                       icon={<ArrowUpRight className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.sessions}
                     />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-4">
@@ -853,35 +1044,46 @@ export default function AnalyticsPage() {
                       title="Conversions"
                       value={analyticsData.overview.conversions}
                       icon={<Target className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.conversions}
                     />
                     <StatsCard
                       title="Revenue"
                       value={analyticsData.overview.revenue}
                       icon={<DollarSign className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.revenue}
                     />
                     <StatsCard
                       title="Bounce Rate"
                       value={analyticsData.overview.bounceRate}
                       icon={<ArrowDownRight className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.bounceRate}
                     />
                     <StatsCard
                       title="Engagement Rate"
                       value={analyticsData.overview.engagementRate}
                       icon={<Activity className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.engagementRate}
                     />
                     <StatsCard
                       title="Avg Duration"
                       value={analyticsData.overview.avgSessionDuration}
                       icon={<Clock className="h-4 w-4" />}
+                      previousValue={analyticsData.previousPeriod?.avgSessionDuration}
                     />
                   </div>
 
-                  {/* Charts Section */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                    {/* User Trends Chart */}
-                    <Card className="bg-neutral-900 border-neutral-800">
-                      <div className="p-6">
-                        <h3 className="text-lg font-medium text-white mb-4">User Trends</h3>
+                    <Card className="bg-background border-border overflow-hidden shadow-xl">
+                      <div className="p-6 bg-muted/30">
+                        <h3 className="text-lg font-medium text-foreground mb-2">User Trends</h3>
+                        {analyticsData.previousPeriod && (
+                          <div className="flex items-center gap-2 mb-4">
+                            <p className="text-xs text-muted-foreground">Comparing to previous period:</p>
+                            <span className="text-xs px-2 py-1 rounded-full bg-background">
+                              {analyticsData.previousPeriod.dateRange.start} to {analyticsData.previousPeriod.dateRange.end}
+                            </span>
+                          </div>
+                        )}
                         <div className="h-[300px]">
                           {analyticsData.byDate && analyticsData.byDate.length > 0 && (
                             <Line
@@ -892,18 +1094,61 @@ export default function AnalyticsPage() {
                                     label: 'Total Users',
                                     data: analyticsData.byDate.map(d => d.totalUsers),
                                     borderColor: 'hsl(var(--chart-1))',
-                                    backgroundColor: 'hsl(var(--chart-1) / 0.1)',
+                                    backgroundColor: 'hsla(var(--chart-1), 0.2)',
+                                    borderWidth: 3,
                                     tension: 0.4,
                                     fill: true
                                   },
                                   {
                                     label: 'Active Users',
                                     data: analyticsData.byDate.map(d => d.activeUsers),
-                                    borderColor: 'hsl(var(--chart-2))',
-                                    backgroundColor: 'hsl(var(--chart-2) / 0.1)',
+                                    borderColor: 'hsl(var(--chart-3))',
+                                    backgroundColor: 'hsla(var(--chart-3), 0.2)',
+                                    borderWidth: 3,
                                     tension: 0.4,
                                     fill: true
-                                  }
+                                  },
+                                  {
+                                    label: 'New Users',
+                                    data: analyticsData.byDate.map(d => d.newUsers),
+                                    borderColor: 'hsl(var(--chart-6))',
+                                    backgroundColor: 'hsla(var(--chart-6), 0.2)',
+                                    borderWidth: 3,
+                                    tension: 0.4,
+                                    fill: true
+                                  },
+                                  ...(analyticsData.byDatePrevious && analyticsData.byDatePrevious.length > 0 ? [
+                                    {
+                                      label: 'Previous Total Users',
+                                      data: analyticsData.byDatePrevious.map(d => d.totalUsers),
+                                      borderColor: 'hsla(var(--chart-1), 0.6)',
+                                      backgroundColor: 'transparent',
+                                      borderDash: [5, 5],
+                                      borderWidth: 2,
+                                      tension: 0.4,
+                                      fill: false
+                                    },
+                                    {
+                                      label: 'Previous Active Users',
+                                      data: analyticsData.byDatePrevious.map(d => d.activeUsers),
+                                      borderColor: 'hsla(var(--chart-3), 0.6)',
+                                      backgroundColor: 'transparent',
+                                      borderDash: [5, 5],
+                                      borderWidth: 2,
+                                      tension: 0.4,
+                                      fill: false
+                                    },
+                                    {
+                                      label: 'Previous New Users',
+                                      data: analyticsData.byDatePrevious.map(d => d.newUsers),
+                                      borderColor: 'hsla(var(--chart-6), 0.6)',
+                                      backgroundColor: 'transparent',
+                                      borderDash: [5, 5],
+                                      borderWidth: 2,
+                                      tension: 0.4,
+                                      fill: false
+                                    }
+                                  ] : [])
                                 ]
                               }}
                               options={{
@@ -913,25 +1158,51 @@ export default function AnalyticsPage() {
                                   legend: {
                                     position: 'top' as const,
                                     labels: {
-                                      color: 'rgb(156 163 175)'
+                                      color: 'rgb(220 220 220)',
+                                      padding: 20,
+                                      font: {
+                                        size: 12,
+                                        weight: 'bold'
+                                      },
+                                      usePointStyle: true,
+                                      pointStyle: 'circle'
                                     }
+                                  },
+                                  tooltip: {
+                                    callbacks: {
+                                      title: function(tooltipItems) {
+                                        return tooltipItems[0].label;
+                                      },
+                                      label: function(context) {
+                                        const label = context.dataset.label || '';
+                                        const value = context.parsed.y || 0;
+                                        return `${label}: ${new Intl.NumberFormat().format(value)}`;
+                                      }
+                                    },
+                                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                    titleColor: 'rgb(220, 220, 220)',
+                                    bodyColor: 'rgb(220, 220, 220)',
+                                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                                    borderWidth: 1
                                   }
                                 },
                                 scales: {
                                   x: {
                                     grid: {
-                                      color: 'rgb(64 64 64 / 0.2)'
+                                      color: 'hsla(var(--chart-grid), 0.3)'
                                     },
                                     ticks: {
-                                      color: 'rgb(156 163 175)'
+                                      color: 'rgb(200, 200, 200)',
+                                      maxRotation: 45,
+                                      minRotation: 45
                                     }
                                   },
                                   y: {
                                     grid: {
-                                      color: 'rgb(64 64 64 / 0.2)'
+                                      color: 'hsla(var(--chart-grid), 0.3)'
                                     },
                                     ticks: {
-                                      color: 'rgb(156 163 175)',
+                                      color: 'rgb(200, 200, 200)',
                                       callback: (value) => {
                                         if (typeof value === 'number') {
                                           return new Intl.NumberFormat().format(value);
@@ -948,13 +1219,12 @@ export default function AnalyticsPage() {
                       </div>
                     </Card>
 
-                    {/* Device Distribution Chart */}
-                    <Card className="bg-neutral-900 border-neutral-800">
-                      <div className="p-6">
-                        <h3 className="text-lg font-medium text-white mb-4">Device Distribution</h3>
+                    <Card className="bg-background border-border overflow-hidden shadow-xl">
+                      <div className="p-6 bg-muted/30">
+                        <h3 className="text-lg font-bold text-foreground mb-4 shadow-sm text-shadow-sm">Device Distribution</h3>
                         <div className="h-[300px] flex items-center justify-center">
                           {analyticsData.byDevice && Object.keys(analyticsData.byDevice).length > 0 && (
-                            <div style={{ width: '80%', height: '100%' }}>
+                            <div style={{ width: '85%', height: '100%' }}>
                               <Pie
                                 data={{
                                   labels: Object.keys(analyticsData.byDevice).map(device => 
@@ -963,12 +1233,22 @@ export default function AnalyticsPage() {
                                   datasets: [{
                                     data: Object.values(analyticsData.byDevice).map(stats => stats.users),
                                     backgroundColor: [
-                                      'hsl(var(--chart-1))',
-                                      'hsl(var(--chart-2))',
-                                      'hsl(var(--chart-3))'
+                                      'rgba(0, 204, 255, 0.95)',    // Electric blue
+                                      'rgba(255, 64, 87, 0.95)',    // Hot pink/red
+                                      'rgba(113, 255, 78, 0.95)',   // Neon green
+                                      'rgba(255, 215, 0, 0.95)',    // Gold
+                                      'rgba(211, 92, 255, 0.95)'    // Bright violet
                                     ],
-                                    borderColor: 'rgb(17 17 17)',
-                                    borderWidth: 2
+                                    borderColor: [
+                                      'rgba(255, 255, 255, 1)',     // White borders for all segments
+                                      'rgba(255, 255, 255, 1)',
+                                      'rgba(255, 255, 255, 1)',
+                                      'rgba(255, 255, 255, 1)',
+                                      'rgba(255, 255, 255, 1)'
+                                    ],
+                                    borderWidth: 3,                 // Thicker borders
+                                    hoverBorderWidth: 5,
+                                    hoverBorderColor: '#ffffff'
                                   }]
                                 }}
                                 options={{
@@ -978,13 +1258,48 @@ export default function AnalyticsPage() {
                                     legend: {
                                       position: 'bottom' as const,
                                       labels: {
-                                        color: 'rgb(156 163 175)',
+                                        color: 'rgb(255, 255, 255)',  // White text
                                         padding: 20,
                                         font: {
-                                          size: 12
+                                          size: 14,                   // Larger font
+                                          weight: 'bold'
+                                        },
+                                        usePointStyle: true,
+                                        pointStyle: 'rectRounded',    // More visible style
+                                        boxWidth: 15,                 // Larger legend items
+                                        boxHeight: 15
+                                      }
+                                    },
+                                    tooltip: {
+                                      backgroundColor: 'rgba(20, 20, 20, 0.9)',
+                                      titleColor: 'rgb(255, 255, 255)',
+                                      bodyColor: 'rgb(255, 255, 255)',
+                                      borderColor: 'rgba(255, 255, 255, 0.5)',
+                                      borderWidth: 2,
+                                      padding: 12,
+                                      boxWidth: 12,
+                                      boxHeight: 12,
+                                      bodyFont: {
+                                        size: 14,
+                                        weight: 'bold'
+                                      },
+                                      callbacks: {
+                                        label: (context) => {
+                                          const value = context.raw as number;
+                                          const percentage = context.parsed !== undefined ? 
+                                            (context.parsed * 100).toFixed(1) + '%' : 
+                                            '';
+                                          return `${context.label}: ${new Intl.NumberFormat().format(value)} (${percentage})`;
                                         }
                                       }
                                     }
+                                  },
+                                  cutout: '50%',                     // Smaller hole = larger segments
+                                  radius: '90%',                     // Larger overall pie
+                                  rotation: 0.5 * Math.PI,           // Starts from the top
+                                  animation: {
+                                    animateScale: true,              // Animate scale on hover
+                                    animateRotate: true              // Animate rotation on hover
                                   }
                                 }}
                               />
@@ -994,10 +1309,9 @@ export default function AnalyticsPage() {
                       </div>
                     </Card>
 
-                    {/* Traffic Sources Chart */}
-                    <Card className="bg-neutral-900 border-neutral-800 lg:col-span-2">
-                      <div className="p-6">
-                        <h3 className="text-lg font-medium text-white mb-4">Traffic by Source</h3>
+                    <Card className="bg-background border-border overflow-hidden shadow-xl lg:col-span-2">
+                      <div className="p-6 bg-muted/30">
+                        <h3 className="text-lg font-bold text-foreground mb-4 shadow-sm text-shadow-sm">Traffic by Source</h3>
                         <div className="h-[300px]">
                           {analyticsData.bySource && Object.keys(analyticsData.bySource).length > 0 && (
                             <Bar
@@ -1009,11 +1323,44 @@ export default function AnalyticsPage() {
                                   label: 'Sessions',
                                   data: Object.values(analyticsData.bySource).map((source: any) => source.sessions || 0),
                                   backgroundColor: [
-                                    'hsl(var(--chart-1))',
-                                    'hsl(var(--chart-2))',
-                                    'hsl(var(--chart-3))',
-                                    'hsl(var(--chart-4))',
-                                    'hsl(var(--chart-5))'
+                                    'rgba(0, 224, 255, 0.95)',    // Electric blue
+                                    'rgba(255, 69, 87, 0.95)',    // Hot pink
+                                    'rgba(123, 255, 90, 0.95)',   // Neon green
+                                    'rgba(255, 230, 20, 0.95)',   // Bright yellow
+                                    'rgba(221, 102, 255, 0.95)',  // Bright purple
+                                    'rgba(255, 138, 20, 0.95)',   // Bright orange
+                                    'rgba(10, 230, 200, 0.95)',   // Bright teal
+                                    'rgba(255, 130, 210, 0.95)',  // Bright pink
+                                    'rgba(90, 160, 255, 0.95)',   // Sky blue
+                                    'rgba(200, 255, 70, 0.95)'    // Lime
+                                  ],
+                                  borderColor: [
+                                    'rgba(255, 255, 255, 1)',     // White borders for all bars
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)',
+                                    'rgba(255, 255, 255, 1)'
+                                  ],
+                                  borderRadius: 6,               // More rounded corners
+                                  borderWidth: 3,                // Thicker borders
+                                  hoverBorderWidth: 4,
+                                  maxBarThickness: 60,           // Thicker bars
+                                  hoverBackgroundColor: [       // Brighter colors on hover
+                                    'rgba(40, 234, 255, 1)',
+                                    'rgba(255, 89, 107, 1)',
+                                    'rgba(143, 255, 110, 1)',
+                                    'rgba(255, 240, 40, 1)',
+                                    'rgba(231, 122, 255, 1)',
+                                    'rgba(255, 158, 40, 1)',
+                                    'rgba(30, 250, 220, 1)',
+                                    'rgba(255, 150, 230, 1)',
+                                    'rgba(110, 180, 255, 1)',
+                                    'rgba(220, 255, 90, 1)'
                                   ]
                                 }]
                               }}
@@ -1030,6 +1377,20 @@ export default function AnalyticsPage() {
                                         const value = context.parsed.y;
                                         return `Sessions: ${new Intl.NumberFormat().format(value)}`;
                                       }
+                                    },
+                                    backgroundColor: 'rgba(20, 20, 20, 0.95)',
+                                    titleColor: 'rgb(255, 255, 255)',
+                                    bodyColor: 'rgb(255, 255, 255)',
+                                    borderColor: 'rgba(255, 255, 255, 0.5)',
+                                    borderWidth: 2,
+                                    padding: 12,
+                                    bodyFont: {
+                                      size: 14,
+                                      weight: 'bold'
+                                    },
+                                    titleFont: {
+                                      size: 16,
+                                      weight: 'bold'
                                     }
                                   }
                                 },
@@ -1038,24 +1399,56 @@ export default function AnalyticsPage() {
                                     grid: {
                                       display: false
                                     },
+                                    border: {
+                                      display: true,
+                                      color: 'rgba(255, 255, 255, 0.5)',
+                                      width: 2
+                                    },
                                     ticks: {
-                                      color: 'rgb(156 163 175)'
+                                      color: 'rgb(255, 255, 255)',
+                                      font: {
+                                        size: 13,
+                                        weight: 'bold'
+                                      },
+                                      maxRotation: 45,
+                                      minRotation: 45,
+                                      padding: 10
                                     }
                                   },
                                   y: {
                                     grid: {
-                                      color: 'rgb(64 64 64 / 0.2)'
+                                      color: 'rgba(255, 255, 255, 0.2)',
+                                      lineWidth: 1
+                                    },
+                                    border: {
+                                      display: true,
+                                      color: 'rgba(255, 255, 255, 0.5)',
+                                      width: 2
                                     },
                                     ticks: {
-                                      color: 'rgb(156 163 175)',
+                                      color: 'rgb(255, 255, 255)',
+                                      font: {
+                                        size: 13,
+                                        weight: 'bold'
+                                      },
+                                      padding: 10,
                                       callback: (value) => {
                                         if (typeof value === 'number') {
                                           return new Intl.NumberFormat().format(value);
                                         }
                                         return value;
                                       }
+                                    },
+                                    beginAtZero: true // Always start y-axis from zero
                                     }
-                                  }
+                                },
+                                animation: {
+                                  duration: 1000,
+                                  easing: 'easeOutQuart'
+                                },
+                                hover: {
+                                  mode: 'index',
+                                  intersect: false
                                 }
                               }}
                             />
@@ -1068,91 +1461,90 @@ export default function AnalyticsPage() {
               </Card>
             )}
 
-            {/* Conversion Stats */}
             {analyticsData?.overview?.conversionEvents && analyticsData.overview.conversionEvents.length > 0 && (
-              <Card className="bg-neutral-900 border-neutral-800">
-                <div className="p-6">
-                  <h2 className="text-lg font-medium text-white mb-4">Conversion Details</h2>
+              <Card className="bg-background border-border overflow-hidden shadow-xl">
+                <div className="p-6 bg-muted/30">
+                  <h2 className="text-lg font-medium text-foreground mb-4">Conversion Details</h2>
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div className="p-4 rounded-lg bg-neutral-800/50">
-                        <div className="flex items-center gap-2 text-neutral-400 mb-2">
+                      <div className="p-4 rounded-lg bg-card border border-border shadow-lg">
+                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
                           <Target className="h-4 w-4" />
                           <span>Total Conversions</span>
                         </div>
-                        <div className="text-2xl font-semibold text-white">
+                        <div className="text-2xl font-semibold text-foreground">
                           {new Intl.NumberFormat('en-US', { notation: 'compact' }).format(analyticsData.overview.conversions)}
                         </div>
                       </div>
-                      <div className="p-4 rounded-lg bg-neutral-800/50">
-                        <div className="flex items-center gap-2 text-neutral-400 mb-2">
+                      <div className="p-4 rounded-lg bg-card border border-border shadow-lg">
+                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
                           <Activity className="h-4 w-4" />
                           <span>Conversion Rate</span>
                         </div>
-                        <div className="text-2xl font-semibold text-white">
+                        <div className="text-2xl font-semibold text-foreground">
                           {analyticsData.overview.conversionRate.toFixed(2)}%
                         </div>
                       </div>
-                      <div className="p-4 rounded-lg bg-neutral-800/50">
-                        <div className="flex items-center gap-2 text-neutral-400 mb-2">
+                      <div className="p-4 rounded-lg bg-card border border-border shadow-lg">
+                        <div className="flex items-center gap-2 text-muted-foreground mb-2">
                           <DollarSign className="h-4 w-4" />
                           <span>Total Revenue</span>
                         </div>
-                        <div className="text-2xl font-semibold text-white">
+                        <div className="text-2xl font-semibold text-foreground">
                           {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(analyticsData.overview.revenue)}
                         </div>
                       </div>
                     </div>
 
                     <div className="space-y-4">
-                      <h3 className="text-md font-medium text-white">Conversion Events</h3>
+                      <h3 className="text-md font-medium text-foreground">Conversion Events</h3>
                       {analyticsData.overview.conversionEvents.map((event) => (
-                        <div key={event.name} className="p-4 rounded-lg bg-neutral-800/50">
+                        <div key={event.name} className="p-4 rounded-lg bg-card border border-border shadow-lg hover:bg-muted/50 transition-colors">
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                              <Target className="h-4 w-4 text-blue-500" />
-                              <span className="text-white font-medium">{event.name}</span>
+                              <Target className="h-4 w-4 text-blue-400" />
+                              <span className="text-foreground font-medium">{event.name}</span>
                             </div>
                             <div className="flex items-center gap-4">
-                              <div className="text-sm text-neutral-400">
-                                <span className="text-white font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(event.count)}</span> conversions
+                              <div className="text-sm text-muted-foreground">
+                                <span className="text-foreground font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(event.count)}</span> conversions
                               </div>
-                              <div className="text-sm text-neutral-400">
-                                <span className="text-white font-medium">{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(event.value)}</span> value
+                              <div className="text-sm text-muted-foreground">
+                                <span className="text-foreground font-medium">{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(event.value)}</span> value
                               </div>
                             </div>
                           </div>
 
-                          {analyticsData.byConversion[event.name] && (
+                          {analyticsData.byConversion && analyticsData.byConversion[event.name] && (
                             <div className="mt-4 space-y-4">
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <h4 className="text-sm font-medium text-neutral-400 mb-2">By Device</h4>
+                                  <h4 className="text-sm font-medium text-muted-foreground mb-2">By Device</h4>
                                   <div className="space-y-2">
                                     {Object.entries(analyticsData.byConversion[event.name].byDevice).map(([device, stats]) => (
                                       <div key={device} className="flex items-center justify-between text-sm">
                                         <div className="flex items-center gap-2">
                                           {getDeviceIcon(device)}
-                                          <span className="text-white capitalize">{device}</span>
+                                          <span className="text-foreground capitalize">{device}</span>
                                         </div>
-                                        <div className="text-neutral-400">
-                                          <span className="text-white font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.count)}</span>
+                                        <div className="text-muted-foreground">
+                                          <span className="text-foreground font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.count)}</span>
                                         </div>
                                       </div>
                                     ))}
                                   </div>
                                 </div>
                                 <div>
-                                  <h4 className="text-sm font-medium text-neutral-400 mb-2">By Source</h4>
+                                  <h4 className="text-sm font-medium text-muted-foreground mb-2">By Source</h4>
                                   <div className="space-y-2">
                                     {Object.entries(analyticsData.byConversion[event.name].bySource)
-                                      .sort((a, b) => b[1].count - a[1].count)
+                                      .sort(([, aStats], [, bStats]) => bStats.count - aStats.count)
                                       .slice(0, 5)
-                                      .map(([source, stats]) => (
+                                      .map(([source, sourceStats]) => (
                                         <div key={source} className="flex items-center justify-between text-sm">
-                                          <span className="text-white">{source || '(direct)'}</span>
-                                          <div className="text-neutral-400">
-                                            <span className="text-white font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.count)}</span>
+                                          <span className="text-foreground">{source || '(direct)'}</span>
+                                          <div className="text-muted-foreground">
+                                            <span className="text-foreground font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(sourceStats.count)}</span>
                                           </div>
                                         </div>
                                     ))}
@@ -1169,27 +1561,26 @@ export default function AnalyticsPage() {
               </Card>
             )}
 
-            {/* Device Stats */}
-            {analyticsData?.byDevice && (
-              <Card className="bg-neutral-900 border-neutral-800">
-                <div className="p-6">
-                  <h2 className="text-lg font-medium text-white mb-4">Device Breakdown</h2>
+            {analyticsData.byDevice && (
+              <Card className="bg-background border-border overflow-hidden shadow-xl">
+                <div className="p-6 bg-muted/30">
+                  <h2 className="text-lg font-medium text-foreground mb-4">Device Breakdown</h2>
                   <div className="space-y-4">
                     {(Object.entries(analyticsData.byDevice) as [string, DeviceStats][]).map(([device, stats]) => (
-                      <div key={device} className="flex items-center justify-between p-4 rounded-lg bg-neutral-800/50">
+                      <div key={device} className="flex items-center justify-between p-4 rounded-lg bg-card border border-border shadow-lg">
                         <div className="flex items-center gap-3">
                           {getDeviceIcon(device)}
-                          <span className="text-white capitalize">{device}</span>
+                          <span className="text-foreground capitalize">{device}</span>
                         </div>
                         <div className="flex items-center gap-6">
-                          <div className="text-sm text-neutral-400">
-                            <span className="text-white font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.sessions)}</span> sessions
+                          <div className="text-sm text-muted-foreground">
+                            <span className="text-foreground font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.sessions)}</span> sessions
                           </div>
-                          <div className="text-sm text-neutral-400">
-                            <span className="text-white font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.pageViews)}</span> views
+                          <div className="text-sm text-muted-foreground">
+                            <span className="text-foreground font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.pageViews)}</span> views
                           </div>
-                          <div className="text-sm text-neutral-400">
-                            <span className="text-white font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.conversions || 0)}</span> conversions
+                          <div className="text-sm text-muted-foreground">
+                            <span className="text-foreground font-medium">{new Intl.NumberFormat('en-US', { notation: 'compact' }).format(stats.conversions || 0)}</span> conversions
                           </div>
                         </div>
                       </div>
@@ -1199,6 +1590,18 @@ export default function AnalyticsPage() {
               </Card>
             )}
           </>
+        ) : (
+          !gaPropertiesError && !gaPropertiesLoading && properties.length === 0 && (
+             <Card className="bg-background border-border overflow-hidden">
+              <div className="p-6 flex flex-col items-center justify-center h-64 bg-muted/50">
+                <h2 className="text-lg font-medium text-foreground mb-4">No GA4 Properties Found</h2>
+                <p className="text-muted-foreground text-center max-w-md mb-6">
+                  The service account does not have access to any Google Analytics 4 properties, or none were found.
+                  Please check the service account permissions and configuration.
+                </p>
+              </div>
+            </Card>
+          )
         )}
       </div>
     </SidebarDemo>

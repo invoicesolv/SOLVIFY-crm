@@ -33,9 +33,9 @@ export function SaleDialog({
 }: SaleDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] bg-neutral-900 border-neutral-800">
+      <DialogContent className="sm:max-w-[500px] bg-background border-border text-foreground">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-white">
+          <DialogTitle className="text-xl font-semibold text-foreground">
             {initialData ? "Edit Sale" : "New Sale"}
           </DialogTitle>
         </DialogHeader>

@@ -1,4 +1,4 @@
-# Vibe Brand Guide
+# Solvify Brand Guide
 
 ## 🎨 Color System
 

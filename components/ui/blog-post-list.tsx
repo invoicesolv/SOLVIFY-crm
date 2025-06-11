@@ -90,7 +90,7 @@ export function BlogPostList({ lang }: BlogPostListProps) {
 
   if (loading) {
     return (
-      <section className="bg-neutral-950 py-16 md:py-24">
+      <section className="bg-background py-16 md:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="animate-pulse text-gray-400">{labels.loading}</div>
         </div>
@@ -100,7 +100,7 @@ export function BlogPostList({ lang }: BlogPostListProps) {
 
   if (error || !blogPosts.length) {
     return (
-      <section className="bg-neutral-950 py-16 md:py-24">
+      <section className="bg-background py-16 md:py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="text-red-400">{error || labels.noPosts}</div>
         </div>
@@ -109,7 +109,7 @@ export function BlogPostList({ lang }: BlogPostListProps) {
   }
 
   return (
-    <section className="bg-neutral-950 py-16 md:py-24">
+    <section className="bg-background py-16 md:py-24">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         {/* Featured post */}
         {featuredPost && (
@@ -132,12 +132,12 @@ export function BlogPostList({ lang }: BlogPostListProps) {
                   <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400 mb-3">
                     {featuredPost.category}
                   </span>
-                  <h3 className="text-2xl font-bold text-white mb-2">
+                  <h3 className="text-2xl font-bold text-foreground mb-2">
                     {featuredPost.title}
                   </h3>
                   <div 
                     className="text-gray-300 mb-4 prose prose-base prose-invert max-w-none
-                    prose-headings:text-white prose-headings:my-2
+                    prose-headings:text-foreground prose-headings:my-2
                     prose-h2:text-xl prose-h2:font-semibold
                     prose-h3:text-lg prose-h3:font-medium
                     prose-p:text-gray-300 prose-p:my-2
@@ -170,7 +170,7 @@ export function BlogPostList({ lang }: BlogPostListProps) {
               
               <div className="lg:col-span-2 flex flex-col space-y-6">
                 {blogPosts.slice(1, 3).map(post => (
-                  <div key={post.id} className="rounded-xl overflow-hidden bg-neutral-900 h-full flex flex-col">
+                  <div key={post.id} className="rounded-xl overflow-hidden bg-background h-full flex flex-col">
                     <div className="relative h-48">
                       <Image
                         src={post.image}
@@ -183,7 +183,7 @@ export function BlogPostList({ lang }: BlogPostListProps) {
                       <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400 mb-3">
                         {post.category}
                       </span>
-                      <h3 className="text-xl font-bold text-white mb-2">
+                      <h3 className="text-xl font-bold text-foreground mb-2">
                         {post.title}
                       </h3>
                       <div className="mt-auto flex items-center justify-between">
@@ -227,7 +227,7 @@ export function BlogPostList({ lang }: BlogPostListProps) {
           
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {blogPosts.slice(1).map(post => (
-              <div key={post.id} className="rounded-xl overflow-hidden bg-neutral-900 h-full flex flex-col group">
+              <div key={post.id} className="rounded-xl overflow-hidden bg-background h-full flex flex-col group">
                 <div className="relative h-48 overflow-hidden">
                   <Image
                     src={post.image}
@@ -241,12 +241,12 @@ export function BlogPostList({ lang }: BlogPostListProps) {
                   <span className="inline-block px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400 mb-3">
                     {post.category}
                   </span>
-                  <h3 className="text-xl font-bold text-white mb-2">
+                  <h3 className="text-xl font-bold text-foreground mb-2">
                     {post.title}
                   </h3>
                   <div 
                     className="text-gray-400 text-sm mb-4 flex-grow prose prose-sm prose-invert max-w-none
-                    prose-headings:text-white prose-headings:my-2
+                    prose-headings:text-foreground prose-headings:my-2
                     prose-h2:text-lg prose-h2:font-semibold
                     prose-h3:text-base prose-h3:font-medium
                     prose-p:text-gray-400 prose-p:my-2

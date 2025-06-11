@@ -1,5 +1,4 @@
-import { supabase } from './supabase';
-import { supabaseAdmin } from './supabase';
+import { supabase, supabaseAdmin, getConsistentUserId } from '@/lib/supabase';
 
 // Cache permissions for 5 minutes to avoid excessive DB queries
 const permissionCache = new Map<string, {
@@ -366,55 +365,51 @@ export async function getActiveWorkspaceId(userId: string): Promise<string | nul
   }
   
   try {
-    // Get user's most recently used workspace or default
-    console.log(`[getActiveWorkspaceId] Trying to fetch most recent team membership for userId: ${userId}`);
-    const { data: teamMembership, error } = await supabaseAdmin // Use admin client
+    // First, ensure we have a valid UUID
+    const validUserId = await getConsistentUserId(userId);
+    
+    if (!validUserId) {
+      console.log(`[getActiveWorkspaceId] Could not get valid UUID for userId: ${userId}, returning null.`);
+      return null;
+    }
+    
+    console.log(`[getActiveWorkspaceId] Using validated UUID: ${validUserId}`);
+    
+    // Prioritize admin workspaces first, then most recent membership
+    console.log(`[getActiveWorkspaceId] Trying to fetch admin workspace for userId: ${validUserId}`);
+    const { data: adminMembership, error: adminError } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id, is_admin, created_at')
+      .eq('user_id', validUserId)
+      .eq('is_admin', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+      
+    console.log(`[getActiveWorkspaceId] Admin membership query result:`, { data: adminMembership, error: adminError?.message });
+    
+    if (!adminError && adminMembership && adminMembership.length > 0) {
+      console.log(`[getActiveWorkspaceId] Found admin workspace, returning workspace ID: ${adminMembership[0].workspace_id}`);
+      return adminMembership[0].workspace_id;
+    }
+    
+    // If no admin workspace, get user's most recently used workspace
+    console.log(`[getActiveWorkspaceId] No admin workspace found, trying to fetch most recent team membership for userId: ${validUserId}`);
+    const { data: teamMembership, error } = await supabaseAdmin
       .from('team_members')
       .select('workspace_id, is_admin')
-      .eq('user_id', userId)
+      .eq('user_id', validUserId)
       .order('created_at', { ascending: false })
       .limit(1);
       
     console.log(`[getActiveWorkspaceId] Recent membership query result:`, { data: teamMembership, error: error?.message });
       
     if (error) {
-      console.log(`[getActiveWorkspaceId] Error in recent membership query. Falling back to admin check.`);
-      // Fallback: try to get any workspace where user is an admin
-      const { data: adminMembership, error: adminError } = await supabaseAdmin // Use admin client
-        .from('team_members')
-        .select('workspace_id')
-        .eq('user_id', userId)
-        .eq('is_admin', true)
-        .limit(1);
-        
-        console.log(`[getActiveWorkspaceId] Admin membership query result:`, { data: adminMembership, error: adminError?.message });
-        
-      if (!adminError && adminMembership && adminMembership.length > 0) {
-        console.log(`[getActiveWorkspaceId] Found admin membership, returning workspace ID: ${adminMembership[0].workspace_id}`);
-        return adminMembership[0].workspace_id;
-      }
-      
-      console.log(`[getActiveWorkspaceId] No admin membership found or error occurred. Returning null from error block.`);
+      console.log(`[getActiveWorkspaceId] Error in recent membership query. Returning null.`);
       return null;
     }
     
     // If no team membership found, return null
     if (!teamMembership || teamMembership.length === 0) {
-      console.log(`[getActiveWorkspaceId] No recent membership found. Falling back to any membership check.`);
-      // Fallback: try to find any workspace for this user
-      const { data: anyMembership, error: anyError } = await supabaseAdmin // Use admin client
-        .from('team_members')
-        .select('workspace_id')
-        .eq('user_id', userId)
-        .limit(1);
-        
-        console.log(`[getActiveWorkspaceId] Any membership query result:`, { data: anyMembership, error: anyError?.message });
-        
-      if (!anyError && anyMembership && anyMembership.length > 0) {
-        console.log(`[getActiveWorkspaceId] Found any membership, returning workspace ID: ${anyMembership[0].workspace_id}`);
-        return anyMembership[0].workspace_id;
-      }
-      
       console.log(`[getActiveWorkspaceId] No membership found at all for user. Returning null.`);
       return null;
     }

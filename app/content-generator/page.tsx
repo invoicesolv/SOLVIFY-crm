@@ -262,6 +262,10 @@ export default function ContentGeneratorPage() {
   // Add state for website URLs
   const [websiteUrls, setWebsiteUrls] = useState<{id: string, url: string}[]>([]);
 
+  // Add state for bulk import modal
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [bulkKeywords, setBulkKeywords] = useState('');
+
   // Load workspaces when component mounts
   useEffect(() => {
     if (status === 'authenticated' && session?.user?.id) {
@@ -352,6 +356,172 @@ export default function ContentGeneratorPage() {
     const updatedTasks = [...generationTasks];
     updatedTasks[index] = { ...updatedTasks[index], [field]: value };
     setGenerationTasks(updatedTasks);
+  };
+
+  // Bulk keyword processing function
+  const handleKeywordPaste = (index: number, pastedText: string) => {
+    // Split by common delimiters: newlines, commas, semicolons, tabs
+    const keywords = pastedText
+      .split(/[\n,;\t]+/)
+      .map(keyword => keyword.trim())
+      .filter(keyword => keyword.length > 0);
+
+    if (keywords.length <= 1) {
+      // If only one keyword or no keywords, just update the current field
+      updateGenerationTask(index, 'mainKeyword', pastedText);
+      return;
+    }
+
+    // Fill existing empty rows first, then create new ones if needed
+    const updatedTasks = [...generationTasks];
+    let currentIndex = index;
+
+    keywords.forEach((keyword, keywordIndex) => {
+      if (currentIndex < updatedTasks.length) {
+        // Update existing row
+        updatedTasks[currentIndex] = {
+          ...updatedTasks[currentIndex],
+          mainKeyword: keyword
+        };
+      } else {
+        // Create new row only if we've run out of existing rows
+        updatedTasks.push({
+          mainKeyword: keyword,
+          title: '',
+          keywords: '',
+          outline: ''
+        });
+      }
+      currentIndex++;
+    });
+
+    setGenerationTasks(updatedTasks);
+
+    // Show success message
+    toast.success(`Filled ${keywords.length} main keywords into rows`);
+  };
+
+  // Bulk title processing function
+  const handleTitlePaste = (index: number, pastedText: string) => {
+    // Split by common delimiters: newlines, commas, semicolons, tabs
+    const titles = pastedText
+      .split(/[\n,;\t]+/)
+      .map(title => title.trim())
+      .filter(title => title.length > 0);
+
+    if (titles.length <= 1) {
+      // If only one title or no titles, just update the current field
+      updateGenerationTask(index, 'title', pastedText);
+      return;
+    }
+
+    // Fill existing rows first, then create new ones if needed
+    const updatedTasks = [...generationTasks];
+    let currentIndex = index;
+
+    titles.forEach((title, titleIndex) => {
+      if (currentIndex < updatedTasks.length) {
+        // Update existing row
+        updatedTasks[currentIndex] = {
+          ...updatedTasks[currentIndex],
+          title: title
+        };
+      } else {
+        // Create new row only if we've run out of existing rows
+        updatedTasks.push({
+          mainKeyword: '',
+          title: title,
+          keywords: '',
+          outline: ''
+        });
+      }
+      currentIndex++;
+    });
+
+    setGenerationTasks(updatedTasks);
+
+    // Show success message
+    toast.success(`Filled ${titles.length} titles into rows`);
+  };
+
+  // Bulk additional keywords processing function
+  const handleAdditionalKeywordsPaste = (index: number, pastedText: string) => {
+    // Split by common delimiters: newlines, commas, semicolons, tabs
+    const keywords = pastedText
+      .split(/[\n,;\t]+/)
+      .map(keyword => keyword.trim())
+      .filter(keyword => keyword.length > 0);
+
+    if (keywords.length <= 1) {
+      // If only one keyword or no keywords, just update the current field
+      updateGenerationTask(index, 'keywords', pastedText);
+      return;
+    }
+
+    // Fill existing rows first, then create new ones if needed
+    const updatedTasks = [...generationTasks];
+    let currentIndex = index;
+
+    keywords.forEach((keyword, keywordIndex) => {
+      if (currentIndex < updatedTasks.length) {
+        // Update existing row
+        updatedTasks[currentIndex] = {
+          ...updatedTasks[currentIndex],
+          keywords: keyword
+        };
+      } else {
+        // Create new row only if we've run out of existing rows
+        updatedTasks.push({
+          mainKeyword: '',
+          title: '',
+          keywords: keyword,
+          outline: ''
+        });
+      }
+      currentIndex++;
+    });
+
+    setGenerationTasks(updatedTasks);
+
+    // Show success message
+    toast.success(`Filled ${keywords.length} additional keywords into rows`);
+  };
+
+  // Bulk import function
+  const handleBulkImport = () => {
+    if (!bulkKeywords.trim()) {
+      toast.error('Please enter some keywords to import');
+      return;
+    }
+
+    // Split by common delimiters: newlines, commas, semicolons, tabs
+    const keywords = bulkKeywords
+      .split(/[\n,;\t]+/)
+      .map(keyword => keyword.trim())
+      .filter(keyword => keyword.length > 0);
+
+    if (keywords.length === 0) {
+      toast.error('No valid keywords found');
+      return;
+    }
+
+    // Create new tasks for each keyword
+    const newTasks: GenerationTask[] = keywords.map(keyword => ({
+      mainKeyword: keyword,
+      title: '', // Will be auto-generated or user can fill
+      keywords: '',
+      outline: ''
+    }));
+
+    // Replace all existing tasks with new ones
+    setGenerationTasks(newTasks);
+    
+    // Close modal and reset
+    setShowBulkImportModal(false);
+    setBulkKeywords('');
+
+    // Show success message
+    toast.success(`Imported ${keywords.length} keywords as generation tasks`);
   };
 
   // Add function to load previous content
@@ -757,12 +927,12 @@ export default function ContentGeneratorPage() {
 
   return (
     <SidebarDemo>
-      <div className="min-h-screen bg-black text-white">
+      <div className="min-h-screen bg-background dark:bg-gray-900 text-foreground">
         <div className="container mx-auto p-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-semibold text-white">Bulk Content Generation</h1>
-              <p className="text-sm text-neutral-400">
+              <h1 className="text-2xl font-semibold text-foreground">Bulk Content Generation</h1>
+              <p className="text-sm text-muted-foreground">
                 Configure and generate multiple SEO-optimized articles based on your settings.
               </p>
             </div>
@@ -773,7 +943,7 @@ export default function ContentGeneratorPage() {
                 value={activeWorkspace || ''}
                 onChange={(e) => handleWorkspaceChange(e.target.value)}
                 disabled={loadingWorkspaces || workspaces.length === 0}
-                className="appearance-none bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 pr-8 text-white focus:outline-none focus:ring-2 focus:ring-neutral-600 min-w-40"
+                className="appearance-none bg-background border border-border dark:border-border rounded-md px-4 py-2 pr-8 text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-600 min-w-40"
               >
                 <option value="" disabled>Select Workspace</option>
                 {workspaces.map((workspace) => (
@@ -783,75 +953,109 @@ export default function ContentGeneratorPage() {
                 ))}
               </select>
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                <svg className="h-4 w-4 text-neutral-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </div>
           </div>
 
-          <Card className="bg-neutral-900 border-neutral-800">
+          <Card className="bg-background border-border text-foreground">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
+              <CardTitle className="text-foreground flex items-center gap-2">
                 <FileText className="h-5 w-5" /> Generation Tasks
               </CardTitle>
-              <CardDescription>Add keywords, titles, and outlines for the articles you want to generate.</CardDescription>
+              <CardDescription>
+                Add keywords, titles, and additional keywords for the articles you want to generate.
+                <br />
+                <span className="text-xs text-blue-600 dark:text-blue-400">
+                  💡 Tip: Paste multiple items (separated by commas or new lines) to fill existing rows. New rows are only created when both Main Keyword and Title are filled.
+                </span>
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {generationTasks.map((task, index) => (
-                <div key={index} className="flex items-end gap-2 border-b border-neutral-700 pb-4 mb-4">
-                  <div className="flex-1 space-y-1">
-                    <Label htmlFor={`main-keyword-${index}`} className="text-xs text-neutral-400">Main Keyword*</Label>
-                    <div className="flex gap-2">
-                      <Input 
-                        id={`main-keyword-${index}`} 
-                        value={task.mainKeyword}
-                        onChange={(e) => updateGenerationTask(index, 'mainKeyword', e.target.value)}
-                        placeholder="Enter your main keyword" 
-                        className="bg-neutral-800 border-neutral-700 text-white" 
-                      />
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
-                        className="whitespace-nowrap border-neutral-700 text-neutral-300 hover:bg-neutral-800"
-                      >
-                        Generate
-                      </Button>
+                <div key={index} className="border-b border-border dark:border-border pb-4 mb-4">
+                  <div className="flex items-end gap-2 mb-2">
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor={`main-keyword-${index}`} className="text-xs text-muted-foreground">Main Keyword*</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          id={`main-keyword-${index}`} 
+                          value={task.mainKeyword}
+                          onChange={(e) => updateGenerationTask(index, 'mainKeyword', e.target.value)}
+                          onPaste={(e) => {
+                            e.preventDefault();
+                            const pastedText = e.clipboardData.getData('text');
+                            handleKeywordPaste(index, pastedText);
+                          }}
+                          placeholder="Enter your main keyword (paste multiple to fill rows)" 
+                          className="bg-background border-border dark:border-border text-foreground" 
+                        />
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          className="whitespace-nowrap border-border dark:border-border text-foreground dark:text-neutral-300 hover:bg-background"
+                        >
+                          Generate
+                        </Button>
+                      </div>
                     </div>
+                    
+                    <div className="flex-1 space-y-1">
+                      <Label htmlFor={`title-${index}`} className="text-xs text-muted-foreground">Title*</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          id={`title-${index}`} 
+                          value={task.title}
+                          onChange={(e) => updateGenerationTask(index, 'title', e.target.value)}
+                          onPaste={(e) => {
+                            e.preventDefault();
+                            const pastedText = e.clipboardData.getData('text');
+                            handleTitlePaste(index, pastedText);
+                          }}
+                          placeholder="Enter your blog title or topic (paste multiple to fill rows)" 
+                          className="bg-background border-border dark:border-border text-foreground" 
+                        />
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          className="whitespace-nowrap border-border dark:border-border text-foreground dark:text-neutral-300 hover:bg-background"
+                        >
+                          Generate
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      type="button"
+                      onClick={() => removeGenerationTask(index)}
+                      disabled={generationTasks.length === 1} 
+                      variant="ghost" 
+                      size="icon" 
+                      className="text-foreground0 hover:text-red-600 dark:text-red-400"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                   
                   <div className="flex-1 space-y-1">
-                    <Label htmlFor={`title-${index}`} className="text-xs text-neutral-400">Title*</Label>
-                    <div className="flex gap-2">
-                      <Input 
-                        id={`title-${index}`} 
-                        value={task.title}
-                        onChange={(e) => updateGenerationTask(index, 'title', e.target.value)}
-                        placeholder="Enter your blog title or topic" 
-                        className="bg-neutral-800 border-neutral-700 text-white" 
-                      />
-                      <Button 
-                        type="button" 
-                        variant="outline" 
-                        size="sm" 
-                        className="whitespace-nowrap border-neutral-700 text-neutral-300 hover:bg-neutral-800"
-                      >
-                        Generate
-                      </Button>
-                    </div>
+                    <Label htmlFor={`keywords-${index}`} className="text-xs text-muted-foreground">Additional Keywords</Label>
+                    <Input 
+                      id={`keywords-${index}`} 
+                      value={task.keywords}
+                      onChange={(e) => updateGenerationTask(index, 'keywords', e.target.value)}
+                      onPaste={(e) => {
+                        e.preventDefault();
+                        const pastedText = e.clipboardData.getData('text');
+                        handleAdditionalKeywordsPaste(index, pastedText);
+                      }}
+                      placeholder="Enter additional keywords (paste multiple to fill rows)" 
+                      className="bg-background border-border dark:border-border text-foreground" 
+                    />
                   </div>
-                  
-                  <Button 
-                    type="button"
-                    onClick={() => removeGenerationTask(index)}
-                    disabled={generationTasks.length === 1} 
-                    variant="ghost" 
-                    size="icon" 
-                    className="text-neutral-500 hover:text-red-500"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               ))}
               
@@ -861,23 +1065,24 @@ export default function ContentGeneratorPage() {
                   onClick={addGenerationTask} 
                   variant="outline" 
                   size="sm" 
-                  className="border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+                  className="border-border dark:border-border text-foreground dark:text-neutral-300 hover:bg-background"
                 >
                   <PlusCircle className="h-4 w-4 mr-2" /> Add Row
                 </Button>
                 <Button 
                   type="button"
+                  onClick={() => setShowBulkImportModal(true)}
                   variant="outline" 
                   size="sm" 
-                  className="border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+                  className="border-border dark:border-border text-foreground dark:text-neutral-300 hover:bg-background"
                 >
-                  Import from Excel
+                  Bulk Import Keywords
                 </Button>
                 <Button 
                   type="button"
                   variant="outline" 
                   size="sm" 
-                  className="border-neutral-700 text-neutral-300 hover:bg-neutral-800"
+                  className="border-border dark:border-border text-foreground dark:text-neutral-300 hover:bg-background"
                 >
                   Save Template
                 </Button>
@@ -889,20 +1094,20 @@ export default function ContentGeneratorPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
             {/* Core Settings Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Core Settings
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="language" className="text-sm text-neutral-400">Language</Label>
+                  <Label htmlFor="language" className="text-sm text-muted-foreground">Language</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select language" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="en-us">English (US)</SelectItem>
                       <SelectItem value="en-uk">English (UK)</SelectItem>
                       <SelectItem value="es">Spanish</SelectItem>
@@ -915,12 +1120,12 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="articleType" className="text-sm text-neutral-400">Article Type</Label>
+                  <Label htmlFor="articleType" className="text-sm text-muted-foreground">Article Type</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select article type" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">None</SelectItem>
                       <SelectItem value="how-to">How To Guide</SelectItem>
                       <SelectItem value="listicle">Listicle</SelectItem>
@@ -932,12 +1137,12 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="articleSize" className="text-sm text-neutral-400">Article Size</Label>
+                  <Label htmlFor="articleSize" className="text-sm text-muted-foreground">Article Size</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select article size" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="small">Small (1200-1800 words, 5-7 H2)</SelectItem>
                       <SelectItem value="medium">Medium (2400-3600 words, 9-12 H2)</SelectItem>
                       <SelectItem value="large">Large (4800-6000 words, 12-15 H2)</SelectItem>
@@ -949,20 +1154,20 @@ export default function ContentGeneratorPage() {
             </Card>
 
             {/* Content Settings Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Content Settings
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="tone" className="text-sm text-neutral-400">Tone of voice</Label>
+                  <Label htmlFor="tone" className="text-sm text-muted-foreground">Tone of voice</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select tone" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="friendly">Friendly</SelectItem>
                       <SelectItem value="professional">Professional</SelectItem>
                       <SelectItem value="casual">Casual</SelectItem>
@@ -977,25 +1182,25 @@ export default function ContentGeneratorPage() {
             </Card>
 
             {/* AI Settings Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> AI Settings
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center space-x-2 mb-2">
-                  <Checkbox id="use-api-key" className="bg-neutral-800 border-neutral-700" />
-                  <Label htmlFor="use-api-key" className="text-neutral-400">Use API Key</Label>
+                  <Checkbox id="use-api-key" className="bg-background border-border dark:border-border" />
+                  <Label htmlFor="use-api-key" className="text-muted-foreground">Use API Key</Label>
                 </div>
                 
                 <div>
-                  <Label htmlFor="ai-model" className="text-sm text-neutral-400">AI Model</Label>
+                  <Label htmlFor="ai-model" className="text-sm text-muted-foreground">AI Model</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select model" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="default">Default (1 credit)</SelectItem>
                       <SelectItem value="llama4">Llama 4 (2 credits)</SelectItem>
                       <SelectItem value="gpt4">GPT-4 (3 credits)</SelectItem>
@@ -1005,12 +1210,12 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="point-of-view" className="text-sm text-neutral-400">Point of view</Label>
+                  <Label htmlFor="point-of-view" className="text-sm text-muted-foreground">Point of view</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select point of view" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">None</SelectItem>
                       <SelectItem value="first-person">First Person (I, We)</SelectItem>
                       <SelectItem value="second-person">Second Person (You)</SelectItem>
@@ -1020,12 +1225,12 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="readability" className="text-sm text-neutral-400">Text Readability</Label>
+                  <Label htmlFor="readability" className="text-sm text-muted-foreground">Text Readability</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select readability" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">None</SelectItem>
                       <SelectItem value="basic">Basic (8-10 grade level)</SelectItem>
                       <SelectItem value="intermediate">Intermediate (11-12 grade level)</SelectItem>
@@ -1035,12 +1240,12 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="target-country" className="text-sm text-neutral-400">Target country</Label>
+                  <Label htmlFor="target-country" className="text-sm text-muted-foreground">Target country</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select country" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="us">United States</SelectItem>
                       <SelectItem value="uk">United Kingdom</SelectItem>
                       <SelectItem value="ca">Canada</SelectItem>
@@ -1052,12 +1257,12 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="ai-cleaning" className="text-sm text-neutral-400">AI Content Cleaning</Label>
+                  <Label htmlFor="ai-cleaning" className="text-sm text-muted-foreground">AI Content Cleaning</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select cleaning level" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">No AI Words Removal</SelectItem>
                       <SelectItem value="light">Light Cleaning</SelectItem>
                       <SelectItem value="moderate">Moderate Cleaning</SelectItem>
@@ -1067,12 +1272,12 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="brand-voice" className="text-sm text-neutral-400">Brand Voice</Label>
+                  <Label htmlFor="brand-voice" className="text-sm text-muted-foreground">Brand Voice</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select brand voice" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">None</SelectItem>
                       <SelectItem value="professional">Professional</SelectItem>
                       <SelectItem value="friendly">Friendly</SelectItem>
@@ -1080,56 +1285,56 @@ export default function ContentGeneratorPage() {
                       {/* More brand voices can be added */}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-neutral-500 mt-1">Create unique styles and tones for different situations using Brand Voice, ensuring your content always remains consistent.</p>
+                  <p className="text-xs text-foreground0 mt-1">Create unique styles and tones for different situations using Brand Voice, ensuring your content always remains consistent.</p>
                 </div>
               </CardContent>
             </Card>
 
             {/* Details to Include Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Details to Include
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <Label htmlFor="details" className="text-sm text-neutral-400 mb-2 block">
+                <Label htmlFor="details" className="text-sm text-muted-foreground mb-2 block">
                   What details would you like to include in your article?
                 </Label>
                 <Textarea 
                   id="details" 
                   placeholder="e.g. phone number as 212-555-1234" 
-                  className="bg-neutral-800 border-neutral-700 text-white h-32 resize-none"
+                  className="bg-background border-border dark:border-border text-foreground h-32 resize-none"
                 />
-                <p className="text-xs text-neutral-500 mt-2">Include specific details, facts, or information you want included in the generated content.</p>
+                <p className="text-xs text-foreground0 mt-2">Include specific details, facts, or information you want included in the generated content.</p>
               </CardContent>
             </Card>
             
             {/* Media Hub Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Media Hub
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <Label htmlFor="aiImages" className="text-neutral-300 mb-2 block">
+                    <Label htmlFor="aiImages" className="text-foreground dark:text-neutral-300 mb-2 block">
                       AI Images
                     </Label>
                     <Select
                       value={mediaHub.aiImages}
                       onValueChange={(value) => setMediaHub({...mediaHub, aiImages: value})}
                     >
-                      <SelectTrigger className="bg-neutral-800 border-neutral-700 text-neutral-300">
+                      <SelectTrigger className="bg-background border-border dark:border-border text-foreground dark:text-neutral-300">
                         <SelectValue placeholder="Select option" />
                     </SelectTrigger>
-                      <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
-                        <SelectItem value="none" className="hover:bg-neutral-700">None</SelectItem>
-                        <SelectItem value="dall-e" className="hover:bg-neutral-700">DALL-E</SelectItem>
-                        <SelectItem value="stable-diffusion" className="hover:bg-neutral-700">Stable Diffusion</SelectItem>
-                        <SelectItem value="unsplash" className="hover:bg-neutral-700">Unsplash Images</SelectItem>
+                      <SelectContent className="bg-background border-border dark:border-border text-gray-800 dark:text-foreground">
+                        <SelectItem value="none" className="hover:bg-gray-200 dark:bg-muted">None</SelectItem>
+                        <SelectItem value="dall-e" className="hover:bg-gray-200 dark:bg-muted">DALL-E</SelectItem>
+                        <SelectItem value="stable-diffusion" className="hover:bg-gray-200 dark:bg-muted">Stable Diffusion</SelectItem>
+                        <SelectItem value="unsplash" className="hover:bg-gray-200 dark:bg-muted">Unsplash Images</SelectItem>
                     </SelectContent>
                   </Select>
                     {mediaHub.aiImages === 'unsplash' && !unsplashApiKey && (
@@ -1143,15 +1348,15 @@ export default function ContentGeneratorPage() {
                   {mediaHub.aiImages !== 'none' && (
                     <>
                 <div>
-                  <Label htmlFor="num-images" className="text-sm text-neutral-400">Number of images</Label>
+                  <Label htmlFor="num-images" className="text-sm text-muted-foreground">Number of images</Label>
                   <Select 
                     value={mediaHub.numberOfImages.toString()}
                     onValueChange={(value) => setMediaHub({...mediaHub, numberOfImages: parseInt(value)})}
                   >
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select number" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="1">1</SelectItem>
                       <SelectItem value="2">2</SelectItem>
                       <SelectItem value="3">3</SelectItem>
@@ -1163,26 +1368,26 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="image-style" className="text-sm text-neutral-400">Image Style</Label>
+                  <Label htmlFor="image-style" className="text-sm text-muted-foreground">Image Style</Label>
                   <Input 
                     id="image-style" 
                     placeholder="Enter image style (e.g., vibrant, minimalist)" 
-                    className="bg-neutral-800 border-neutral-700 text-white mt-1"
+                    className="bg-background border-border dark:border-border text-foreground mt-1"
                     value={mediaHub.imageStyle}
                     onChange={(e) => setMediaHub({...mediaHub, imageStyle: e.target.value})}
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="image-size" className="text-sm text-neutral-400">Image Size</Label>
+                  <Label htmlFor="image-size" className="text-sm text-muted-foreground">Image Size</Label>
                   <Select
                     value={mediaHub.imageSize}
                     onValueChange={(value) => setMediaHub({...mediaHub, imageSize: value})}
                   >
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select size" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="1344x768">1344×768 (16:9)</SelectItem>
                       <SelectItem value="1024x1024">1024×1024 (1:1)</SelectItem>
                       <SelectItem value="768x1024">768×1024 (3:4)</SelectItem>
@@ -1191,39 +1396,39 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="additional-instructions" className="text-sm text-neutral-400">Additional Instructions</Label>
+                  <Label htmlFor="additional-instructions" className="text-sm text-muted-foreground">Additional Instructions</Label>
                   <Input 
                     id="additional-instructions" 
                     placeholder="Enter details or creative directions" 
-                    className="bg-neutral-800 border-neutral-700 text-white mt-1"
+                    className="bg-background border-border dark:border-border text-foreground mt-1"
                     value={mediaHub.additionalInstructions}
                     onChange={(e) => setMediaHub({...mediaHub, additionalInstructions: e.target.value})}
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="brand-name" className="text-sm text-neutral-400">Brand Name</Label>
+                  <Label htmlFor="brand-name" className="text-sm text-muted-foreground">Brand Name</Label>
                   <Input 
                     id="brand-name" 
                     placeholder="Enter your brand name" 
-                    className="bg-neutral-800 border-neutral-700 text-white mt-1"
+                    className="bg-background border-border dark:border-border text-foreground mt-1"
                     value={mediaHub.brandName}
                     onChange={(e) => setMediaHub({...mediaHub, brandName: e.target.value})}
                   />
                 </div>
                 
-                <p className="text-xs text-neutral-500 mt-2">Include the main keyword in the first image as Alt-text. Relevant keywords will be picked up and added to the rest of the images.</p>
+                <p className="text-xs text-foreground0 mt-2">Include the main keyword in the first image as Alt-text. Relevant keywords will be picked up and added to the rest of the images.</p>
                 
                 <div className="mt-4">
-                  <Label htmlFor="youtube-videos" className="text-sm text-neutral-400">YouTube videos</Label>
+                  <Label htmlFor="youtube-videos" className="text-sm text-muted-foreground">YouTube videos</Label>
                   <Select
                     value={mediaHub.youtubeVideos}
                     onValueChange={(value) => setMediaHub({...mediaHub, youtubeVideos: value})}
                   >
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select video option" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">None</SelectItem>
                       <SelectItem value="auto">Auto-select relevant videos</SelectItem>
                       <SelectItem value="manual">Manual URL input</SelectItem>
@@ -1232,15 +1437,15 @@ export default function ContentGeneratorPage() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="num-videos" className="text-sm text-neutral-400">Number of videos</Label>
+                  <Label htmlFor="num-videos" className="text-sm text-muted-foreground">Number of videos</Label>
                   <Select
                     value={mediaHub.numberOfVideos.toString()}
                     onValueChange={(value) => setMediaHub({...mediaHub, numberOfVideos: parseInt(value)})}
                   >
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select number" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="1">1</SelectItem>
                       <SelectItem value="2">2</SelectItem>
                       <SelectItem value="3">3</SelectItem>
@@ -1251,13 +1456,13 @@ export default function ContentGeneratorPage() {
                 <div className="flex items-center space-x-2 mt-4">
                   <Checkbox 
                     id="distribute-evenly" 
-                    className="bg-neutral-800 border-neutral-700" 
+                    className="bg-background border-border dark:border-border" 
                     checked={mediaHub.distributeEvenly}
                     onCheckedChange={(checked) => setMediaHub({...mediaHub, distributeEvenly: checked === true})}
                   />
-                  <Label htmlFor="distribute-evenly" className="text-neutral-400">Distribute evenly</Label>
+                  <Label htmlFor="distribute-evenly" className="text-muted-foreground">Distribute evenly</Label>
                 </div>
-                <p className="text-xs text-neutral-500 mt-1">All media elements will be placed strictly under the headings. If disabled, the AI will decide and find the best placement.</p>
+                <p className="text-xs text-foreground0 mt-1">All media elements will be placed strictly under the headings. If disabled, the AI will decide and find the best placement.</p>
                     </>
                   )}
                 </div>
@@ -1265,20 +1470,20 @@ export default function ContentGeneratorPage() {
             </Card>
 
             {/* Structure Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Structure
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="intro-hook" className="text-sm text-neutral-400">Introductory Hook Brief</Label>
+                  <Label htmlFor="intro-hook" className="text-sm text-muted-foreground">Introductory Hook Brief</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select hook type" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="question">Question</SelectItem>
                       <SelectItem value="statistic">Statistical or Fact</SelectItem>
                       <SelectItem value="quotation">Quotation</SelectItem>
@@ -1289,92 +1494,92 @@ export default function ContentGeneratorPage() {
                   <Textarea 
                     id="hook-brief" 
                     placeholder="Enter the type of hook for the article's opening sentence" 
-                    className="bg-neutral-800 border-neutral-700 text-white mt-2 h-20" 
+                    className="bg-background border-border dark:border-border text-foreground mt-2 h-20" 
                   />
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4 mt-4">
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-conclusion" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-conclusion" className="text-neutral-400">Conclusion</Label>
+                    <Checkbox id="include-conclusion" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-conclusion" className="text-muted-foreground">Conclusion</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-tables" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-tables" className="text-neutral-400">Tables</Label>
+                    <Checkbox id="include-tables" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-tables" className="text-muted-foreground">Tables</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-h3" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-h3" className="text-neutral-400">H3</Label>
+                    <Checkbox id="include-h3" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-h3" className="text-muted-foreground">H3</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-lists" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-lists" className="text-neutral-400">Lists</Label>
+                    <Checkbox id="include-lists" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-lists" className="text-muted-foreground">Lists</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-italics" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-italics" className="text-neutral-400">Italics</Label>
+                    <Checkbox id="include-italics" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-italics" className="text-muted-foreground">Italics</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-quotes" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-quotes" className="text-neutral-400">Quotes</Label>
+                    <Checkbox id="include-quotes" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-quotes" className="text-muted-foreground">Quotes</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-takeaways" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-takeaways" className="text-neutral-400">Key Takeaways</Label>
+                    <Checkbox id="include-takeaways" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-takeaways" className="text-muted-foreground">Key Takeaways</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-faq" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-faq" className="text-neutral-400">FAQ</Label>
+                    <Checkbox id="include-faq" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-faq" className="text-muted-foreground">FAQ</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="include-bold" className="bg-neutral-800 border-neutral-700" defaultChecked />
-                    <Label htmlFor="include-bold" className="text-neutral-400">Bold</Label>
+                    <Checkbox id="include-bold" className="bg-background border-border dark:border-border" defaultChecked />
+                    <Label htmlFor="include-bold" className="text-muted-foreground">Bold</Label>
                   </div>
                 </div>
               </CardContent>
             </Card>
             
             {/* Internal Linking Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Internal Linking
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-neutral-400">Automatically index your site and add links relevant to your content. Select a Website and our semantic search will find the best pages to link to within your article.</p>
+                <p className="text-sm text-muted-foreground">Automatically index your site and add links relevant to your content. Select a Website and our semantic search will find the best pages to link to within your article.</p>
                 
                 <div>
-                  <Label htmlFor="website-select" className="text-sm text-neutral-400">Select a Website</Label>
+                  <Label htmlFor="website-select" className="text-sm text-muted-foreground">Select a Website</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select website" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">None</SelectItem>
                       {/* Here you would dynamically populate with user's websites */}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-neutral-500 mt-1">Unlimited internal URLs crawlable.</p>
+                  <p className="text-xs text-foreground0 mt-1">Unlimited internal URLs crawlable.</p>
                 </div>
                 
                 <div className="mt-6">
-                  <h3 className="font-medium text-white mb-2">External Linking</h3>
+                  <h3 className="font-medium text-foreground mb-2">External Linking</h3>
                   <div>
-                    <Label htmlFor="link-type" className="text-sm text-neutral-400">Link Type</Label>
+                    <Label htmlFor="link-type" className="text-sm text-muted-foreground">Link Type</Label>
                     <Select>
-                      <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                      <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                         <SelectValue placeholder="Select link type" />
                       </SelectTrigger>
-                      <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                      <SelectContent className="bg-background border-border dark:border-border text-foreground">
                         <SelectItem value="none">None</SelectItem>
                         <SelectItem value="authority">Authority Sites</SelectItem>
                         <SelectItem value="reference">Reference Links</SelectItem>
@@ -1383,18 +1588,18 @@ export default function ContentGeneratorPage() {
                     </Select>
                   </div>
                   
-                  <p className="text-xs text-neutral-500 mt-3">External Linking automatically integrates authoritative and relevant external links into your content, while also allowing you to manually specify desired links.</p>
+                  <p className="text-xs text-foreground0 mt-3">External Linking automatically integrates authoritative and relevant external links into your content, while also allowing you to manually specify desired links.</p>
                 </div>
                 
                 <div className="mt-6">
-                  <h3 className="font-medium text-white mb-2">Connect to Web</h3>
+                  <h3 className="font-medium text-foreground mb-2">Connect to Web</h3>
                   <div>
-                    <Label htmlFor="web-access" className="text-sm text-neutral-400">Access</Label>
+                    <Label htmlFor="web-access" className="text-sm text-muted-foreground">Access</Label>
                     <Select>
-                      <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                      <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                         <SelectValue placeholder="Select access option" />
                       </SelectTrigger>
-                      <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                      <SelectContent className="bg-background border-border dark:border-border text-foreground">
                         <SelectItem value="none">None</SelectItem>
                         <SelectItem value="basic">Basic (1 credit)</SelectItem>
                         <SelectItem value="pro">Pro (3 credits)</SelectItem>
@@ -1402,27 +1607,27 @@ export default function ContentGeneratorPage() {
                     </Select>
                   </div>
                   
-                  <p className="text-xs text-neutral-500 mt-2">Currently, your "Connect to Web" is off, limiting you to pre-trained data. Enabling it reduces AI hallucinations and improves accuracy.</p>
+                  <p className="text-xs text-foreground0 mt-2">Currently, your "Connect to Web" is off, limiting you to pre-trained data. Enabling it reduces AI hallucinations and improves accuracy.</p>
                 </div>
               </CardContent>
             </Card>
 
             {/* Syndication Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Syndication
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-neutral-400">Create marketing materials based on the article for various platforms.</p>
+                <p className="text-sm text-muted-foreground">Create marketing materials based on the article for various platforms.</p>
                 
                 {/* Success/error message display */}
                 {generatedContent.length > 0 && (
                   <div className={`p-3 rounded-md mt-2 mb-2 ${
                     generatedContent[0]?.status === 'success' 
-                      ? 'bg-green-900/20 border border-green-600/20 text-green-500' 
-                      : 'bg-red-900/20 border border-red-600/20 text-red-500'
+                      ? 'bg-green-100 dark:bg-green-900/20 border border-green-600/20 text-green-600 dark:text-green-400' 
+                      : 'bg-red-100 dark:bg-red-900/20 border border-red-600/20 text-red-600 dark:text-red-400'
                   }`}>
                     <p className="text-sm flex items-center">
                       {generatedContent[0]?.status === 'success' 
@@ -1435,68 +1640,68 @@ export default function ContentGeneratorPage() {
                 
                 <div className="grid grid-cols-2 gap-3 mt-3">
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="twitter-post" className="bg-neutral-800 border-neutral-700" />
-                    <Label htmlFor="twitter-post" className="text-neutral-400">Twitter post</Label>
+                    <Checkbox id="twitter-post" className="bg-background border-border dark:border-border" />
+                    <Label htmlFor="twitter-post" className="text-muted-foreground">Twitter post</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="linkedin-post" className="bg-neutral-800 border-neutral-700" />
-                    <Label htmlFor="linkedin-post" className="text-neutral-400">LinkedIn post</Label>
+                    <Checkbox id="linkedin-post" className="bg-background border-border dark:border-border" />
+                    <Label htmlFor="linkedin-post" className="text-muted-foreground">LinkedIn post</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="facebook-post" className="bg-neutral-800 border-neutral-700" />
-                    <Label htmlFor="facebook-post" className="text-neutral-400">Facebook post</Label>
+                    <Checkbox id="facebook-post" className="bg-background border-border dark:border-border" />
+                    <Label htmlFor="facebook-post" className="text-muted-foreground">Facebook post</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="email-newsletter" className="bg-neutral-800 border-neutral-700" />
-                    <Label htmlFor="email-newsletter" className="text-neutral-400">Email newsletter</Label>
+                    <Checkbox id="email-newsletter" className="bg-background border-border dark:border-border" />
+                    <Label htmlFor="email-newsletter" className="text-muted-foreground">Email newsletter</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="whatsapp-message" className="bg-neutral-800 border-neutral-700" />
-                    <Label htmlFor="whatsapp-message" className="text-neutral-400">WhatsApp message</Label>
+                    <Checkbox id="whatsapp-message" className="bg-background border-border dark:border-border" />
+                    <Label htmlFor="whatsapp-message" className="text-muted-foreground">WhatsApp message</Label>
                   </div>
                   
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="pinterest-pin" className="bg-neutral-800 border-neutral-700" />
-                    <Label htmlFor="pinterest-pin" className="text-neutral-400">Pinterest Pin</Label>
+                    <Checkbox id="pinterest-pin" className="bg-background border-border dark:border-border" />
+                    <Label htmlFor="pinterest-pin" className="text-muted-foreground">Pinterest Pin</Label>
                   </div>
                 </div>
                 
                 <div className="mt-4">
-                  <Label htmlFor="link-to-page" className="text-sm text-neutral-400">Link to page</Label>
+                  <Label htmlFor="link-to-page" className="text-sm text-muted-foreground">Link to page</Label>
                   <Select>
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select link option" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="no-link">No Link</SelectItem>
                       <SelectItem value="auto">Auto-generated Link</SelectItem>
                       <SelectItem value="custom">Custom URL</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-neutral-500 mt-1">No link will be used in the creation of marketing materials, ensuring clean and appealing content.</p>
+                  <p className="text-xs text-foreground0 mt-1">No link will be used in the creation of marketing materials, ensuring clean and appealing content.</p>
                 </div>
               </CardContent>
             </Card>
             
             {/* Document Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Document
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="save-to-directory" className="text-sm text-neutral-400">Save to</Label>
+                  <Label htmlFor="save-to-directory" className="text-sm text-muted-foreground">Save to</Label>
                   <div className="flex items-center mt-1">
-                    <div className="bg-neutral-800 border border-neutral-700 rounded-l-md px-3 py-2 text-neutral-400">
+                    <div className="bg-background border border-border dark:border-border rounded-l-md px-3 py-2 text-muted-foreground">
                       Directory: Home
                     </div>
-                    <Button variant="outline" className="rounded-l-none bg-neutral-700 hover:bg-neutral-600 text-white border-0">
+                    <Button variant="outline" className="rounded-l-none bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 text-foreground border-0">
                       Change
                     </Button>
                   </div>
@@ -1505,23 +1710,23 @@ export default function ContentGeneratorPage() {
             </Card>
             
             {/* Publishing Card */}
-            <Card className="bg-neutral-900 border-neutral-800">
+            <Card className="bg-background border-border text-foreground">
               <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
+                <CardTitle className="text-foreground flex items-center gap-2">
                   <FileText className="h-5 w-5" /> Publishing to Website
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label htmlFor="target-website" className="text-sm text-neutral-400">Target Website</Label>
+                  <Label htmlFor="target-website" className="text-sm text-muted-foreground">Target Website</Label>
                   <Select 
                     value={publishing.targetWebsite}
                     onValueChange={(value) => setPublishing({...publishing, targetWebsite: value})}
                   >
-                    <SelectTrigger className="w-full bg-neutral-800 border-neutral-700 text-white mt-1">
+                    <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground mt-1">
                       <SelectValue placeholder="Select website" />
                     </SelectTrigger>
-                    <SelectContent className="bg-neutral-800 border-neutral-700 text-white">
+                    <SelectContent className="bg-background border-border dark:border-border text-foreground">
                       <SelectItem value="none">None</SelectItem>
                       {websiteUrls.map(site => (
                         <SelectItem key={site.id} value={site.url}>
@@ -1535,7 +1740,7 @@ export default function ContentGeneratorPage() {
                       No websites found. Add a blog URL in Settings to enable publishing.
                     </p>
                   ) : (
-                    <p className="text-xs text-neutral-500 mt-1">
+                    <p className="text-xs text-foreground0 mt-1">
                       Select the website where the content will be published.
                     </p>
                   )}
@@ -1546,13 +1751,13 @@ export default function ContentGeneratorPage() {
           </div>
 
           {/* Add this new section before the Generate button */}
-          <Card className="bg-neutral-900 border-neutral-800 mb-4">
+          <Card className="bg-background border-border mb-4">
             <CardHeader>
-              <CardTitle className="text-xl text-white flex items-center gap-2">
-                <Globe className="h-5 w-5 text-neutral-400" /> 
+              <CardTitle className="text-xl text-foreground flex items-center gap-2">
+                <Globe className="h-5 w-5 text-muted-foreground" /> 
                 Blog Publishing
               </CardTitle>
-              <CardDescription className="text-neutral-400">
+              <CardDescription className="text-muted-foreground">
                 Publish the generated content directly to your blog
               </CardDescription>
             </CardHeader>
@@ -1563,7 +1768,7 @@ export default function ContentGeneratorPage() {
                   checked={blogPublishing.publishToBlog}
                   onCheckedChange={(checked) => setBlogPublishing(prev => ({ ...prev, publishToBlog: checked }))}
                 />
-                <Label htmlFor="publishToBlog" className="text-neutral-300">
+                <Label htmlFor="publishToBlog" className="text-foreground dark:text-neutral-300">
                   Publish to blog after generation
                 </Label>
               </div>
@@ -1571,14 +1776,14 @@ export default function ContentGeneratorPage() {
               {blogPublishing.publishToBlog && (
                 <>
                   <div className="mt-4">
-                    <Label htmlFor="blogUrl" className="text-neutral-300 mb-2 block">
+                    <Label htmlFor="blogUrl" className="text-foreground dark:text-neutral-300 mb-2 block">
                       Blog URL
                     </Label>
                     <Input
                       id="blogUrl"
                       disabled={true}
                       value={blogPublishing.blogUrl || 'No blog connected. Configure in Settings.'}
-                      className="bg-neutral-800 border-neutral-700 text-neutral-300"
+                      className="bg-background border-border dark:border-border text-foreground dark:text-neutral-300"
                     />
                     {!blogPublishing.blogUrl && (
                       <p className="text-amber-500 text-sm mt-1 flex items-center gap-1">
@@ -1589,19 +1794,19 @@ export default function ContentGeneratorPage() {
                   </div>
                   
                   <div className="mt-4">
-                    <Label htmlFor="blogCategory" className="text-neutral-300 mb-2 block">
+                    <Label htmlFor="blogCategory" className="text-foreground dark:text-neutral-300 mb-2 block">
                       Blog Category
                     </Label>
                     <Select
                       value={blogPublishing.blogCategory}
                       onValueChange={(value) => setBlogPublishing(prev => ({ ...prev, blogCategory: value }))}
                     >
-                      <SelectTrigger className="bg-neutral-800 border-neutral-700 text-neutral-300">
+                      <SelectTrigger className="bg-background border-border dark:border-border text-foreground dark:text-neutral-300">
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
-                      <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-200">
+                      <SelectContent className="bg-background border-border dark:border-border text-gray-800 dark:text-foreground">
                         {blogCategories.map(category => (
-                          <SelectItem key={category} value={category} className="hover:bg-neutral-700">
+                          <SelectItem key={category} value={category} className="hover:bg-gray-200 dark:bg-muted">
                             {category.charAt(0).toUpperCase() + category.slice(1)}
                           </SelectItem>
                         ))}
@@ -1617,7 +1822,7 @@ export default function ContentGeneratorPage() {
             <Button 
               onClick={handleGenerate} 
               disabled={loading || generationTasks.some(task => !task.mainKeyword.trim() || !task.title.trim())}
-              className="bg-gradient-to-r from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600"
+              className="bg-gradient-to-r from-violet-500 to-indigo-500 text-foreground hover:from-violet-600 hover:to-indigo-600"
             >
               {loading ? 'Generating...' : 'Run Bulk Article Generation'}
             </Button>
@@ -1763,7 +1968,7 @@ export default function ContentGeneratorPage() {
 
         {/* Add section to show previous content after the form */}
         <div className="container mx-auto mt-8 pb-12">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-lg p-4">
+          <div className="bg-background border border-border rounded-lg p-4">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <FileText className="h-5 w-5" /> Previously Generated Content
             </h2>
@@ -1771,10 +1976,10 @@ export default function ContentGeneratorPage() {
             {loadingPrevious ? (
               <div className="py-4 text-center">
                 <Loader2 className="animate-spin h-6 w-6 mx-auto mb-2" />
-                <p className="text-neutral-400">Loading previous content...</p>
+                <p className="text-muted-foreground">Loading previous content...</p>
               </div>
             ) : previousContent.length === 0 ? (
-              <p className="text-neutral-400 py-4 text-center">
+              <p className="text-muted-foreground py-4 text-center">
                 No previously generated content found for this workspace.
               </p>
             ) : (
@@ -1782,31 +1987,31 @@ export default function ContentGeneratorPage() {
                 {previousContent.map((item) => (
                   <div 
                     key={item.id} 
-                    className="flex items-center justify-between p-3 bg-neutral-800 rounded border border-neutral-700"
+                    className="flex items-center justify-between p-3 bg-background rounded border border-border dark:border-border"
                   >
                     <div>
-                      <h3 className="font-medium text-white">{item.title}</h3>
-                      <p className="text-sm text-neutral-400">
+                      <h3 className="font-medium text-foreground">{item.title}</h3>
+                      <p className="text-sm text-muted-foreground">
                         {new Date(item.createdAt).toLocaleString()}
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => viewContent({
-                          id: item.id,
-                          title: item.title,
-                          content: item.content,
-                          status: item.status,
-                          workspace: item.workspace
-                        })}
-                      >
-                        <Eye className="h-4 w-4 mr-1" /> View
-                      </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => viewContent({
+                        id: item.id,
+                        title: item.title,
+                        content: item.content,
+                        status: item.status,
+                        workspace: item.workspace
+                      })}
+                    >
+                      <Eye className="h-4 w-4 mr-1" /> View
+                    </Button>
                       <Button 
                         variant="outline"
-                        className="bg-red-900/20 border-red-600/20 text-red-500 hover:bg-red-900/30 hover:text-red-400"
+                        className="bg-red-100 dark:bg-red-900/20 border-red-600/20 text-red-600 dark:text-red-400 hover:bg-red-900/30 hover:text-red-400"
                         onClick={() => deleteContent(item.id)}
                       >
                         <Trash2 className="h-4 w-4 mr-1" /> Delete
@@ -1821,9 +2026,9 @@ export default function ContentGeneratorPage() {
         
         {/* Modal to display content */}
         {showContentModal && selectedContent && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
+          <div className="fixed inset-0 bg-gray-900/50 dark:bg-black/80 flex items-center justify-center z-50">
+            <div className="bg-background border border-border rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-border flex items-center justify-between">
                 <h3 className="text-xl font-semibold">{selectedContent.title}</h3>
                 <Button 
                   variant="ghost" 
@@ -1841,7 +2046,7 @@ export default function ContentGeneratorPage() {
                   }} />
                 </div>
               </div>
-              <div className="p-4 border-t border-neutral-800 flex justify-end gap-2">
+              <div className="p-4 border-t border-border flex justify-end gap-2">
                 <Button 
                   variant="outline" 
                   onClick={() => {
@@ -1853,7 +2058,7 @@ export default function ContentGeneratorPage() {
                 </Button>
                 <Button 
                   variant="outline"
-                  className="bg-red-900/20 border-red-600/20 text-red-500 hover:bg-red-900/30 hover:text-red-400"
+                  className="bg-red-100 dark:bg-red-900/20 border-red-600/20 text-red-600 dark:text-red-400 hover:bg-red-900/30 hover:text-red-400"
                   onClick={() => {
                     deleteContent(selectedContent.id);
                     setShowContentModal(false);
@@ -1863,6 +2068,69 @@ export default function ContentGeneratorPage() {
                 </Button>
                 <Button onClick={() => setShowContentModal(false)}>
                   Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Import Modal */}
+        {showBulkImportModal && (
+          <div className="fixed inset-0 bg-gray-900/50 dark:bg-black/80 flex items-center justify-center z-50">
+            <div className="bg-background border border-border rounded-lg w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <h3 className="text-xl font-semibold">Bulk Import Keywords</h3>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setShowBulkImportModal(false)}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <div className="p-6 flex-1">
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="bulk-keywords" className="text-sm font-medium">
+                      Keywords
+                    </Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Enter multiple keywords separated by commas, semicolons, or new lines. Each keyword will become a separate generation task.
+                    </p>
+                    <Textarea
+                      id="bulk-keywords"
+                      value={bulkKeywords}
+                      onChange={(e) => setBulkKeywords(e.target.value)}
+                      placeholder={`Example:
+CRM software
+customer relationship management
+best CRM tools
+CRM for small business
+sales automation software`}
+                      className="bg-background border-border dark:border-border text-foreground min-h-[200px]"
+                    />
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    <strong>Preview:</strong> {bulkKeywords.trim() ? 
+                      bulkKeywords.split(/[\n,;\t]+/).filter(k => k.trim()).length + ' keywords will be imported' : 
+                      'No keywords entered'
+                    }
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 border-t border-border flex justify-end gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowBulkImportModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleBulkImport}
+                  disabled={!bulkKeywords.trim()}
+                  className="bg-gradient-to-r from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600"
+                >
+                  Import Keywords
                 </Button>
               </div>
             </div>

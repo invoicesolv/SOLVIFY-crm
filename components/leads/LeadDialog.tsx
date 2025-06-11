@@ -159,12 +159,12 @@ export function LeadDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] bg-neutral-900 border-neutral-800 text-white">
+      <DialogContent className="sm:max-w-[600px] bg-background border-border text-foreground">
         <DialogHeader>
           <DialogTitle>
             {initialData ? "Edit Lead" : "Add New Lead"}
           </DialogTitle>
-          <DialogDescription className="text-neutral-300">
+          <DialogDescription className="text-foreground dark:text-neutral-300">
             Enter the lead's information and SEO requirements
           </DialogDescription>
         </DialogHeader>
@@ -172,33 +172,33 @@ export function LeadDialog({
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="lead_name" className="text-white">Lead Name</Label>
+              <Label htmlFor="lead_name" className="text-foreground">Lead Name</Label>
               <Input
                 id="lead_name"
                 value={formData.lead_name}
                 onChange={(e) =>
                   setFormData({ ...formData, lead_name: e.target.value })
                 }
-                className="bg-neutral-800 border-neutral-700 text-white"
+                className="bg-background border-border dark:border-border text-foreground"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="company" className="text-white">Company</Label>
+              <Label htmlFor="company" className="text-foreground">Company</Label>
               <Input
                 id="company"
                 value={formData.company}
                 onChange={(e) =>
                   setFormData({ ...formData, company: e.target.value })
                 }
-                className="bg-neutral-800 border-neutral-700 text-white"
+                className="bg-background border-border dark:border-border text-foreground"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email" className="text-white">Email</Label>
+              <Label htmlFor="email" className="text-foreground">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -206,39 +206,39 @@ export function LeadDialog({
                 onChange={(e) =>
                   setFormData({ ...formData, email: e.target.value })
                 }
-                className="bg-neutral-800 border-neutral-700 text-white"
+                className="bg-background border-border dark:border-border text-foreground"
                 required
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="phone" className="text-white">Phone</Label>
+              <Label htmlFor="phone" className="text-foreground">Phone</Label>
               <Input
                 id="phone"
                 value={formData.phone}
                 onChange={(e) =>
                   setFormData({ ...formData, phone: e.target.value })
                 }
-                className="bg-neutral-800 border-neutral-700 text-white"
+                className="bg-background border-border dark:border-border text-foreground"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="source" className="text-white">Lead Source</Label>
+              <Label htmlFor="source" className="text-foreground">Lead Source</Label>
               <Select
                 value={formData.source}
                 onValueChange={(value) =>
                   setFormData({ ...formData, source: value })
                 }
               >
-                <SelectTrigger className="bg-neutral-800 border-neutral-700 text-white">
+                <SelectTrigger className="bg-background border-border dark:border-border text-foreground">
                   <SelectValue placeholder="Select source" />
                 </SelectTrigger>
-                <SelectContent className="bg-neutral-900 border-neutral-700 text-white">
+                <SelectContent className="bg-background border-border dark:border-border text-foreground">
                   {LEAD_SOURCES.map((source) => (
-                    <SelectItem key={source.id} value={source.id} className="text-white hover:text-white focus:text-white focus:bg-neutral-800 data-[highlighted]:bg-neutral-800 data-[highlighted]:text-white">
+                    <SelectItem key={source.id} value={source.id} className="text-foreground hover:text-foreground focus:text-foreground focus:bg-background data-[highlighted]:bg-background data-[highlighted]:text-foreground">
                       {source.name}
                     </SelectItem>
                   ))}
@@ -247,19 +247,19 @@ export function LeadDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="service_category" className="text-white">Service Category</Label>
+              <Label htmlFor="service_category" className="text-foreground">Service Category</Label>
               <Select
                 value={formData.service_category}
                 onValueChange={(value) =>
                   setFormData({ ...formData, service_category: value })
                 }
               >
-                <SelectTrigger className="bg-neutral-800 border-neutral-700 text-white">
+                <SelectTrigger className="bg-background border-border dark:border-border text-foreground">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
-                <SelectContent className="bg-neutral-900 border-neutral-700 text-white">
+                <SelectContent className="bg-background border-border dark:border-border text-foreground">
                   {SERVICE_CATEGORIES.map((category) => (
-                    <SelectItem key={category.id} value={category.id} className="text-white hover:text-white focus:text-white focus:bg-neutral-800 data-[highlighted]:bg-neutral-800 data-[highlighted]:text-white">
+                    <SelectItem key={category.id} value={category.id} className="text-foreground hover:text-foreground focus:text-foreground focus:bg-background data-[highlighted]:bg-background data-[highlighted]:text-foreground">
                       {category.name}
                     </SelectItem>
                   ))}
@@ -269,7 +269,7 @@ export function LeadDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="website_url" className="text-white">Website URL</Label>
+            <Label htmlFor="website_url" className="text-foreground">Website URL</Label>
             <Input
               id="website_url"
               type="url"
@@ -277,14 +277,14 @@ export function LeadDialog({
               onChange={(e) =>
                 setFormData({ ...formData, website_url: e.target.value })
               }
-              className="bg-neutral-800 border-neutral-700 text-white"
+              className="bg-background border-border dark:border-border text-foreground"
               required
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="monthly_traffic" className="text-white">Monthly Traffic</Label>
+              <Label htmlFor="monthly_traffic" className="text-foreground">Monthly Traffic</Label>
               <Input
                 id="monthly_traffic"
                 type="number"
@@ -295,26 +295,26 @@ export function LeadDialog({
                     monthly_traffic: parseInt(e.target.value) || 0,
                   })
                 }
-                className="bg-neutral-800 border-neutral-700 text-white"
+                className="bg-background border-border dark:border-border text-foreground"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="current_rank" className="text-white">Current Google Ranking</Label>
+              <Label htmlFor="current_rank" className="text-foreground">Current Google Ranking</Label>
               <Input
                 id="current_rank"
                 value={formData.current_rank}
                 onChange={(e) =>
                   setFormData({ ...formData, current_rank: e.target.value })
                 }
-                className="bg-neutral-800 border-neutral-700 text-white"
+                className="bg-background border-border dark:border-border text-foreground"
                 placeholder="e.g., 'Position 15 for main keyword'"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="target_keywords" className="text-white">Target Keywords</Label>
+            <Label htmlFor="target_keywords" className="text-foreground">Target Keywords</Label>
             <Input
               id="target_keywords"
               value={formData.target_keywords?.join(", ")}
@@ -324,13 +324,13 @@ export function LeadDialog({
                   target_keywords: e.target.value.split(",").map((k) => k.trim()),
                 })
               }
-              className="bg-neutral-800 border-neutral-700 text-white"
+              className="bg-background border-border dark:border-border text-foreground"
               placeholder="Enter keywords separated by commas"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="qualification_score" className="text-white">
+            <Label htmlFor="qualification_score" className="text-foreground">
               Qualification Score (1-10)
             </Label>
             <Input
@@ -345,19 +345,19 @@ export function LeadDialog({
                   qualification_score: parseInt(e.target.value) || 5,
                 })
               }
-              className="bg-neutral-800 border-neutral-700 text-white"
+              className="bg-background border-border dark:border-border text-foreground"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="notes" className="text-white">Notes</Label>
+            <Label htmlFor="notes" className="text-foreground">Notes</Label>
             <Textarea
               id="notes"
               value={formData.notes}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                 setFormData({ ...formData, notes: e.target.value })
               }
-              className="bg-neutral-800 border-neutral-700 text-white"
+              className="bg-background border-border dark:border-border text-foreground"
               rows={4}
             />
           </div>
@@ -367,11 +367,11 @@ export function LeadDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="text-white"
+              className="text-foreground"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading} className="text-white">
+            <Button type="submit" disabled={loading} className="text-foreground">
               {loading ? "Saving..." : initialData ? "Update Lead" : "Add Lead"}
             </Button>
           </div>

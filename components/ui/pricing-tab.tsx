@@ -15,7 +15,7 @@ export function Tab({ text, selected, setSelected, discount }: TabProps) {
       onClick={() => setSelected(text)}
       className={cn(
         "relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-        selected ? "text-white" : "text-white/60 hover:text-white/80"
+        selected ? "text-foreground" : "text-foreground/60 hover:text-foreground/80"
       )}
     >
       {selected && (

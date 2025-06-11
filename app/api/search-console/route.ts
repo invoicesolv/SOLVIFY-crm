@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import authOptions from "@/lib/auth";
 import { supabase } from '@/lib/supabase';
+import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -74,6 +75,49 @@ interface SearchConsoleResult {
   byCountry: {[key: string]: { clicks: number; impressions: number }};
 }
 
+interface QueryDataItem {
+  query: string;
+  clicks: number;
+  impressions: number;
+  position: number;
+  weightedPosition: number;
+}
+
+interface DeviceDataItem {
+  device: string;
+  clicks: number;
+  impressions: number;
+}
+
+interface CountryDataItem {
+  country: string;
+  clicks: number;
+  impressions: number;
+}
+
+interface CombinedQueryItem {
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: string;
+  position: string;
+}
+
+interface CombinedResults {
+  overview: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+    weightedPosition: number;
+  };
+  queryData: Record<string, QueryDataItem>;
+  deviceData: Record<string, DeviceDataItem>;
+  countryData: Record<string, CountryDataItem>;
+  combinedQueries: CombinedQueryItem[];
+  combinedDevices: DeviceDataItem[];
+}
+
 // Add helper function for date formatting
 function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
@@ -109,13 +153,22 @@ function getDateRange(range: string): { startDate: string; endDate: string } {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('[Search Console API] Starting POST request handler');
     const { startDate, endDate, siteUrl } = await request.json();
+    
+    console.log('[Search Console API] Request parameters:', {
+      startDate,
+      endDate,
+      siteUrl,
+      requestUrl: request.url
+    });
     
     // Get user from session
     const session = await getServerSession(authOptions);
     const userId = session?.user?.id;
 
     if (!userId) {
+      console.error('[Search Console API] Authentication error: No valid user ID in session');
       return NextResponse.json(
         { error: 'User not authenticated' },
         { status: 401 }
@@ -134,77 +187,130 @@ export async function POST(request: NextRequest) {
       userId
     });
 
-    // Get required token
-    const { data: integrations, error: tokenError } = await supabase
-      .from('integrations')
-      .select('access_token, refresh_token, expires_at')
-      .eq('service_name', 'google-searchconsole')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    // Get the access token with proactive token refresh if needed
+    const freshToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');
+    
+    // Get the current token from database
+    const { data: integration, error: tokenError } = await supabase
+        .from('integrations')
+        .select('access_token, refresh_token, expires_at')
+        .eq('service_name', 'google-searchconsole')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+    if (tokenError || !integration || integration.length === 0) {
+      console.error('[Search Console API] No Search Console integration found:', tokenError);
+      return NextResponse.json(
+        { 
+          error: 'Search Console integration not found',
+          details: 'Please connect your Google Search Console account in settings',
+          sites: []
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Use the freshly refreshed token if available, otherwise use the stored token
+    const accessToken = freshToken || integration[0].access_token;
 
-    if (tokenError || !integrations || integrations.length === 0) {
-      console.error('[Search Console API] Token fetch error:', tokenError);
+    if (!accessToken) {
+      console.error('[Search Console API] No valid access token available');
       return NextResponse.json(
         { 
           error: 'Not authenticated with Search Console',
+          details: 'No valid token found',
           sites: []
         },
         { status: 401 }
       );
     }
 
-    const accessToken = integrations[0].access_token;
-
-    // Try fetching Search Console sites
-    let sites = null;
     try {
-      console.log('[Search Console API] Fetching sites...');
-      sites = await fetchSearchConsoleSites(accessToken);
-      console.log('[Search Console API] Found sites:', sites);
-    } catch (error: any) {
-      console.error('[Search Console API] Error fetching sites:', error);
-      return NextResponse.json(
-        { 
-          error: 'Failed to fetch sites',
-          details: error.message,
+      console.log('[Search Console API] Fetching sites with accessToken');
+      const sites = await fetchSearchConsoleSites(accessToken);
+      
+      if (!siteUrl && sites.length > 0) {
+        // No site URL provided, return just the list of sites
+        return NextResponse.json({
+          sites,
+          message: 'Please select a site'
+        });
+      }
+      
+      if (!siteUrl) {
+        return NextResponse.json({
+          error: 'No site URL provided and no sites available',
           sites: []
-        },
-        { status: 500 }
-      );
+        });
     }
 
-    // If siteUrl is provided, fetch search data
-    let searchData: SearchConsoleResult | null = null;
-    if (siteUrl) {
+      // Fetch the actual search console data
+      console.log(`[Search Console API] Fetching data for site: ${siteUrl}`);
+      const searchData = await fetchSearchConsoleData(
+        accessToken,
+        dates.startDate,
+        dates.endDate,
+        siteUrl
+      );
+
+      console.log('[Search Console API] Search Console data successfully retrieved');
+      
+      return NextResponse.json({
+        sites,
+        searchData,
+        message: 'Search Console data retrieved successfully'
+        });
+    } catch (apiError: any) {
+      // Try refreshing token on auth error and retry
       try {
-        console.log('[Search Console API] Fetching search data for site:', siteUrl);
-        searchData = await fetchSearchConsoleData(accessToken, dates.startDate, dates.endDate, siteUrl);
-        console.log('[Search Console API] Search data fetched successfully');
-      } catch (error: any) {
-        console.error('[Search Console API] Error fetching search data:', error);
+        return await handleTokenRefreshOnError(
+          apiError,
+          userId,
+          'google-searchconsole',
+          async (refreshedToken) => {
+            const sites = await fetchSearchConsoleSites(refreshedToken);
+            
+            if (!siteUrl && sites.length > 0) {
+              return NextResponse.json({
+                sites,
+                message: 'Please select a site'
+              });
+            }
+            
+            const searchData = await fetchSearchConsoleData(
+              refreshedToken,
+              dates.startDate,
+              dates.endDate,
+              siteUrl || sites[0].url
+            );
+            
+            return NextResponse.json({
+              sites,
+              searchData,
+              message: 'Search Console data retrieved with refreshed token'
+            });
+          }
+        );
+      } catch (refreshError) {
+        console.error('[Search Console API] Error after token refresh attempt:', refreshError);
         return NextResponse.json(
           { 
-            error: 'Failed to fetch search data',
-            details: error.message,
-            sites,
-            searchConsole: null
+            error: 'Failed to retrieve Search Console data',
+            details: (refreshError as Error).message || 'Unknown error',
+            sites: []
           },
           { status: 500 }
         );
       }
     }
-
-    return NextResponse.json({
-      sites,
-      searchConsole: searchData
-    });
-  } catch (error: any) {
-    console.error('[Search Console API] Fatal error:', error);
+  } catch (error) {
+    console.error('[Search Console API] Unexpected error:', error);
     return NextResponse.json(
       { 
-        error: 'Failed to process request',
-        details: error.message
+        error: 'Internal server error',
+        details: (error as Error).message || 'Unknown error',
+        sites: []
       },
       { status: 500 }
     );
@@ -215,153 +321,247 @@ async function fetchSearchConsoleSites(accessToken: string) {
   const response = await fetch(
     'https://www.googleapis.com/webmasters/v3/sites',
     {
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-      },
+      }
     }
   );
 
   if (!response.ok) {
-    throw new Error('Failed to fetch Search Console sites');
+    const errorText = await response.text();
+    console.error('Failed to fetch Search Console sites:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText
+    });
+    throw new Error(`Failed to fetch sites: ${response.statusText}`);
   }
 
-  const data = await response.json();
-  return data.siteEntry?.map((site: any) => ({
+  const sitesData = await response.json();
+  return sitesData.siteEntry?.map((site: any) => ({
     url: site.siteUrl,
-    permissionLevel: site.permissionLevel
+    permissionLevel: site.permissionLevel || 'unknown'
   })) || [];
 }
 
 async function fetchSearchConsoleData(accessToken: string, startDate: string, endDate: string, siteUrl: string): Promise<SearchConsoleResult> {
-  try {
-    console.log('[Search Console API] Fetching search data:', { siteUrl, startDate, endDate });
-
-    // Format dates properly
-    const formattedStartDate = getFormattedDate(startDate);
-    const formattedEndDate = getFormattedDate(endDate);
-
-    console.log('[Search Console API] Using formatted dates:', { formattedStartDate, formattedEndDate });
-
-    // Handle sc-domain: prefix - don't encode the whole URL if it's a domain property
-    const apiSiteUrl = siteUrl.startsWith('sc-domain:') 
-      ? encodeURIComponent(siteUrl)  // Just encode the whole thing as is
-      : encodeURIComponent(siteUrl);
-
-    console.log('[Search Console API] Using API URL:', `https://www.googleapis.com/webmasters/v3/sites/${apiSiteUrl}/searchAnalytics/query`);
-
-    const requestBody = {
-      startDate: formattedStartDate,
-      endDate: formattedEndDate,
-      dimensions: ['query', 'page', 'device', 'country'],
-      rowLimit: 100,
-      startRow: 0,
-      dimensionFilterGroups: []
-    };
-
-    console.log('[Search Console API] Request body:', JSON.stringify(requestBody, null, 2));
-
-    const response = await fetch(
-      `https://www.googleapis.com/webmasters/v3/sites/${apiSiteUrl}/searchAnalytics/query`,
+  console.log(`[Search Console API] Fetching data for site: ${siteUrl}, dates: ${startDate} to ${endDate}`);
+    
+  // Initialize empty result structure
+  const result: SearchConsoleResult = {
+      overview: {
+        clicks: 0,
+        impressions: 0,
+        ctr: 0,
+      position: 0
+    },
+    topQueries: [],
+    byDevice: {},
+    byCountry: {}
+  };
+          
+  // Fetch overview data (no dimensions)
+          const overviewResponse = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
       {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+              body: JSON.stringify({
+        startDate,
+        endDate,
+        rowLimit: 1
+              })
       }
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Search Console API] Error response:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText
+          if (!overviewResponse.ok) {
+            const errorText = await overviewResponse.text();
+    console.error('Failed to fetch overview data:', {
+              status: overviewResponse.status,
+      statusText: overviewResponse.statusText,
+      error: errorText
       });
-      
-      try {
-        const errorJson = JSON.parse(errorText);
-        throw new Error(`Search Console API error: ${errorJson.error?.message || response.statusText}`);
-      } catch (e) {
-        throw new Error(`Search Console API error: ${response.statusText} - ${errorText}`);
-      }
-    }
-
-    const data = await response.json();
-    console.log('[Search Console API] Received data:', JSON.stringify(data, null, 2));
-
-    if (!data.rows || data.rows.length === 0) {
-      console.log('[Search Console API] No data rows returned');
-      return {
-        overview: {
-          clicks: 0,
-          impressions: 0,
-          ctr: 0,
-          position: 0
-        },
-        topQueries: [],
-        byDevice: {},
-        byCountry: {}
-      };
-    }
-
-    const totals = {
-      clicks: 0,
-      impressions: 0,
-      ctr: 0,
-      position: 0
+    throw new Error(`Failed to fetch overview data: ${overviewResponse.statusText}`);
+          }
+          
+          const overviewData = await overviewResponse.json();
+  if (overviewData.rows && overviewData.rows.length > 0) {
+    const row = overviewData.rows[0];
+    result.overview = {
+      clicks: row.clicks || 0,
+      impressions: row.impressions || 0,
+      ctr: row.ctr ? row.ctr * 100 : 0, // Convert to percentage
+      position: row.position || 0
     };
+          }
+          
+  // Fetch query data (dimension: query)
+  const queryResponse = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+        startDate,
+        endDate,
+                dimensions: ['query'],
+        rowLimit: 20 // Get top 20 queries
+              })
+            }
+          );
 
-    const byDevice: { [key: string]: { clicks: number; impressions: number } } = {};
-    const byCountry: { [key: string]: { clicks: number; impressions: number } } = {};
-
-    data.rows.forEach((row: any) => {
-      totals.clicks += row.clicks;
-      totals.impressions += row.impressions;
-      totals.ctr += row.ctr;
-      totals.position += row.position;
-
-      const device = row.keys[2];
-      if (!byDevice[device]) {
-        byDevice[device] = { clicks: 0, impressions: 0 };
-      }
-      byDevice[device].clicks += row.clicks;
-      byDevice[device].impressions += row.impressions;
-
-      const country = row.keys[3];
-      if (!byCountry[country]) {
-        byCountry[country] = { clicks: 0, impressions: 0 };
-      }
-      byCountry[country].clicks += row.clicks;
-      byCountry[country].impressions += row.impressions;
-    });
-
-    return {
-      overview: {
-        clicks: totals.clicks,
-        impressions: totals.impressions,
-        ctr: (totals.ctr / data.rows.length) * 100,
-        position: totals.position / data.rows.length
-      },
-      topQueries: data.rows.map((row: any) => ({
+  if (!queryResponse.ok) {
+    console.error('Failed to fetch query data:', queryResponse.statusText);
+    // Continue with other requests instead of throwing
+  } else {
+    const queryData = await queryResponse.json();
+    if (queryData.rows && queryData.rows.length > 0) {
+      result.topQueries = queryData.rows.map((row: any) => ({
         query: row.keys[0],
-        page: row.keys[1],
-        device: row.keys[2],
-        country: row.keys[3],
-        clicks: row.clicks,
-        impressions: row.impressions,
-        ctr: (row.ctr * 100).toFixed(2) + '%',
-        position: row.position.toFixed(1)
-      })),
-      byDevice,
-      byCountry
-    };
+        page: '', // Will fill this with page data in a separate request
+        clicks: row.clicks || 0,
+        impressions: row.impressions || 0,
+        ctr: row.ctr ? (row.ctr * 100).toFixed(2) + '%' : '0%',
+        position: row.position ? row.position.toFixed(1) : '0',
+        device: '', // Will be filled later
+        country: '' // Will be filled later
+      }));
+            }
+          }
+          
+  // Fetch device data (dimension: device)
+          const deviceResponse = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+        startDate,
+        endDate,
+                dimensions: ['device'],
+                rowLimit: 10
+              })
+            }
+          );
+          
+  if (!deviceResponse.ok) {
+    console.error('Failed to fetch device data:', deviceResponse.statusText);
+    // Continue with other requests instead of throwing
+  } else {
+            const deviceData = await deviceResponse.json();
+            if (deviceData.rows && deviceData.rows.length > 0) {
+              deviceData.rows.forEach((row: any) => {
+                const device = row.keys[0];
+        result.byDevice[device] = {
+          clicks: row.clicks || 0,
+          impressions: row.impressions || 0
+        };
+              });
+            }
+          }
+          
+  // Fetch country data (dimension: country)
+          const countryResponse = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+        startDate,
+        endDate,
+                dimensions: ['country'],
+                rowLimit: 10
+              })
+            }
+          );
+          
+  if (!countryResponse.ok) {
+    console.error('Failed to fetch country data:', countryResponse.statusText);
+    // Continue instead of throwing
+  } else {
+            const countryData = await countryResponse.json();
+            if (countryData.rows && countryData.rows.length > 0) {
+              countryData.rows.forEach((row: any) => {
+        const country = row.keys[0];
+        result.byCountry[country] = {
+          clicks: row.clicks || 0,
+          impressions: row.impressions || 0
+        };
+              });
+            }
+          }
+
+  // Fetch detailed query data with pages (dimensions: query, page)
+  try {
+    const queryPageResponse = await fetch(
+      `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          dimensions: ['query', 'page'],
+          rowLimit: 100 // Get more data to match queries with pages
+        })
+      }
+    );
+
+    if (queryPageResponse.ok) {
+      const queryPageData = await queryPageResponse.json();
+      if (queryPageData.rows && queryPageData.rows.length > 0) {
+        // Create a map of query to page
+        const queryPageMap = new Map();
+        
+        queryPageData.rows.forEach((row: any) => {
+          const query = row.keys[0];
+          const page = row.keys[1];
+          
+          // Only update if this page has more clicks for this query
+          if (!queryPageMap.has(query) || queryPageMap.get(query).clicks < row.clicks) {
+            queryPageMap.set(query, { 
+              page, 
+              clicks: row.clicks 
+        });
+      }
+    });
+    
+        // Update topQueries with page information
+        result.topQueries = result.topQueries.map(query => {
+          const pageInfo = queryPageMap.get(query.query);
+          if (pageInfo) {
+            return {
+              ...query,
+              page: pageInfo.page
+            };
+          }
+          return query;
+        });
+      }
+    }
   } catch (error) {
-    console.error('[Search Console API] Error in fetchSearchConsoleData:', error);
-    throw error;
+    console.error('Error fetching query page data:', error);
+    // Continue without page data
   }
+
+  return result;
 }
 
 async function fetchBacklinksData(accessToken: string, siteUrl: string) {

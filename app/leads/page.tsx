@@ -11,7 +11,10 @@ import {
   FileSpreadsheet,
   MoveRight,
   Tags,
-  UserPlus
+  UserPlus,
+  Upload,
+  FolderOpen,
+  Star
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +23,10 @@ import { Glow } from "@/components/ui/glow";
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { LeadTable } from "@/components/leads/LeadTable";
 import { LeadDialog } from "@/components/leads/LeadDialog";
+import { ImportLeadsDialog } from "@/components/leads/ImportLeadsDialog";
 import { ImportCustomersDialog } from "@/components/leads/ImportCustomersDialog";
+import { FolderManagementDialog } from "@/components/leads/FolderManagementDialog";
+import { FolderSidebar } from "@/components/leads/FolderSidebar";
 import { AnimatedBorderCard } from "@/components/ui/animated-border-card";
 import { supabase } from "@/lib/supabase";
 import { LeadsList } from "@/components/leads/LeadsList";
@@ -61,7 +67,14 @@ export default function LeadsPage() {
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [importDialog, setImportDialog] = useState(false);
+  const [importCustomersDialog, setImportCustomersDialog] = useState(false);
+  const [folderManagementDialog, setFolderManagementDialog] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const tableRef = useRef<{ loadLeads: () => Promise<void> }>(null);
+  const [trialInfo, setTrialInfo] = useState<{daysRemaining: number | null; plan: string}>({
+    daysRemaining: null,
+    plan: 'free'
+  });
   const [metrics, setMetrics] = useState({
     totalLeads: 0,
     newLeadsToday: 0,
@@ -69,68 +82,116 @@ export default function LeadsPage() {
     averageQualificationScore: 0
   });
 
+  // Load trial information
+  useEffect(() => {
+    const loadTrialInfo = async () => {
+      if (!session?.user?.id) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('user_preferences')
+          .select('plan_id, trial_end_date')
+          .eq('user_id', session.user.id)
+          .single();
+          
+        if (error) {
+          console.error('Error loading trial info:', error);
+          return;
+        }
+        
+        if (data?.trial_end_date) {
+          const endDate = new Date(data.trial_end_date);
+          const today = new Date();
+          const diffTime = endDate.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          setTrialInfo({
+            daysRemaining: diffDays > 0 ? diffDays : 0,
+            plan: data.plan_id || 'free'
+          });
+        }
+      } catch (error) {
+        console.error('Error in loadTrialInfo:', error);
+      }
+    };
+    
+    loadTrialInfo();
+  }, [session?.user?.id]);
+
   // Load workspace data
   useEffect(() => {
     const loadWorkspace = async () => {
-      if (!session?.user?.id) return;
+      if (!session?.user?.id) {
+        console.log('[Leads] No user session found');
+        return;
+      }
 
       try {
         setLoadingWorkspace(true);
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("workspace_id")
-          .eq("user_id", session.user.id)
-          .single();
+        console.log('[Leads] Loading workspace for user:', session.user.email);
+        
+        // First try to get team memberships by user ID
+        const { data: teamData, error: teamError } = await supabase
+          .from("team_members")
+          .select(`
+            workspace_id,
+            workspaces:workspace_id (
+              id,
+              name
+            )
+          `)
+          .eq("user_id", session.user.id);
 
-        if (profileError && profileError.code !== "PGRST116") {
-          console.error("Error loading profile:", profileError);
+        if (teamError) {
+          console.error("[Leads] Error loading team data by user_id:", teamError);
+          
+          // Try by email as fallback
+          if (session.user?.email) {
+            console.log('[Leads] Trying to fetch by email:', session.user.email);
+            const { data: emailTeamData, error: emailTeamError } = await supabase
+              .from("team_members")
+              .select(`
+                workspace_id,
+                workspaces:workspace_id (
+                  id,
+                  name
+                )
+              `)
+              .eq("email", session.user.email);
+              
+            if (emailTeamError) {
+              console.error("[Leads] Error loading team data by email:", emailTeamError);
+              return;
+            }
+            
+            if (emailTeamData && emailTeamData.length > 0) {
+              const workspaceData = emailTeamData.map(item => item.workspaces).filter(Boolean);
+              console.log('[Leads] Found workspaces by email:', workspaceData);
+              setWorkspaces(workspaceData);
+              
+              if (workspaceData.length > 0) {
+                setWorkspace(workspaceData[0].id);
+                console.log('[Leads] Set workspace to:', workspaceData[0].id);
+              }
+            }
+          }
           return;
         }
 
-        let workspaceId = profileData?.workspace_id;
-
-        if (!workspaceId) {
-          // If no workspace set, use first available or create one
-          const { data: teamData, error: teamError } = await supabase
-          .from("team_members")
-            .select(`
-              workspace_id,
-              workspaces:workspace_id (
-                id,
-                name
-              )
-            `)
-          .eq("user_id", session.user.id);
-
-          if (teamError) {
-            console.error("Error loading team data:", teamError);
-            return;
-          }
-
-          const workspaceData = teamData?.map(item => item.workspaces) || [];
+        if (teamData && teamData.length > 0) {
+          const workspaceData = teamData.map(item => item.workspaces).filter(Boolean);
+          console.log('[Leads] Found workspaces by user_id:', workspaceData);
           setWorkspaces(workspaceData);
           
-          if (workspaceData?.length > 0) {
-            workspaceId = workspaceData[0].id;
-            setWorkspace(workspaceId);
+          if (workspaceData.length > 0) {
+            setWorkspace(workspaceData[0].id);
+            console.log('[Leads] Set workspace to:', workspaceData[0].id);
           }
         } else {
-          // Get the workspace name
-          const { data: workspaceData, error: workspaceError } = await supabase
-            .from("workspaces")
-            .select("id, name")
-            .eq("id", workspaceId);
-
-          if (workspaceError) {
-            console.error("Error loading workspace:", workspaceError);
-            return;
-          }
-
-          setWorkspaces(workspaceData || []);
-          setWorkspace(workspaceId);
+          console.log('[Leads] No team memberships found');
         }
       } catch (error) {
-        console.error("Error loading workspaces:", error);
+        console.error("[Leads] Error loading workspaces:", error);
       } finally {
         setLoadingWorkspace(false);
       }
@@ -141,6 +202,20 @@ export default function LeadsPage() {
 
   const handleMetricsChange = (newMetrics: typeof metrics) => {
     setMetrics(newMetrics);
+  };
+
+  const handleFoldersChanged = () => {
+    // Refresh leads to update folder information
+    if (tableRef.current) {
+      tableRef.current.loadLeads();
+    }
+  };
+
+  const handleFolderSelect = (folderId: string | null) => {
+    setSelectedFolder(folderId);
+    if (tableRef.current) {
+      tableRef.current.loadLeads();
+    }
   };
 
   const fadeInUp = {
@@ -157,7 +232,7 @@ export default function LeadsPage() {
 
   return (
     <SidebarDemo>
-      <div className="min-h-screen bg-neutral-950 text-white p-8">
+      <div className="min-h-screen bg-background text-foreground p-8">
         {/* Background Glow */}
         <Glow className="fixed inset-0" />
 
@@ -170,11 +245,23 @@ export default function LeadsPage() {
             className="flex items-center justify-between mb-8"
           >
             <div>
-              <h1 className="text-3xl font-bold mb-2 text-neutral-100">
+              <h1 className="text-3xl font-bold mb-2 text-foreground">
                 Lead Management
+                {trialInfo.daysRemaining !== null && trialInfo.plan === 'free' && (
+                  <Badge variant="outline" className="ml-2 bg-blue-500/10 text-blue-400">
+                    Trial: {trialInfo.daysRemaining} days left
+                  </Badge>
+                )}
               </h1>
-              <p className="text-neutral-400">
-                Track and qualify your SEO leads
+              <p className="text-muted-foreground">
+                Track and qualify your leads
+                {trialInfo.daysRemaining !== null && trialInfo.daysRemaining <= 5 && trialInfo.plan === 'free' && (
+                  <span className="ml-2 text-blue-400 hover:text-blue-300">
+                    <a href="/settings/billing" className="inline-flex items-center">
+                      Upgrade now <ArrowRight className="h-3 w-3 ml-1" />
+                    </a>
+                  </span>
+                )}
               </p>
             </div>
 
@@ -184,13 +271,13 @@ export default function LeadsPage() {
               <select
                   value={workspace || ""}
                   onChange={(e) => setWorkspace(e.target.value)}
-                  className="bg-neutral-900 border border-neutral-800 rounded-md px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="bg-background border border-border rounded-md px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                  <option value="" disabled className="text-white bg-neutral-900">
+                  <option value="" disabled className="text-foreground bg-background">
                   Select Workspace
                 </option>
                   {workspaces.map((ws) => (
-                    <option key={ws.id} value={ws.id} className="text-white bg-neutral-900">
+                    <option key={ws.id} value={ws.id} className="text-foreground bg-background">
                       {ws.name}
                   </option>
                 ))}
@@ -199,11 +286,29 @@ export default function LeadsPage() {
 
               <Button 
                 className="flex items-center gap-2"
-                onClick={() => setImportDialog(true)}
+                onClick={() => setFolderManagementDialog(true)}
+                disabled={!workspace}
+              >
+                <FolderOpen className="h-4 w-4" />
+                Manage Folders
+              </Button>
+
+              <Button 
+                className="flex items-center gap-2"
+                onClick={() => setImportCustomersDialog(true)}
                 disabled={!workspace}
               >
                 <UserPlus className="h-4 w-4" />
                 Import Customers
+              </Button>
+
+              <Button 
+                className="flex items-center gap-2"
+                onClick={() => setImportDialog(true)}
+                disabled={!workspace}
+              >
+                <Upload className="h-4 w-4" />
+                Import Leads
               </Button>
 
               <Button 
@@ -224,110 +329,145 @@ export default function LeadsPage() {
             variants={fadeInUp}
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
           >
-            <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-neutral-800 p-6 relative group" gradient="blue-purple">
+            <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-border p-6 relative group" gradient="blue-purple">
               <div className="flex items-center gap-4 relative z-10">
                 <div className="p-3 bg-blue-500/10 rounded-lg">
                   <Users className="h-5 w-5 text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-neutral-400">Total Leads</p>
-                  <p className="text-xl font-bold text-white">{metrics.totalLeads}</p>
+                  <p className="text-sm text-muted-foreground">Total Leads</p>
+                  <p className="text-xl font-bold text-foreground">{metrics.totalLeads}</p>
                 </div>
               </div>
             </AnimatedBorderCard>
 
-            <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-neutral-800 p-6 relative group" gradient="green-blue">
+            <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-border p-6 relative" gradient="green-blue">
               <div className="flex items-center gap-4 relative z-10">
                 <div className="p-3 bg-green-500/10 rounded-lg">
-                  <ArrowRight className="h-5 w-5 text-green-400" />
+                  <Plus className="h-5 w-5 text-green-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-neutral-400">New Today</p>
-                  <p className="text-xl font-bold text-white">{metrics.newLeadsToday}</p>
+                  <p className="text-sm text-muted-foreground">New Today</p>
+                  <p className="text-xl font-bold text-foreground">{metrics.newLeadsToday}</p>
                 </div>
               </div>
             </AnimatedBorderCard>
 
-            <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-neutral-800 p-6 relative group" gradient="purple-pink">
-              <div className="flex items-center gap-4 relative z-10">
-                <div className="p-3 bg-purple-500/10 rounded-lg">
-                  <MoveRight className="h-5 w-5 text-purple-400" />
-                </div>
-                <div>
-                  <p className="text-sm text-neutral-400">Conversion Rate</p>
-                  <p className="text-xl font-bold text-white">{metrics.conversionRate}%</p>
-                </div>
-              </div>
-            </AnimatedBorderCard>
-
-            <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-neutral-800 p-6 relative group" gradient="orange-red">
+            <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-border p-6 relative" gradient="purple-pink">
               <div className="flex items-center gap-4 relative z-10">
                 <div className="p-3 bg-yellow-500/10 rounded-lg">
-                  <Tags className="h-5 w-5 text-yellow-400" />
+                  <ArrowRight className="h-5 w-5 text-yellow-400" />
                 </div>
                 <div>
-                  <p className="text-sm text-neutral-400">Avg. Quality Score</p>
-                  <p className="text-xl font-bold text-white">{metrics.averageQualificationScore}</p>
+                  <p className="text-sm text-muted-foreground">Conversion Rate</p>
+                  <p className="text-xl font-bold text-foreground">{metrics.conversionRate}%</p>
+                </div>
+              </div>
+            </AnimatedBorderCard>
+
+            <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-border p-6 relative" gradient="orange-red">
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="p-3 bg-purple-500/10 rounded-lg">
+                  <Star className="h-5 w-5 text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Avg. Qualification</p>
+                  <p className="text-xl font-bold text-foreground">{metrics.averageQualificationScore}</p>
                 </div>
               </div>
             </AnimatedBorderCard>
           </motion.div>
 
-          {/* Service Category Filters */}
+          {/* Main Content with Folder Sidebar and Leads Table */}
           <motion.div
             initial="hidden"
             animate="visible"
             variants={fadeInUp}
-            className="flex flex-wrap gap-2 mb-6"
+            className="mb-8"
           >
-            {SERVICE_CATEGORIES.map((category) => (
-              <Badge
-                key={category.id}
-                className={`px-3 py-1.5 cursor-pointer ${category.color}`}
-                variant="outline"
-              >
-                {category.name}
-              </Badge>
-            ))}
-          </motion.div>
+            {loadingWorkspace ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span className="ml-3 text-muted-foreground">Loading workspace...</span>
+              </div>
+            ) : !workspace ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">No workspace found. Please check your permissions or contact support.</p>
+              </div>
+            ) : (
+              <div className="flex bg-background border border-border rounded-md overflow-hidden">
+                {/* Folder Sidebar */}
+                <FolderSidebar 
+                  workspaceId={workspace}
+                  selectedFolderId={selectedFolder}
+                  onFolderSelect={handleFolderSelect}
+                  onManageFolders={() => setFolderManagementDialog(true)}
+                />
 
           {/* Leads Table */}
-          {session?.user?.id && workspace && (
-            <>
+                <div className="flex-1">
               <LeadTable
                 ref={tableRef}
                 workspaceId={workspace}
-                userId={session.user.id}
+                    userId={session?.user?.id || ''} 
                 onMetricsChange={handleMetricsChange}
-              />
+                    onManageFolders={() => setFolderManagementDialog(true)}
+                    selectedFolder={selectedFolder}
+                  />
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Add Lead Dialog */}
               <LeadDialog
                 open={openDialog}
                 onOpenChange={setOpenDialog}
-                workspaceId={workspace}
-                userId={session.user.id}
+        workspaceId={workspace || ''} 
+        userId={session?.user?.id || ''}
                 onSuccess={() => {
-                  setOpenDialog(false);
                   if (tableRef.current) {
                     tableRef.current.loadLeads();
                   }
                 }}
               />
-              <ImportCustomersDialog
+
+      {/* Import Leads Dialog */}
+      <ImportLeadsDialog
                 open={importDialog}
                 onOpenChange={setImportDialog}
-                workspaceId={workspace}
-                userId={session.user.id}
+        workspaceId={workspace || ''}
+        userId={session?.user?.id || ''}
+        onSuccess={() => {
+          if (tableRef.current) {
+            tableRef.current.loadLeads();
+          }
+        }}
+      />
+
+      {/* Import Customers Dialog */}
+      <ImportCustomersDialog
+        open={importCustomersDialog}
+        onOpenChange={setImportCustomersDialog}
+        workspaceId={workspace || ''}
+        userId={session?.user?.id || ''}
                 onSuccess={() => {
-                  setImportDialog(false);
                   if (tableRef.current) {
                     tableRef.current.loadLeads();
                   }
                 }}
               />
-            </>
-          )}
-        </div>
-      </div>
+
+      {/* Folder Management Dialog */}
+      <FolderManagementDialog
+        open={folderManagementDialog}
+        onOpenChange={setFolderManagementDialog}
+        workspaceId={workspace || ''}
+        userId={session?.user?.id || ''}
+        onFoldersChanged={handleFoldersChanged}
+      />
     </SidebarDemo>
   );
 } 

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import authOptions from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
+
+export const dynamic = 'force-dynamic';
 
 // Provide search console overview data for the dashboard
 export async function GET(req: NextRequest) {
@@ -14,6 +17,9 @@ export async function GET(req: NextRequest) {
   try {
     // Get the user's ID
     const userId = session.user.id;
+
+    // Proactively refresh token if needed
+    const freshToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');
 
     // Get the access token from the integrations table
     const { data: integration, error: tokenError } = await supabase
@@ -35,6 +41,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Use the refreshed token if available, otherwise use stored token
+    const accessToken = freshToken || integration.access_token;
+
     // Get user's configured Search Console site
     const { data: searchSettings, error: settingsError } = await supabase
       .from('user_settings')
@@ -47,14 +56,54 @@ export async function GET(req: NextRequest) {
     
     console.log('Using Search Console site URL:', siteUrl);
     
-    // Use the Google Search Console API to fetch real data
-    const accessToken = integration.access_token;
-    
     // Set date range (last 30 days by default)
     const endDate = new Date().toISOString().split('T')[0]; // Today in YYYY-MM-DD
     const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 30 days ago
     
     try {
+      const searchConsole = await fetchSearchConsoleOverview(accessToken, siteUrl, startDate, endDate);
+      return NextResponse.json({ searchConsole });
+    } catch (apiError: any) {
+      // Attempt token refresh on error
+      try {
+        return await handleTokenRefreshOnError(
+          apiError,
+          userId,
+          'google-searchconsole',
+          async (refreshedToken) => {
+            const searchConsole = await fetchSearchConsoleOverview(refreshedToken, siteUrl, startDate, endDate);
+            return NextResponse.json({ searchConsole });
+          }
+        );
+      } catch (refreshError) {
+        console.error('Search Console overview API refresh error:', refreshError);
+        // Fallback to empty data to avoid breaking dashboard
+        return NextResponse.json({
+          searchConsole: {
+            clicks: 0,
+            impressions: 0,
+            ctr: 0,
+            position: 0
+          }
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error in search-console/overview:', error);
+    
+    // Ensure we always return a valid response
+    return NextResponse.json({
+      searchConsole: {
+        clicks: 0,
+        impressions: 0,
+        ctr: 0,
+        position: 0
+      }
+    }, { status: 200 }); // Return 200 with empty data to keep dashboard working
+  }
+}
+
+async function fetchSearchConsoleOverview(accessToken: string, siteUrl: string, startDate: string, endDate: string) {
       // Call the Search Console API
       const response = await fetch(
         `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
@@ -82,31 +131,21 @@ export async function GET(req: NextRequest) {
           body: errorText
         });
         
-        // Return empty data rather than error to avoid breaking the dashboard
-        return NextResponse.json({
-          searchConsole: {
-            clicks: 0,
-            impressions: 0,
-            ctr: 0,
-            position: 0
-          }
-        });
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('Search Console API response:', data);
+  console.log('Search Console API response received');
 
       // Process the response
       if (!data.rows || data.rows.length === 0) {
         console.log('No Search Console data rows returned');
-        return NextResponse.json({
-          searchConsole: {
+    return {
             clicks: 0,
             impressions: 0,
             ctr: 0,
             position: 0
-          }
-        });
+    };
       }
 
       // Calculate totals
@@ -128,31 +167,5 @@ export async function GET(req: NextRequest) {
         totals.position = totals.position / rowCount;
       }
 
-      return NextResponse.json({ searchConsole: totals });
-    } catch (apiError) {
-      console.error('Search Console API call error:', apiError);
-      
-      // Fallback to dummy data to keep the dashboard working
-      return NextResponse.json({
-        searchConsole: {
-          clicks: 0,
-          impressions: 0,
-          ctr: 0,
-          position: 0
-        }
-      });
-    }
-  } catch (error) {
-    console.error('Error in search-console/overview:', error);
-    
-    // Ensure we always return a valid response
-    return NextResponse.json({
-      searchConsole: {
-        clicks: 0,
-        impressions: 0,
-        ctr: 0,
-        position: 0
-      }
-    }, { status: 200 }); // Return 200 with empty data to keep dashboard working
-  }
+  return totals;
 } 

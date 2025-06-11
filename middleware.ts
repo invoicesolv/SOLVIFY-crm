@@ -34,14 +34,21 @@ export async function middleware(request: NextRequest) {
     const isPublicPath = [
       '/login', 
       '/landing', 
-      '/sv', 
       '/register',
       '/auth/forgot-password',
-      '/blog',
-      '/blog/sv'
+      '/auth/reset-password',
+      '/blog'
     ].includes(pathname) || pathname.startsWith('/blog/')
     
-    console.log(`[Middleware] Path ${pathname} is ${isPublicPath ? 'public' : 'protected'}`)
+    // Define settings paths that should always be accessible for authenticated users
+    const isSettingsPath = pathname.startsWith('/settings/') || pathname === '/settings'
+    
+    // Add explicit logging for billing page for debugging
+    if (pathname === '/settings/billing') {
+      console.log('[Middleware] Billing page access detected')
+    }
+    
+    console.log(`[Middleware] Path ${pathname} is ${isPublicPath ? 'public' : isSettingsPath ? 'settings' : 'protected'}`)
 
     // Check if user is authenticated using NextAuth token
     const token = await getToken({ 
@@ -63,15 +70,6 @@ export async function middleware(request: NextRequest) {
     
     console.log(`[Middleware] Auth status: isAuthenticated=${isAuthenticated}, isAuthenticating=${isAuthenticating}, hasToken=${!!token}, hasSessionCookie=${hasSessionCookie}`)
 
-    // IMPORTANT: Check if this is a post-login redirect
-    const referer = request.headers.get('referer') || ''
-    const isPostLogin = referer.includes('/api/auth/callback') || referer.includes('/login')
-    
-    if (isAuthenticated && isPostLogin && pathname === '/') {
-      console.log(`[Middleware] Post-login redirect detected - allowing through to dashboard (root)`)
-      return NextResponse.next()
-    }
-
     // Allow requests in the authentication process even without a token
     if (isAuthenticating) {
       console.log(`[Middleware] In-progress authentication detected - allowing through`)
@@ -79,30 +77,37 @@ export async function middleware(request: NextRequest) {
     }
 
     // If the user is authenticated and tries to access the root path,
-    // let them through to the dashboard (which is at root)
+    // redirect them to the dashboard
     if (pathname === '/' && isAuthenticated) {
-      console.log(`[Middleware] Authenticated user at root - accessing dashboard`)
-      return NextResponse.next()
+      console.log(`[Middleware] Authenticated user at root - redirecting to dashboard`)
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
     
     // Only redirect to landing page if the user is not authenticated
     // and trying to access the root
     if (pathname === '/' && !isAuthenticated) {
       console.log(`[Middleware] Unauthenticated user at root - redirecting to landing page`)
-      return NextResponse.redirect(new URL('/sv', request.url))
+      return NextResponse.redirect(new URL('/landing', request.url))
     }
 
-    // If trying to access /landing or /sv directly, keep it accessible
-    if (pathname === '/landing' || pathname === '/sv') {
+    // If trying to access /landing directly, keep it accessible
+    if (pathname === '/landing') {
       console.log(`[Middleware] Allowing direct access to landing page`)
       return NextResponse.next()
     }
 
     // If user is authenticated and tries to access login/register pages,
-    // redirect to dashboard (root)
-    if (isPublicPath && isAuthenticated && !['/sv', '/landing', '/blog', '/blog/sv'].includes(pathname) && !pathname.startsWith('/blog/')) {
+    // redirect to dashboard - BUT allow reset password page and blog pages
+    if (isPublicPath && isAuthenticated && !['/landing', '/blog', '/auth/reset-password', '/auth/forgot-password'].includes(pathname) && !pathname.startsWith('/blog/')) {
       console.log(`[Middleware] Authenticated user accessing public page - redirecting to dashboard`)
-      return NextResponse.redirect(new URL('/', request.url))
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
+    // If authenticated user is accessing settings pages (including billing),
+    // allow access without redirection
+    if (isSettingsPath && isAuthenticated) {
+      console.log(`[Middleware] Authenticated user accessing settings - allowing access`)
+      return NextResponse.next()
     }
 
     // If user is not authenticated and tries to access protected route,

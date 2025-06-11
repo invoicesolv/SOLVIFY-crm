@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { AnimatedBorderCard } from "@/components/ui/animated-border-card";
 import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Plus, Search, Trash2, X, Mail, Settings2, LinkIcon, Users, User, UserPlus, AlertCircle, FileText, Link2, CheckCircle, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Search, Trash2, X, Mail, Settings2, LinkIcon, Users, User, UserPlus, AlertCircle, FileText, Link2, CheckCircle, XCircle, Clock, ArrowRightLeft, Folder, Globe } from "lucide-react";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { TaskExpanded } from "./TaskExpanded";
@@ -31,12 +31,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { TimeTrackingSummary } from "./TimeTrackingSummary";
+import { ProjectFolderSidebar } from "./ProjectFolderSidebar";
+import { ProjectFolderManagementDialog } from "./ProjectFolderManagementDialog";
+import { TaskMoveDialog } from "./TaskMoveDialog";
+import { SubtaskMoveDialog } from "./SubtaskMoveDialog";
 
 interface ChecklistItem {
   id: number;
   text: string;
   done: boolean;
   deadline?: string;
+  assigned_to?: string;
 }
 
 interface Task {
@@ -46,6 +52,7 @@ interface Task {
   checklist: Array<{ id: number; text: string; done: boolean }>;
   progress: number;
   assigned_to?: string;
+  project_id?: string; // Add this field
 }
 
 interface Project {
@@ -58,6 +65,7 @@ interface Project {
   tasks: Task[];
   customer_name?: string;
   assigned_to?: string;
+  folder_id?: string | null;
 }
 
 interface ProjectsViewProps {
@@ -93,6 +101,23 @@ interface Invoice {
   linked_to_project?: boolean;
 }
 
+interface Domain {
+  id: string;
+  domain: string;
+  display_domain?: string;
+  domain_rating?: number;
+  traffic_value?: number;
+  organic_traffic?: number;
+  referring_domains?: number;
+  organic_keywords?: number;
+  source: 'ahrefs' | 'Loopia';
+  last_updated: string;
+  workspace_id?: string;
+  expiry_date?: string;
+  status?: string;
+  linked_to_project?: boolean;
+}
+
 export function ProjectsView({ className }: ProjectsViewProps) {
   const [search, setSearch] = useState("");
   const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
@@ -119,6 +144,54 @@ export function ProjectsView({ className }: ProjectsViewProps) {
   const [showInvoiceSection, setShowInvoiceSection] = useState(false);
   const { members } = useWorkspaceMembers();
   const { assignProject, getMemberByUserId } = useProjectAssignments();
+  const [showTimeTrackingForProject, setShowTimeTrackingForProject] = useState<string | null>(null);
+  
+  // Folder-related state
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [showFolderManagement, setShowFolderManagement] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  
+  // Folder assignment dialog state
+  const [folderAssignmentDialog, setFolderAssignmentDialog] = useState(false);
+  const [projectToAssignFolder, setProjectToAssignFolder] = useState<Project | null>(null);
+  const [selectedProjectFolderId, setSelectedProjectFolderId] = useState<string>('');
+  const [availableFolders, setAvailableFolders] = useState<{id: string, name: string}[]>([]);
+  
+  // Task move dialog state - using types that match TaskMoveDialog component
+  const [taskMoveDialog, setTaskMoveDialog] = useState<{
+    open: boolean;
+    task: { id: string; title: string; project_id: string } | null;
+    currentProject: { id: string; name: string; folder_id: string | null; workspace_id: string } | null;
+  }>({
+    open: false,
+    task: null,
+    currentProject: null,
+  });
+
+  // Subtask move dialog state
+  const [subtaskMoveDialog, setSubtaskMoveDialog] = useState<{
+    open: boolean;
+    task: { id: string; title: string; project_id?: string } | null;
+    subtask: { id: number; text: string; done: boolean; assigned_to?: string } | null;
+    currentProject: { id: string; name: string; folder_id: string | null; workspace_id: string } | null;
+  }>({
+    open: false,
+    task: null,
+    subtask: null,
+    currentProject: null,
+  });
+
+  // Domain-related state
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [loadingDomains, setLoadingDomains] = useState(false);
+  const [linkedDomainIds, setLinkedDomainIds] = useState<string[]>([]);
+  const [showDomainSection, setShowDomainSection] = useState(false);
+  const [domainSearch, setDomainSearch] = useState('');
+  const [domainPage, setDomainPage] = useState(1);
+  const [totalDomains, setTotalDomains] = useState(0);
+  const [expandedBacklinks, setExpandedBacklinks] = useState(false);
+  const DOMAINS_PER_PAGE = 20;
 
   // Function to get member name by ID
   const getAssignedMemberName = (userId?: string) => {
@@ -183,6 +256,35 @@ export function ProjectsView({ className }: ProjectsViewProps) {
       tasks: project.tasks.map(calculateTaskProgress)
     };
   };
+
+  // Initialize workspace ID
+  useEffect(() => {
+    const initializeWorkspace = async () => {
+      if (session?.user?.id) {
+        try {
+          const activeWorkspaceId = await getActiveWorkspaceId(session.user.id);
+          setWorkspaceId(activeWorkspaceId);
+        } catch (error) {
+          console.error('[Projects] Error getting workspace ID:', error);
+        }
+      }
+    };
+    
+    initializeWorkspace();
+  }, [session?.user?.id]);
+
+  // Load available folders when workspace is set
+  useEffect(() => {
+    if (workspaceId) {
+      fetchAvailableFolders();
+    }
+  }, [workspaceId]);
+
+  // Force refresh when available folders change
+  useEffect(() => {
+    // Trigger refresh to update folder counts in sidebar
+    setRefreshTrigger(prev => prev + 1);
+  }, [availableFolders]);
 
   // Initial fetch of projects
   useEffect(() => {
@@ -338,9 +440,14 @@ export function ProjectsView({ className }: ProjectsViewProps) {
       // Associate tasks with their projects manually
       const projectsWithTasks = projectsData.map(project => {
         const projectTasks = tasksData ? tasksData.filter(task => task.project_id === project.id) : [];
+        // Ensure tasks have project_id field set
+        const tasksWithProjectId = projectTasks.map(task => ({
+          ...task,
+          project_id: project.id // Ensure project_id is set
+        }));
         return {
           ...project,
-          tasks: projectTasks || [],
+          tasks: tasksWithProjectId || [],
           status: (project.status?.toLowerCase() || 'active') as 'active' | 'completed' | 'on-hold',
           assigned_to: project.assigned_to || undefined
         };
@@ -557,7 +664,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
           p.name === projectName
             ? {
                 ...p,
-                tasks: [...p.tasks, newTask]
+                tasks: [...p.tasks, { ...newTask, project_id: project.id }] // Ensure project_id is set
               }
             : p
         )
@@ -717,7 +824,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
             p.name === projectName
               ? {
                   ...p,
-                  tasks: [...p.tasks, data]
+                  tasks: [...p.tasks, { ...data, project_id: project.id }] // Ensure project_id is set
                 }
               : p
           )
@@ -874,7 +981,19 @@ export function ProjectsView({ className }: ProjectsViewProps) {
 
   const filteredProjects = projects.filter(project => {
     const displayName = PROJECT_DISPLAY_NAMES[project.name] || project.name;
-    return displayName.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = displayName.toLowerCase().includes(search.toLowerCase());
+    
+    // Apply folder filtering
+    if (selectedFolderId === null) {
+      // Show all projects when "All Projects" is selected
+      return matchesSearch;
+    } else if (selectedFolderId === "unassigned") {
+      // Show only projects without a folder
+      return matchesSearch && (project.folder_id === null || project.folder_id === undefined);
+    } else {
+      // Show only projects in the selected folder
+      return matchesSearch && project.folder_id === selectedFolderId;
+    }
   });
 
   // New function to fetch customers
@@ -892,21 +1011,47 @@ export function ProjectsView({ className }: ProjectsViewProps) {
         return;
       }
       
-      // Fetch customers for this workspace
-      const { data, error } = await supabase
+      // First, fetch customers with the specific workspace_id
+      const { data: workspaceCustomers, error: workspaceError } = await supabase
         .from('customers')
         .select('id, name, workspace_id')
         .eq('workspace_id', workspaceId)
         .order('name');
       
-      if (error) {
-        console.error('[Projects] Error fetching customers:', error);
+      if (workspaceError) {
+        console.error('[Projects] Error fetching workspace customers:', workspaceError);
         setLoadingCustomers(false);
         return;
       }
       
-      console.log(`[Projects] Fetched ${data?.length || 0} customers`);
-      setCustomers(data || []);
+      // Also fetch customers with NULL workspace_id as they might be usable too
+      const { data: nullWorkspaceCustomers, error: nullWorkspaceError } = await supabase
+        .from('customers')
+        .select('id, name, workspace_id')
+        .is('workspace_id', null)
+        .order('name');
+      
+      if (nullWorkspaceError) {
+        console.error('[Projects] Error fetching customers with null workspace:', nullWorkspaceError);
+        // Continue anyway, just with workspace customers
+      }
+      
+      // Combine the customers, prioritizing those with matching workspace_id
+      const allCustomers = [
+        ...(workspaceCustomers || []),
+        ...((nullWorkspaceCustomers || []).filter(nullCust => 
+          // Only include if there's no workspace customer with the same name
+          !workspaceCustomers?.some(wsCust => 
+            wsCust.name && wsCust.name === nullCust.name
+          )
+        ))
+      ];
+      
+      console.log(`[Projects] Fetched ${workspaceCustomers?.length || 0} customers for workspace`);
+      console.log(`[Projects] Fetched ${nullWorkspaceCustomers?.length || 0} customers with null workspace`);
+      console.log(`[Projects] Combined total: ${allCustomers.length} customers available`);
+      
+      setCustomers(allCustomers || []);
     } catch (error) {
       console.error('[Projects] Error in fetchCustomers:', error);
     } finally {
@@ -974,8 +1119,76 @@ export function ProjectsView({ className }: ProjectsViewProps) {
 
   // Filter customers by search term
   const filteredCustomers = customers.filter(customer => 
-    customer.name.toLowerCase().includes(customerSearch.toLowerCase())
+    customer.name && customer.name.toLowerCase().includes(customerSearch.toLowerCase())
   );
+
+  // Folder assignment functions
+  const fetchAvailableFolders = async () => {
+    if (!workspaceId) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('project_folders')
+        .select('id, name')
+        .eq('workspace_id', workspaceId)
+        .order('name', { ascending: true });
+      
+      if (error) throw error;
+      setAvailableFolders(data || []);
+    } catch (error) {
+      console.error('Error fetching folders:', error);
+      toast.error('Failed to load folders');
+    }
+  };
+
+  // Open the folder assignment dialog
+  const openFolderAssignmentDialog = (project: Project) => {
+    console.log('Opening folder assignment dialog for project:', project.name);
+    setProjectToAssignFolder(project);
+    setSelectedProjectFolderId(project.folder_id || '');
+    fetchAvailableFolders();
+    setFolderAssignmentDialog(true);
+  };
+
+  // Update the project's folder assignment
+  const updateProjectFolder = async () => {
+    if (!projectToAssignFolder) return;
+    
+    try {
+      const folderId = selectedProjectFolderId === '' ? null : selectedProjectFolderId;
+      
+      // Update the project
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          folder_id: folderId
+        })
+        .eq('id', projectToAssignFolder.id);
+      
+      if (error) {
+        console.error('Error updating project folder:', error);
+        toast.error('Failed to update project folder');
+        return;
+      }
+      
+      // Update local state
+      setProjects(projects.map(p => 
+        p.id === projectToAssignFolder.id 
+          ? { ...p, folder_id: folderId } 
+          : p
+      ));
+      
+      const folderName = folderId ? availableFolders.find(f => f.id === folderId)?.name : 'Unassigned';
+      toast.success(`Project moved to ${folderName}`);
+      setFolderAssignmentDialog(false);
+      
+      // Refresh folder counts
+      handleFoldersChanged();
+    } catch (error) {
+      console.error('Error in updateProjectFolder:', error);
+      toast.error('Failed to update project folder');
+    }
+  };
 
   // Fetch invoices for a customer
   const fetchInvoicesByCustomer = async (customerId: string, projectId?: string) => {
@@ -1104,8 +1317,219 @@ export function ProjectsView({ className }: ProjectsViewProps) {
     }
   }, [selectedProject, customers]);
 
+  // Fetch domains for the workspace when a project is selected
+  useEffect(() => {
+    if (selectedProject && workspaceId) {
+      // Always fetch domains when project is selected to populate backlinks progress
+      fetchDomainsByWorkspace(workspaceId, selectedProject.id, '', 1);
+    } else {
+      // Clear domains if no project is selected
+      setDomains([]);
+      setLinkedDomainIds([]);
+      setTotalDomains(0);
+    }
+  }, [selectedProject, workspaceId]);
+
+  // Handle domain search and pagination when domain section is open
+  useEffect(() => {
+    if (selectedProject && workspaceId && showDomainSection && (domainSearch || domainPage > 1)) {
+      // Only re-fetch when searching or changing pages, and domain section is open
+      fetchDomainsByWorkspace(workspaceId, selectedProject.id, domainSearch, domainPage);
+    }
+  }, [domainSearch, domainPage, showDomainSection]);
+
+  // Fetch domains for a workspace
+  const fetchDomainsByWorkspace = async (workspaceId: string, projectId?: string, search: string = '', page: number = 1) => {
+    if (!workspaceId) return;
+    
+    setLoadingDomains(true);
+    try {
+      // If we have a project ID, first fetch all linked domains for the backlinks progress
+      let linkedIds: string[] = [];
+      let allLinkedDomains: Domain[] = [];
+      
+      if (projectId) {
+        const { data: linkData, error: linkError } = await supabase
+          .from('project_domain_links')
+          .select('domain_id')
+          .eq('project_id', projectId);
+        
+        if (!linkError && linkData) {
+          linkedIds = linkData.map(link => link.domain_id);
+          setLinkedDomainIds(linkedIds);
+          
+          // Fetch ALL linked domains for backlinks progress (not paginated)
+          if (linkedIds.length > 0) {
+            const { data: linkedDomainData, error: linkedDomainError } = await supabase
+              .from('domains')
+              .select('*')
+              .eq('workspace_id', workspaceId)
+              .in('domain', linkedIds);
+            
+            if (!linkedDomainError && linkedDomainData) {
+              allLinkedDomains = linkedDomainData.map(domain => ({
+                id: domain.domain,
+                domain: domain.domain,
+                display_domain: domain.display_domain,
+                domain_rating: domain.domain_rating,
+                traffic_value: domain.traffic_value,
+                organic_traffic: domain.organic_traffic,
+                referring_domains: domain.referring_domains,
+                organic_keywords: domain.organic_keywords,
+                source: domain.source,
+                last_updated: domain.last_updated,
+                workspace_id: domain.workspace_id,
+                expiry_date: domain.expiry_date,
+                status: domain.status,
+                linked_to_project: true
+              }));
+            }
+          }
+        }
+      }
+      
+      // Build the query with search and pagination for the main domain list
+      let query = supabase
+        .from('domains')
+        .select('*', { count: 'exact' })
+        .eq('workspace_id', workspaceId);
+      
+      // Add search filter if provided
+      if (search.trim()) {
+        query = query.or(`domain.ilike.%${search}%,display_domain.ilike.%${search}%`);
+      }
+      
+      // Add pagination
+      const from = (page - 1) * DOMAINS_PER_PAGE;
+      const to = from + DOMAINS_PER_PAGE - 1;
+      
+      const { data: domainData, error: domainError, count } = await query
+        .order('domain_rating', { ascending: false, nullsLast: true })
+        .range(from, to);
+      
+      if (domainError) {
+        console.error('[Projects] Error fetching domains:', domainError);
+        toast.error('Failed to load domains');
+        setLoadingDomains(false);
+        return;
+      }
+      
+      setTotalDomains(count || 0);
+      
+      // Format paginated domains
+      const formattedDomains = domainData?.map(domain => ({
+        id: domain.domain,
+        domain: domain.domain,
+        display_domain: domain.display_domain,
+        domain_rating: domain.domain_rating,
+        traffic_value: domain.traffic_value,
+        organic_traffic: domain.organic_traffic,
+        referring_domains: domain.referring_domains,
+        organic_keywords: domain.organic_keywords,
+        source: domain.source,
+        last_updated: domain.last_updated,
+        workspace_id: domain.workspace_id,
+        expiry_date: domain.expiry_date,
+        status: domain.status,
+        linked_to_project: linkedIds.includes(domain.domain)
+      })) || [];
+      
+      // Combine all linked domains with paginated domains, removing duplicates
+      const combinedDomains = [...allLinkedDomains];
+      formattedDomains.forEach(domain => {
+        if (!combinedDomains.find(existing => existing.id === domain.id)) {
+          combinedDomains.push(domain);
+        }
+      });
+      
+      setDomains(combinedDomains);
+      console.log(`[Projects] Loaded ${combinedDomains.length} domains (${allLinkedDomains.length} linked, ${formattedDomains.length} paginated)`);
+    } catch (error) {
+      console.error('[Projects] Error in fetchDomainsByWorkspace:', error);
+      toast.error('Failed to load domains');
+    } finally {
+      setLoadingDomains(false);
+    }
+  };
+
+  // Link/unlink a domain to a project
+  const toggleDomainLink = async (domainId: string, projectId?: string) => {
+    if (!projectId || !domainId) {
+      console.error('Missing project ID or domain ID');
+      toast.error('Failed to update domain link: Missing required data');
+      return;
+    }
+    
+    const isCurrentlyLinked = linkedDomainIds.includes(domainId);
+    
+    try {
+      console.log(`Attempting to ${isCurrentlyLinked ? 'unlink' : 'link'} domain ${domainId} with project ${projectId}`);
+      
+      if (isCurrentlyLinked) {
+        // Unlink the domain
+        const { error } = await supabase
+          .from('project_domain_links')
+          .delete()
+          .eq('project_id', projectId)
+          .eq('domain_id', domainId);
+        
+        if (error) throw error;
+        
+        // Update local state
+        setLinkedDomainIds(prev => prev.filter(id => id !== domainId));
+        setDomains(prev => prev.map(domain => 
+          domain.id === domainId ? { ...domain, linked_to_project: false } : domain
+        ));
+        
+        toast.success('Domain unlinked from project');
+      } else {
+        // Link the domain
+        const { error } = await supabase
+          .from('project_domain_links')
+          .insert({
+            project_id: projectId,
+            domain_id: domainId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        
+        if (error) {
+          // Handle duplicate key error specifically
+          if (error.code === '23505') {
+            console.log('Domain already linked, updating frontend state');
+            // Update local state to reflect that it's already linked
+            setLinkedDomainIds(prev => prev.includes(domainId) ? prev : [...prev, domainId]);
+            setDomains(prev => prev.map(domain => 
+              domain.id === domainId ? { ...domain, linked_to_project: true } : domain
+            ));
+            toast.success('Domain was already linked to project');
+            return;
+          }
+          throw error;
+        }
+        
+        // Update local state
+        setLinkedDomainIds(prev => [...prev, domainId]);
+        setDomains(prev => prev.map(domain => 
+          domain.id === domainId ? { ...domain, linked_to_project: true } : domain
+        ));
+        
+        toast.success('Domain linked to project');
+      }
+    } catch (error: any) {
+      console.error('Error toggling domain link:', error);
+      
+      // Handle specific error cases
+      if (error.code === '23505') {
+        toast.error('Domain is already linked to this project');
+      } else {
+        toast.error('Failed to update domain link');
+      }
+    }
+  };
+
   // Function to handle task assignment
-  async function handleAssignTask(projectId: string, taskId: string, userId?: string) {
+  const handleAssignTask = async (projectId: string, taskId: string, userId?: string) => {
     try {
       await supabase.from('project_tasks').update({ assigned_to: userId || null }).eq('id', taskId).eq('project_id', projectId);
       setProjects(prevProjects => prevProjects.map(project => {
@@ -1124,10 +1548,10 @@ export function ProjectsView({ className }: ProjectsViewProps) {
       console.error('Error assigning task:', error);
       toast.error('Failed to assign task');
     }
-  }
+  };
 
   // Function to handle subtask assignment
-  async function handleAssignSubtask(projectId: string, taskId: string, itemId: number, userId?: string) {
+  const handleAssignSubtask = async (projectId: string, taskId: string, itemId: number, userId?: string) => {
     try {
       await supabase.from('task_checklist_items').update({ assigned_to: userId || null }).eq('id', itemId).eq('task_id', taskId);
       setProjects(prevProjects => prevProjects.map(project => {
@@ -1154,7 +1578,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
       console.error('Error assigning subtask:', error);
       toast.error('Failed to assign subtask');
     }
-  }
+  };
 
   // Format currency to SEK
   const formatCurrency = (amount: number) => {
@@ -1164,37 +1588,132 @@ export function ProjectsView({ className }: ProjectsViewProps) {
   // Get status display for invoices
   const getStatusDisplay = (status: string) => {
     const statusMap: Record<string, { text: string, className: string }> = {
-      "ongoing": { text: "Pågående", className: "bg-blue-900/20 text-blue-400" },
-      "draft": { text: "Utkast", className: "bg-neutral-800 text-neutral-400" },
-      "completed": { text: "Färdig", className: "bg-green-900/20 text-green-400" },
-      "paid": { text: "Betald", className: "bg-green-900/20 text-green-400" },
-      "pending": { text: "Pågående", className: "bg-yellow-900/20 text-yellow-400" },
-      "unpaid": { text: "Obetald", className: "bg-yellow-900/20 text-yellow-400" },
-      "overdue": { text: "Försenad", className: "bg-red-900/20 text-red-400" }
+      "ongoing": { text: "Pågående", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "draft": { text: "Utkast", className: "bg-background text-muted-foreground" },
+      "completed": { text: "Färdig", className: "bg-green-100 dark:bg-green-900/20 text-green-400" },
+      "paid": { text: "Betald", className: "bg-green-100 dark:bg-green-900/20 text-green-400" },
+      "pending": { text: "Pågående", className: "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400" },
+      "unpaid": { text: "Obetald", className: "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400" },
+      "overdue": { text: "Försenad", className: "bg-red-100 dark:bg-red-900/20 text-red-400" }
     };
 
-    const defaultStatus = { text: "Pågående", className: "bg-blue-900/20 text-blue-400" };
+    const defaultStatus = { text: "Pågående", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" };
     return statusMap[status?.toLowerCase()] || defaultStatus;
+  };
+
+  // Folder management functions
+  const handleFolderSelect = (folderId: string | null) => {
+    setSelectedFolderId(folderId);
+  };
+
+  const handleFoldersChanged = () => {
+    // Refresh projects to update folder counts
+    if (session?.user?.id) {
+      fetchProjects();
+      // Also refresh available folders for labels
+      fetchAvailableFolders();
+      // Force refresh the sidebar
+      setRefreshTrigger(prev => prev + 1);
+    }
+  };
+
+  const handleTaskMoved = () => {
+    // Refresh projects after task is moved
+    if (session?.user?.id) {
+      fetchProjects();
+    }
+    setTaskMoveDialog({ open: false, task: null, currentProject: null });
+  };
+
+  const openTaskMoveDialog = (task: Task, currentProject: Project) => {
+    // Convert our Task and Project types to match TaskMoveDialog's expected types
+    const taskForDialog = {
+      id: task.id,
+      title: task.title,
+      project_id: task.project_id || currentProject.id || '',
+    };
+    
+    const projectForDialog = {
+      id: currentProject.id || '',
+      name: currentProject.name,
+      folder_id: currentProject.folder_id || null,
+      workspace_id: workspaceId || '',
+    };
+    
+    setTaskMoveDialog({
+      open: true,
+      task: taskForDialog,
+      currentProject: projectForDialog,
+    });
+  };
+
+  const openSubtaskMoveDialog = (task: Task, subtask: ChecklistItem, currentProject: Project) => {
+    // Convert our types to match SubtaskMoveDialog's expected types
+    const taskForDialog = {
+      id: task.id,
+      title: task.title,
+      project_id: task.project_id || currentProject.id || '',
+    };
+    
+    const subtaskForDialog = {
+      id: subtask.id,
+      text: subtask.text,
+      done: subtask.done,
+      assigned_to: subtask.assigned_to,
+    };
+    
+    const projectForDialog = {
+      id: currentProject.id || '',
+      name: currentProject.name,
+      folder_id: currentProject.folder_id || null,
+      workspace_id: workspaceId || '',
+    };
+    
+    setSubtaskMoveDialog({
+      open: true,
+      task: taskForDialog,
+      subtask: subtaskForDialog,
+      currentProject: projectForDialog,
+    });
+  };
+
+  const handleSubtaskMoved = () => {
+    // Refresh projects after subtask is moved
+    if (session?.user?.id) {
+      fetchProjects();
+    }
+    setSubtaskMoveDialog({ open: false, task: null, subtask: null, currentProject: null });
+  };
+
+  // Handle domain search
+  const handleDomainSearch = (search: string) => {
+    setDomainSearch(search);
+    setDomainPage(1); // Reset to first page when searching
+  };
+
+  // Handle domain page change
+  const handleDomainPageChange = (page: number) => {
+    setDomainPage(page);
   };
 
   return (
     <div className={cn("relative min-h-screen", className)}>
-      <div className="absolute inset-0 bg-[#0A0A0A]" />
+      <div className="absolute inset-0 bg-background" />
       <div className="relative p-8 space-y-6">
         <div className="flex items-center justify-between relative">
           <div className="relative">
-            <h1 className="text-2xl font-semibold text-white relative">Projects</h1>
+            <h1 className="text-2xl font-semibold text-foreground relative">Projects</h1>
           </div>
           
           <div className="flex items-center gap-4 relative">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-500" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search projects..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-4 py-2 bg-neutral-800/90 backdrop-blur-sm border border-neutral-700 rounded-md text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="pl-9 pr-4 py-2 bg-background border border-border rounded-md text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
             
@@ -1202,10 +1721,10 @@ export function ProjectsView({ className }: ProjectsViewProps) {
             <div className="group relative overflow-hidden rounded-lg">
               <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
               
-              <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
             <Link
               href="/projects/new"
-                  className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                  className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
             >
               <Plus className="h-4 w-4" />
               New Project
@@ -1215,36 +1734,51 @@ export function ProjectsView({ className }: ProjectsViewProps) {
           </div>
         </div>
 
-        <AnimatedBorderCard className="bg-neutral-800/50 backdrop-blur-sm border-0">
+        <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0">
           <div className="relative">
-            <div className="relative z-10">
+            <div className="relative z-10 flex">
+              {/* Folder Sidebar */}
+              {workspaceId && (
+                <ProjectFolderSidebar
+                  key={`${workspaceId}-${projects.length}-${projects.filter(p => p.folder_id).length}`}
+                  workspaceId={workspaceId}
+                  selectedFolderId={selectedFolderId}
+                  onFolderSelect={handleFolderSelect}
+                  onManageFolders={() => setShowFolderManagement(true)}
+                  refreshTrigger={refreshTrigger}
+                  displayedProjects={projects}
+                />
+              )}
+              
+              {/* Main Content */}
+              <div className="flex-1">
           {loading ? (
             <div className="py-12 text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-neutral-400 mx-auto" />
-              <p className="mt-4 text-neutral-400">Loading projects...</p>
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+              <p className="mt-4 text-muted-foreground">Loading projects...</p>
             </div>
           ) : permissionDenied ? (
             <div className="py-12 text-center">
-              <AlertOctagon className="h-8 w-8 text-red-500 mx-auto" />
-              <p className="mt-4 text-neutral-400">You don't have permission to view projects.</p>
-              <p className="text-sm text-neutral-500">Please contact your workspace administrator.</p>
+              <AlertOctagon className="h-8 w-8 text-red-600 dark:text-red-400 mx-auto" />
+              <p className="mt-4 text-muted-foreground">You don't have permission to view projects.</p>
+              <p className="text-sm text-muted-foreground">Please contact your workspace administrator.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-neutral-700">
+                  <tr className="border-b border-border dark:border-border">
                     <th className="w-8 py-4 px-4"></th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Company</th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Status</th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Tasks</th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Progress</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Company</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Tasks</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Progress</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-700">
+                <tbody className="divide-y divide-gray-200 dark:divide-neutral-700">
                   {filteredProjects.length === 0 ? (
                     <tr key="no-projects">
-                      <td colSpan={5} className="py-8 text-center text-neutral-400">
+                      <td colSpan={5} className="py-8 text-center text-muted-foreground">
                         {search ? "No projects found matching your search." : "No projects found. Create your first project to get started."}
                       </td>
                     </tr>
@@ -1264,7 +1798,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                           <tr
                             className={cn(
                               "transition-colors cursor-pointer",
-                              isExpanded ? "bg-neutral-750" : "hover:bg-neutral-750"
+                              isExpanded ? "bg-muted" : "hover:bg-muted"
                             )}
                             onClick={(e) => {
                               e.preventDefault();
@@ -1275,12 +1809,12 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                           >
                             <td className="py-4 px-4">
                               {isExpanded ? (
-                                <ChevronDown className="h-4 w-4 text-neutral-400" />
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
                               ) : (
-                                <ChevronRight className="h-4 w-4 text-neutral-400" />
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
                               )}
                             </td>
-                            <td className="py-4 px-6 text-sm text-white">
+                            <td className="py-4 px-6 text-sm text-foreground">
                               <div className="flex flex-col">
                                 <div className="flex items-center gap-2">
                                   <span>{PROJECT_DISPLAY_NAMES[project.name] || project.name}</span>
@@ -1290,9 +1824,18 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                       <span className="text-xs text-blue-400">{getAssignedMemberName(project.assigned_to)}</span>
                                     </div>
                                   )}
+                                  {/* Folder Label */}
+                                  {project.folder_id && availableFolders.find(f => f.id === project.folder_id) && (
+                                    <div className="flex items-center gap-1 bg-purple-500/10 rounded-full px-2 py-0.5">
+                                      <Folder className="h-3 w-3 text-purple-400" />
+                                      <span className="text-xs text-purple-400">
+                                        {availableFolders.find(f => f.id === project.folder_id)?.name}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                                 {project.customer_name && (
-                                  <span className="text-xs text-neutral-400 mt-1 flex items-center">
+                                  <span className="text-xs text-muted-foreground mt-1 flex items-center">
                                     <Users className="h-3 w-3 mr-1" />
                                     {project.customer_name}
                                   </span>
@@ -1304,9 +1847,9 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                 <span className={cn(
                                   "px-2 py-1 rounded-full text-xs font-medium",
                                   {
-                                    "bg-green-900/20 text-green-400": project.status.toLowerCase() === "active",
-                                    "bg-neutral-900/20 text-neutral-400": project.status.toLowerCase() === "completed",
-                                    "bg-yellow-900/20 text-yellow-400": project.status.toLowerCase() === "on-hold"
+                                    "bg-green-100 dark:bg-green-900/20 text-green-400": project.status.toLowerCase() === "active",
+                                    "bg-background/20 text-muted-foreground": project.status.toLowerCase() === "completed",
+                                    "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400": project.status.toLowerCase() === "on-hold"
                                   }
                                 )}>
                                   {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
@@ -1315,7 +1858,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                   <DropdownMenu modal={false}>
                                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                                       <button 
-                                        className="flex items-center gap-1.5 p-1.5 text-neutral-400 hover:text-blue-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                        className="flex items-center gap-1.5 p-1.5 text-muted-foreground hover:text-blue-400 transition-colors rounded-md hover:bg-gray-200 dark:bg-muted/50"
                                         title={project.assigned_to ? "Reassign project" : "Assign project"}
                                       >
                                         {project.assigned_to ? (
@@ -1332,69 +1875,75 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                       </button>
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent 
-                                      className="bg-neutral-800 border-neutral-700 w-56" 
+                                      className="bg-background border-border dark:border-border w-56" 
                                       align="end"
                                       onFocus={(e) => console.log('[Dialog AssignUser Dropdown] Content focused. Target:', e.target, 'Active Element:', document.activeElement)}
                                       onBlur={(e) => console.log('[Dialog AssignUser Dropdown] Content blurred. Target:', e.target, 'Active Element:', document.activeElement)}
                                     >
                                       {members.length === 0 ? (
-                                        <div className="px-2 py-4 text-sm text-center text-neutral-400">
+                                        <div className="px-2 py-4 text-sm text-center text-muted-foreground">
                                           No team members found
                                         </div>
                                       ) : (
                                         <>
-                                          <div className="py-1 px-2 text-xs text-neutral-500 border-b border-neutral-700">
+                                          <div className="py-1 px-2 text-xs text-muted-foreground border-b border-border">
                                             Assign to user
                                           </div>
                                       {members.map(member => (
                                         <DropdownMenuItem 
                                           key={member.id}
                                           className={cn(
-                                                "text-sm text-white flex items-center gap-2 cursor-pointer hover:bg-neutral-700",
-                                            project.assigned_to === member.user_id && "bg-blue-900/20"
+                                                "text-sm text-foreground flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted",
+                                            project.assigned_to === member.user_id && "bg-blue-100 dark:bg-blue-900/20"
                                           )}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                                 void handleAssignProject(project.id, member.user_id);
                                           }}
                                         >
-                                              <User className="h-4 w-4 mr-2 text-neutral-400" />
+                                              <User className="h-4 w-4 mr-2 text-muted-foreground" />
                                           {member.name}
                                               {project.assigned_to === member.user_id && (
-                                                <span className="ml-auto text-xs bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
+                                                <span className="ml-auto text-xs bg-blue-200 dark:bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
                                                   Current
                                                 </span>
                                               )}
                                         </DropdownMenuItem>
                                       ))}
-                                          
-                                          {project.assigned_to && (
-                                            <>
-                                              <div className="h-px bg-neutral-700 my-1 mx-2" />
-                                              <DropdownMenuItem 
-                                                className="text-sm text-red-400 flex items-center gap-2 cursor-pointer hover:bg-neutral-700"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  void handleAssignProject(project.id);
-                                                }}
-                                              >
-                                                <AlertCircle className="h-4 w-4 mr-2" />
-                                                Unassign
-                                              </DropdownMenuItem>
-                                            </>
-                                          )}
+                                          <DropdownMenuItem 
+                                            className="text-sm text-foreground flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted border-t border-border"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              void handleAssignProject(project.id, undefined);
+                                            }}
+                                          >
+                                            <X className="h-4 w-4 mr-2 text-muted-foreground" />
+                                            Unassign
+                                          </DropdownMenuItem>
                                         </>
                                       )}
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                   
+                                  {/* FOLDER ASSIGNMENT BUTTON - CLEARLY VISIBLE */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openFolderAssignmentDialog(project);
+                                    }}
+                                    className="flex items-center gap-1.5 p-1.5 text-muted-foreground hover:text-purple-400 transition-colors rounded-md hover:bg-purple-100 dark:hover:bg-purple-900/20 border border-purple-200 dark:border-purple-800"
+                                    title="Assign to folder"
+                                  >
+                                    <Folder className="h-4 w-4" />
+                                    <span className="text-xs">Folder</span>
+                                  </button>
                                   {project.customer_name ? (
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         openCustomerDialog(project);
                                       }}
-                                      className="p-1.5 text-neutral-400 hover:text-blue-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                      className="p-1.5 text-muted-foreground hover:text-blue-400 transition-colors rounded-md hover:bg-gray-200 dark:bg-muted/50"
                                       title="Change customer"
                                     >
                                       <LinkIcon className="h-4 w-4" />
@@ -1405,7 +1954,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                         e.stopPropagation();
                                         openCustomerDialog(project);
                                       }}
-                                      className="p-1.5 text-neutral-400 hover:text-blue-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                      className="p-1.5 text-muted-foreground hover:text-blue-400 transition-colors rounded-md hover:bg-gray-200 dark:bg-muted/50"
                                       title="Link to customer"
                                     >
                                       <LinkIcon className="h-4 w-4" />
@@ -1419,7 +1968,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                           deleteProject(project.id);
                                         }
                                       }}
-                                      className="p-1.5 text-neutral-400 hover:text-red-400 transition-colors rounded-md hover:bg-neutral-700/50"
+                                      className="p-1.5 text-muted-foreground hover:text-red-400 transition-colors rounded-md hover:bg-gray-200 dark:bg-muted/50"
                                       title="Delete project"
                                     >
                                       <Trash2 className="h-4 w-4" />
@@ -1428,34 +1977,34 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                 </div>
                               </div>
                             </td>
-                            <td className="py-4 px-6 text-sm text-white">{totalTasks} tasks</td>
-                            <td className="py-4 px-6 text-sm text-white">
+                            <td className="py-4 px-6 text-sm text-foreground">{totalTasks} tasks</td>
+                            <td className="py-4 px-6 text-sm text-foreground">
                               <div className="flex items-center gap-2">
-                                <div className="w-24 h-2 bg-neutral-700 rounded-full overflow-hidden">
+                                <div className="w-24 h-2 bg-gray-200 dark:bg-muted rounded-full overflow-hidden">
                                   <div
                                     className="h-full bg-green-500 rounded-full"
                                     style={{ width: `${progress}%` }}
                                   />
                                 </div>
-                                <span className="text-xs text-neutral-400">{progress}%</span>
+                                <span className="text-xs text-muted-foreground">{progress}%</span>
                               </div>
                             </td>
                           </tr>
                           {isExpanded && (
                             <tr>
                               <td colSpan={5} className="p-0">
-                                <div className="p-6 bg-neutral-800/50 space-y-4">
+                                <div className="p-6 bg-background/50 space-y-4">
                                   <div className="flex items-center gap-4">
                                         <div className="group relative overflow-hidden rounded-lg">
                                           <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                                           
-                                          <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setIsAddingTask(project.name);
                                       }}
-                                              className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                                              className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
                                     >
                                       <Plus className="h-4 w-4" />
                                       Add Task
@@ -1466,16 +2015,34 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                         <div className="group relative overflow-hidden rounded-lg">
                                           <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                                           
-                                          <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setIsBulkAdding(project.name);
                                       }}
-                                              className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                                              className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
                                     >
                                       <Plus className="h-4 w-4" />
                                       Bulk Add Checklist
+                                    </button>
+                                          </div>
+                                        </div>
+                                        
+                                        {/* Test Folder Assignment Button */}
+                                        <div className="group relative overflow-hidden rounded-lg">
+                                          <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-purple-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                                          
+                                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openFolderAssignmentDialog(project);
+                                      }}
+                                              className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
+                                    >
+                                      <Folder className="h-4 w-4" />
+                                      Assign Folder
                                     </button>
                                           </div>
                                         </div>
@@ -1489,7 +2056,7 @@ export function ProjectsView({ className }: ProjectsViewProps) {
                                   )}
 
                                   {isBulkAdding === project.name && (
-                                    <div className="space-y-4 bg-neutral-850 rounded-lg p-6 z-30 relative">
+                                    <div className="space-y-4 bg-gray-200 dark:bg-muted dark:bg-neutral-850 rounded-lg p-6 z-30 relative">
                                       <div className="mb-4">
                                         <textarea
                                           value={bulkTaskInput}
@@ -1503,25 +2070,25 @@ Task 2
   Subtask 2.1
   Subtask 2.2
   Subtask 2.3`}
-                                          className="w-full h-40 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                                          className="w-full h-40 px-3 py-2 bg-background border border-border dark:border-border rounded text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                                           autoFocus
                                         />
                                       </div>
-                                      <div className="flex justify-end gap-3 sticky bottom-0 pt-2 pb-1 bg-neutral-850">
+                                      <div className="flex justify-end gap-3 sticky bottom-0 pt-2 pb-1 bg-gray-200 dark:bg-muted dark:bg-neutral-850">
                                             <Button
                                           onClick={() => {
                                             setIsBulkAdding(null);
                                             setBulkTaskInput("");
                                           }}
                                               variant="outline"
-                                              className="bg-neutral-800 hover:bg-neutral-700 border-neutral-700"
+                                              className="bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border"
                                         >
                                           Cancel
                                             </Button>
                                             
                                             <Button
                                           onClick={() => handleBulkAddTasks(project.name)}
-                                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                                              className="bg-blue-600 hover:bg-blue-700 text-foreground"
                                         >
                                           Add Tasks
                                             </Button>
@@ -1532,17 +2099,17 @@ Task 2
                                   <div className="grid gap-4">
                                     {project.tasks.length === 0 ? (
                                       <div className="text-center py-8">
-                                        <p className="text-neutral-400 mb-4">No tasks yet</p>
+                                        <p className="text-muted-foreground mb-4">No tasks yet</p>
                                             <div className="group relative overflow-hidden rounded-lg mx-auto">
                                               <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                                               
-                                              <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                                              <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             setIsAddingTask(project.name);
                                           }}
-                                                  className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                                                  className="flex items-center gap-2 px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
                                         >
                                           <Plus className="h-4 w-4" />
                                           Add Your First Task
@@ -1570,10 +2137,10 @@ Task 2
                                                   <div className="group relative overflow-hidden rounded-lg">
                                                     <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                                                     
-                                                    <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                                                    <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                                               <button
                                                 onClick={() => setEditingTask({ projectName: project.name, taskId: task.id })}
-                                                        className="px-3 py-1.5 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white text-sm"
+                                                        className="px-3 py-1.5 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground text-sm"
                                               >
                                                 Edit
                                               </button>
@@ -1583,10 +2150,10 @@ Task 2
                                                   <div className="group relative overflow-hidden rounded-lg">
                                                     <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                                                     
-                                                    <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                                                    <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                                               <button
                                                 onClick={() => handleDeleteTask(project.name, task.id)}
-                                                        className="p-1.5 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white flex items-center justify-center"
+                                                        className="p-1.5 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground flex items-center justify-center"
                                               >
                                                 <Trash2 className="h-4 w-4" />
                                               </button>
@@ -1600,6 +2167,8 @@ Task 2
                                               }
                                               onAssignTask={(taskId, userId) => handleAssignTask(project.id!, taskId, userId)}
                                               onAssignSubtask={(taskId, itemId, userId) => handleAssignSubtask(project.id!, taskId, itemId, userId)}
+                                              onMoveTask={(task) => openTaskMoveDialog(task, project)}
+                                              onMoveSubtask={(task, subtask) => openSubtaskMoveDialog(task, subtask, project)}
                                               className="overflow-hidden relative"
                                               wrapperClassName="relative"
                                               borderGradient={true}
@@ -1621,6 +2190,7 @@ Task 2
               </table>
             </div>
           )}
+              </div>
             </div>
           </div>
         </AnimatedBorderCard>
@@ -1635,33 +2205,39 @@ Task 2
         }}
         modal={true}
       >
-        <AnimatedBorderCard className="w-full max-w-4xl mx-auto relative">
-          <DialogContent 
-            className="max-w-4xl max-h-[90vh] bg-neutral-900 border-transparent p-0 overflow-visible"
-            // Restore these handlers
-            onPointerDownOutside={(e) => e.preventDefault()}
-            onInteractOutside={(e) => e.preventDefault()}
-          >
+        <DialogContent 
+          className="max-w-4xl max-h-[90vh] bg-background border-border p-0 overflow-visible"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
             {selectedProject && (
               <div className="relative overflow-y-auto max-h-[80vh]">
                 <div className="p-6 relative z-10">
-                  <DialogTitle className="text-2xl font-semibold text-white">
+                  <DialogTitle className="text-2xl font-semibold text-foreground">
                     {PROJECT_DISPLAY_NAMES[selectedProject.name] || selectedProject.name}
                   </DialogTitle>
-                  <DialogDescription className="text-sm text-neutral-400">
+                  <DialogDescription className="text-sm text-muted-foreground">
                     Manage project details and tasks
+                    {selectedProject.folder_id && availableFolders.find(f => f.id === selectedProject.folder_id) && (
+                      <span className="inline-flex items-center gap-1 ml-2 bg-purple-500/10 rounded-full px-2 py-0.5">
+                        <Folder className="h-3 w-3 text-purple-400" />
+                        <span className="text-xs text-purple-400">
+                          {availableFolders.find(f => f.id === selectedProject.folder_id)?.name}
+                        </span>
+                      </span>
+                    )}
                   </DialogDescription>
 
                   <div className="space-y-6 mt-6">
                     <div className="flex items-center justify-between">
                       <div className="space-y-2 text-sm">
-                        <p className="text-neutral-400">Status: 
+                        <p className="text-muted-foreground">Status: 
                           <span className={cn(
                             "ml-2 px-2 py-1 rounded-full text-xs font-medium",
                             {
-                              "bg-green-900/20 text-green-400": selectedProject.status === "active",
-                              "bg-neutral-900/20 text-neutral-400": selectedProject.status === "completed",
-                              "bg-yellow-900/20 text-yellow-400": selectedProject.status === "on-hold"
+                              "bg-green-100 dark:bg-green-900/20 text-green-400": selectedProject.status === "active",
+                              "bg-background/20 text-muted-foreground": selectedProject.status === "completed",
+                              "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400": selectedProject.status === "on-hold"
                             }
                           )}>
                             {selectedProject.status.charAt(0).toUpperCase() + selectedProject.status.slice(1)}
@@ -1670,36 +2246,36 @@ Task 2
                         
                         {/* Add Assignment Dropdown */}
                         <div className="flex items-center mt-3">
-                          <span className="text-neutral-400 mr-2">Assigned to:</span>
+                          <span className="text-muted-foreground mr-2">Assigned to:</span>
                           <DropdownMenu modal={false} onOpenChange={(open) => {
                             console.log('[Dialog AssignUser Dropdown] openChange:', open, 'Active Element:', document.activeElement);
                           }}>
                             <DropdownMenuTrigger asChild>
                               <button 
-                                className="flex items-center gap-2 px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm"
+                                className="flex items-center gap-2 px-3 py-1.5 bg-background hover:bg-gray-200 dark:bg-muted border border-border dark:border-border rounded-md text-sm"
                                 onClick={() => console.log('[Dialog AssignUser Dropdown] Trigger clicked. Active Element:', document.activeElement)}
                               >
                                 {selectedProject.assigned_to ? (
                                   <>
                                     <User className="h-4 w-4 text-blue-400" />
-                                    <span className="text-white">{getAssignedMemberName(selectedProject.assigned_to) || "Unknown"}</span>
+                                    <span className="text-foreground">{getAssignedMemberName(selectedProject.assigned_to) || "Unknown"}</span>
                                   </>
                                 ) : (
                                   <>
-                                    <UserPlus className="h-4 w-4 text-neutral-400" />
-                                    <span className="text-neutral-400">Assign User</span>
+                                    <UserPlus className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-muted-foreground">Assign User</span>
                                   </>
                                 )}
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent 
-                              className="bg-neutral-800 border-neutral-700 w-56" 
+                              className="bg-background border-border dark:border-border w-56" 
                               align="end"
                               onFocus={(e) => console.log('[Dialog AssignUser Dropdown] Content focused. Target:', e.target, 'Active Element:', document.activeElement)}
                               onBlur={(e) => console.log('[Dialog AssignUser Dropdown] Content blurred. Target:', e.target, 'Active Element:', document.activeElement)}
                             >
                               {members.length === 0 ? (
-                                <div className="px-3 py-2 text-sm text-neutral-400">
+                                <div className="px-3 py-2 text-sm text-muted-foreground">
                                   No team members available
                                 </div>
                               ) : (
@@ -1708,8 +2284,8 @@ Task 2
                                     <DropdownMenuItem 
                                       key={member.id}
                                       className={cn(
-                                        "text-sm text-white flex items-center gap-2 cursor-pointer hover:bg-neutral-700", // Ensured text-white
-                                        selectedProject.assigned_to === member.user_id ? "bg-blue-900/20" : ""
+                                        "text-sm text-foreground flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted", // Ensured text-foreground
+                                        selectedProject.assigned_to === member.user_id ? "bg-blue-100 dark:bg-blue-900/20" : ""
                                       )}
                                       onClick={() => {
                                         console.log('[Dialog AssignUser Dropdown] Item clicked - User:', member.name, 'Active Element:', document.activeElement);
@@ -1717,10 +2293,10 @@ Task 2
                                         console.log('[Dialog AssignUser Dropdown] After handleAssignProject. Active Element:', document.activeElement);
                                       }}
                                     >
-                                      <User className="h-4 w-4 text-neutral-400" />
+                                      <User className="h-4 w-4 text-muted-foreground" />
                                       {member.name}
                                       {selectedProject.assigned_to === member.user_id && (
-                                        <span className="ml-auto text-xs bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
+                                        <span className="ml-auto text-xs bg-blue-200 dark:bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
                                           Current
                                         </span>
                                       )}
@@ -1729,9 +2305,9 @@ Task 2
                                   
                                   {selectedProject.assigned_to && (
                                     <>
-                                      <div className="h-px bg-neutral-700 my-1 mx-1"></div>
+                                      <div className="h-px bg-gray-200 dark:bg-muted my-1 mx-1"></div>
                                       <DropdownMenuItem 
-                                        className="text-sm text-red-400 flex items-center gap-2 cursor-pointer hover:bg-neutral-700" // Ensured hover style
+                                        className="text-sm text-red-400 flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted" // Ensured hover style
                                         onClick={() => {
                                           console.log('[Dialog AssignUser Dropdown] Unassign clicked. Active Element:', document.activeElement);
                                           void handleAssignProject(selectedProject.id); // Unassign
@@ -1755,34 +2331,79 @@ Task 2
                       />
                         
                       {/* Button group for project actions */}
-                      <div className="flex items-center gap-3">
-                        {/* Link to Invoice button with animated gradient */}
+                      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                        {/* Quick Folder Assignment Button */}
                         <div className="group relative overflow-hidden rounded-lg">
-                          <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-blue-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                          <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-purple-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                           
-                          <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                             <button
-                              onClick={() => setShowInvoiceSection(!showInvoiceSection)}
-                              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                              onClick={() => openFolderAssignmentDialog(selectedProject)}
+                              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground w-full justify-center"
                             >
-                              <FileText className="h-4 w-4 text-blue-400" />
-                              {linkedInvoiceIds.length > 0 ? `Linked Invoices (${linkedInvoiceIds.length})` : "Link Invoice"}
+                              <Folder className="h-4 w-4 text-purple-400" />
+                              {selectedProject.folder_id ? 'Change Folder' : 'Assign Folder'}
                             </button>
                           </div>
                         </div>
                         
-                      {/* Email Settings button with animated gradient */}
-                      <div className="group relative overflow-hidden rounded-lg">
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                        {/* Link to Invoice button with animated gradient */}
+                        <div className="group relative overflow-hidden rounded-lg">
+                          <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-blue-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                          
+                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
+                            <button
+                              onClick={() => setShowInvoiceSection(!showInvoiceSection)}
+                              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground w-full justify-center"
+                            >
+                              <FileText className="h-4 w-4 text-blue-400" />
+                              {linkedInvoiceIds.length > 0 ? `Invoices (${linkedInvoiceIds.length})` : "Link Invoice"}
+                            </button>
+                          </div>
+                        </div>
                         
-                        <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
-                          <button
-                            onClick={() => setShowEmailSettings(true)}
-                            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
-                          >
-                            <Settings2 className="h-4 w-4" />
-                            Email Settings
-                          </button>
+                        {/* Link to Domains button with animated gradient */}
+                        <div className="group relative overflow-hidden rounded-lg">
+                          <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-green-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                          
+                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
+                            <button
+                              onClick={() => setShowDomainSection(!showDomainSection)}
+                              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground w-full justify-center"
+                            >
+                              <Globe className="h-4 w-4 text-green-400" />
+                              {linkedDomainIds.length > 0 ? `Domains (${linkedDomainIds.length})` : "Link Domains"}
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Email Settings button with animated gradient */}
+                        <div className="group relative overflow-hidden rounded-lg">
+                          <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                          
+                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
+                            <button
+                              onClick={() => setShowEmailSettings(true)}
+                              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground w-full justify-center"
+                            >
+                              <Settings2 className="h-4 w-4" />
+                              Email Settings
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Time Tracking button */}
+                        <div className="group relative overflow-hidden rounded-lg">
+                          <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                          
+                          <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
+                            <button
+                              onClick={() => selectedProject?.id && setShowTimeTrackingForProject(selectedProject.id)}
+                              className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground w-full justify-center"
+                            >
+                              <Clock className="h-4 w-4" />
+                              Time
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1797,9 +2418,9 @@ Task 2
 
                     {/* Add the Linked Invoices section */}
                     {showInvoiceSection && (
-                      <div className="mt-6 bg-neutral-850 border border-neutral-700 rounded-lg overflow-hidden">
-                        <div className="p-4 border-b border-neutral-700 flex justify-between items-center">
-                          <h3 className="text-lg font-medium text-white">Linked Invoices</h3>
+                      <div className="mt-6 bg-gray-200 dark:bg-muted dark:bg-neutral-850 border border-border dark:border-border rounded-lg overflow-hidden">
+                        <div className="p-4 border-b border-border dark:border-border flex justify-between items-center">
+                          <h3 className="text-lg font-medium text-foreground">Linked Invoices</h3>
                           {!selectedProject.customer_name && (
                             <div className="text-sm text-yellow-400 flex items-center gap-1.5">
                               <AlertCircle className="h-4 w-4" />
@@ -1811,32 +2432,32 @@ Task 2
                         <div className="p-4">
                           {loadingInvoices ? (
                             <div className="py-8 flex justify-center">
-                              <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                             </div>
                           ) : !selectedProject.customer_name ? (
                             <div className="py-6 text-center">
-                              <div className="mx-auto w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center mb-3">
-                                <Link2 className="h-6 w-6 text-neutral-500" />
+                              <div className="mx-auto w-12 h-12 rounded-full bg-background flex items-center justify-center mb-3">
+                                <Link2 className="h-6 w-6 text-muted-foreground" />
                               </div>
-                              <p className="text-neutral-400">No customer linked to this project</p>
-                              <p className="text-sm text-neutral-500 mt-1">Link a customer to see available invoices</p>
+                              <p className="text-muted-foreground">No customer linked to this project</p>
+                              <p className="text-sm text-muted-foreground mt-1">Link a customer to see available invoices</p>
                               <button
                                 onClick={() => openCustomerDialog(selectedProject)}
-                                className="mt-4 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-sm rounded-md text-neutral-300"
+                                className="mt-4 px-4 py-2 bg-background hover:bg-gray-200 dark:bg-muted text-sm rounded-md text-foreground dark:text-neutral-300"
                               >
                                 Link Customer
                               </button>
                             </div>
                           ) : invoices.length === 0 ? (
                             <div className="py-6 text-center">
-                              <div className="mx-auto w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center mb-3">
-                                <FileText className="h-6 w-6 text-neutral-500" />
+                              <div className="mx-auto w-12 h-12 rounded-full bg-background flex items-center justify-center mb-3">
+                                <FileText className="h-6 w-6 text-muted-foreground" />
                               </div>
-                              <p className="text-neutral-400">No invoices found for {selectedProject.customer_name}</p>
-                              <p className="text-sm text-neutral-500 mt-1">Create invoices for this customer first</p>
+                              <p className="text-muted-foreground">No invoices found for {selectedProject.customer_name}</p>
+                              <p className="text-sm text-muted-foreground mt-1">Create invoices for this customer first</p>
                               <Link
                                 href="/invoices/new"
-                                className="inline-block mt-4 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-sm rounded-md text-neutral-300"
+                                className="inline-block mt-4 px-4 py-2 bg-background hover:bg-gray-200 dark:bg-muted text-sm rounded-md text-foreground dark:text-neutral-300"
                               >
                                 Create Invoice
                               </Link>
@@ -1849,14 +2470,14 @@ Task 2
                                   className={cn(
                                     "p-3 rounded-md border transition-all",
                                     invoice.linked_to_project 
-                                      ? "bg-blue-900/10 border-blue-900/30" 
-                                      : "bg-neutral-800 border-neutral-700 hover:border-neutral-600"
+                                      ? "bg-blue-50 dark:bg-blue-900/10 border-blue-900/30" 
+                                      : "bg-background border-border hover:border-gray-400"
                                   )}
                                 >
                                   <div className="flex justify-between items-center">
                                     <div className="flex flex-col">
-                                      <span className="font-medium text-white">{invoice.invoice_number}</span>
-                                      <span className="text-xs text-neutral-400 mt-1">
+                                      <span className="font-medium text-foreground">{invoice.invoice_number}</span>
+                                      <span className="text-xs text-muted-foreground mt-1">
                                         {new Date(invoice.created_at).toLocaleDateString()} • 
                                         {formatCurrency(invoice.total_amount)}
                                       </span>
@@ -1866,8 +2487,8 @@ Task 2
                                       className={cn(
                                         "flex items-center gap-1.5 px-2.5 py-1.5 rounded text-sm",
                                         invoice.linked_to_project
-                                          ? "bg-blue-900/20 text-blue-400 hover:bg-blue-900/30"
-                                          : "bg-neutral-700 text-neutral-300 hover:bg-neutral-600"
+                                          ? "bg-blue-100 dark:bg-blue-900/20 text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/30"
+                                          : "bg-gray-200 dark:bg-muted text-foreground dark:text-neutral-300 hover:bg-gray-300 dark:hover:bg-neutral-600"
                                       )}
                                     >
                                       {invoice.linked_to_project ? (
@@ -1891,7 +2512,7 @@ Task 2
                                       {getStatusDisplay(invoice.status || "ongoing").text}
                                     </div>
                                     {invoice.due_date && (
-                                      <span className="text-xs text-neutral-500 ml-2">
+                                      <span className="text-xs text-muted-foreground ml-2">
                                         Due: {new Date(invoice.due_date).toLocaleDateString()}
                                       </span>
                                     )}
@@ -1904,17 +2525,290 @@ Task 2
                       </div>
                     )}
 
+                    {/* Add the Linked Domains section */}
+                    {showDomainSection && (
+                      <div className="mt-6 bg-gray-200 dark:bg-muted dark:bg-neutral-850 border border-border dark:border-border rounded-lg overflow-hidden">
+                        <div className="p-4 border-b border-border dark:border-border flex justify-between items-center">
+                          <h3 className="text-lg font-medium text-foreground">Linked Domains & Backlinks</h3>
+                          <div className="text-sm text-green-400 flex items-center gap-1.5">
+                            <Globe className="h-4 w-4" />
+                            <span>SEO Assets</span>
+                          </div>
+                        </div>
+                        
+                        <div className="p-4">
+                          {loadingDomains ? (
+                            <div className="py-8 flex justify-center">
+                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : totalDomains === 0 && !domainSearch ? (
+                            <div className="py-6 text-center">
+                              <div className="mx-auto w-12 h-12 rounded-full bg-background flex items-center justify-center mb-3">
+                                <Globe className="h-6 w-6 text-muted-foreground" />
+                              </div>
+                              <p className="text-muted-foreground">No domains found in workspace</p>
+                              <p className="text-sm text-muted-foreground mt-1">Upload domains to the domains page first</p>
+                              <Link
+                                href="/domains"
+                                className="inline-block mt-4 px-4 py-2 bg-background hover:bg-gray-200 dark:bg-muted text-sm rounded-md text-foreground dark:text-neutral-300"
+                              >
+                                Manage Domains
+                              </Link>
+                            </div>
+                          ) : (
+                            <div>
+                              {/* Domain Search */}
+                              <div className="mb-4">
+                                <div className="relative">
+                                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                  <input
+                                    type="text"
+                                    placeholder="Search domains..."
+                                    value={domainSearch}
+                                    onChange={(e) => handleDomainSearch(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 bg-background border border-border rounded-md text-sm text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                </div>
+                                <div className="mt-2 text-sm text-muted-foreground">
+                                  Showing {domains.length} of {totalDomains.toLocaleString()} domains
+                                </div>
+                              </div>
+                              
+                              {domains.length === 0 ? (
+                                <div className="py-6 text-center">
+                                  <div className="mx-auto w-12 h-12 rounded-full bg-background flex items-center justify-center mb-3">
+                                    <Globe className="h-6 w-6 text-muted-foreground" />
+                                  </div>
+                                  <p className="text-muted-foreground">No domains match your search</p>
+                                  <p className="text-sm text-muted-foreground mt-1">Try a different search term</p>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
+                                    {domains.map(domain => (
+                                      <div 
+                                        key={domain.id}
+                                        className={cn(
+                                          "p-3 rounded-md border transition-all",
+                                          domain.linked_to_project 
+                                            ? "bg-green-50 dark:bg-green-900/10 border-green-900/30" 
+                                            : "bg-background border-border hover:border-gray-400"
+                                        )}
+                                      >
+                                        <div className="flex justify-between items-start">
+                                          <div className="flex flex-col flex-1">
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-medium text-foreground">
+                                                {domain.display_domain || domain.domain}
+                                              </span>
+                                              {domain.domain_rating && (
+                                                <span className="text-xs bg-blue-100 dark:bg-blue-900/20 text-blue-400 px-2 py-0.5 rounded">
+                                                  DR {domain.domain_rating}
+                                                </span>
+                                              )}
+                                              <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded">
+                                                {domain.source}
+                                              </span>
+                                            </div>
+                                            
+                                            <div className="mt-2 grid grid-cols-2 gap-4 text-xs text-muted-foreground">
+                                              {domain.organic_traffic && (
+                                                <div>
+                                                  <span className="font-medium">Traffic:</span> {domain.organic_traffic.toLocaleString()}
+                                                </div>
+                                              )}
+                                              {domain.referring_domains && (
+                                                <div>
+                                                  <span className="font-medium">Ref Domains:</span> {domain.referring_domains.toLocaleString()}
+                                                </div>
+                                              )}
+                                              {domain.organic_keywords && (
+                                                <div>
+                                                  <span className="font-medium">Keywords:</span> {domain.organic_keywords.toLocaleString()}
+                                                </div>
+                                              )}
+                                              {domain.traffic_value && (
+                                                <div>
+                                                  <span className="font-medium">Value:</span> ${domain.traffic_value.toLocaleString()}
+                                                </div>
+                                              )}
+                                            </div>
+                                            
+                                            {domain.expiry_date && (
+                                              <div className="mt-1 text-xs text-muted-foreground">
+                                                <span className="font-medium">Expires:</span> {new Date(domain.expiry_date).toLocaleDateString()}
+                                              </div>
+                                            )}
+                                          </div>
+                                          
+                                          <button
+                                            onClick={() => toggleDomainLink(domain.id, selectedProject.id)}
+                                            className={cn(
+                                              "flex items-center gap-1.5 px-2.5 py-1.5 rounded text-sm ml-3",
+                                              domain.linked_to_project
+                                                ? "bg-green-100 dark:bg-green-900/20 text-green-400 hover:bg-green-200 dark:hover:bg-green-900/30"
+                                                : "bg-gray-200 dark:bg-muted text-foreground dark:text-neutral-300 hover:bg-gray-300 dark:hover:bg-neutral-600"
+                                            )}
+                                          >
+                                            {domain.linked_to_project ? (
+                                              <>
+                                                <CheckCircle className="h-4 w-4" />
+                                                <span>Linked</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Link2 className="h-4 w-4" />
+                                                <span>Link</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  
+                                  {/* Pagination */}
+                                  {totalDomains > DOMAINS_PER_PAGE && (
+                                    <div className="mt-4 flex items-center justify-between">
+                                      <div className="text-sm text-muted-foreground">
+                                        Page {domainPage} of {Math.ceil(totalDomains / DOMAINS_PER_PAGE)}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => handleDomainPageChange(domainPage - 1)}
+                                          disabled={domainPage === 1}
+                                          className="px-3 py-1 text-sm bg-background border border-border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800"
+                                        >
+                                          Previous
+                                        </button>
+                                        <button
+                                          onClick={() => handleDomainPageChange(domainPage + 1)}
+                                          disabled={domainPage >= Math.ceil(totalDomains / DOMAINS_PER_PAGE)}
+                                          className="px-3 py-1 text-sm bg-background border border-border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800"
+                                        >
+                                          Next
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-2 text-sm">
-                      <p className="text-neutral-400">Start Date: <span className="text-white">{new Date(selectedProject.startDate || '').toLocaleDateString()}</span></p>
+                      <p className="text-muted-foreground">Start Date: <span className="text-foreground">{new Date(selectedProject.startDate || '').toLocaleDateString()}</span></p>
                       {selectedProject.endDate && (
-                        <p className="text-neutral-400">End Date: <span className="text-white">{new Date(selectedProject.endDate).toLocaleDateString()}</span></p>
+                        <p className="text-muted-foreground">End Date: <span className="text-foreground">{new Date(selectedProject.endDate).toLocaleDateString()}</span></p>
+                      )}
+                      
+                      {/* Backlinks Progress Section */}
+                      {linkedDomainIds.length > 0 && (
+                        <div className="mt-4 p-3 border border-border rounded-lg bg-green-50 dark:bg-green-900/10">
+                          <div 
+                            className="flex items-center justify-between mb-2 cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/20 p-1 rounded transition-colors"
+                            onClick={() => setExpandedBacklinks(!expandedBacklinks)}
+                          >
+                            <span className="text-sm font-medium text-foreground">Backlinks Progress</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-green-600 dark:text-green-400">
+                                {expandedBacklinks ? 'Click to collapse' : 'Click to view domains'}
+                              </span>
+                              {expandedBacklinks ? (
+                                <ChevronDown className="h-4 w-4 text-green-500" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-green-500" />
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Total Referring Domains:</span>
+                              <span className="font-bold text-green-600 dark:text-green-400">
+                                {(() => {
+                                  const linkedDomains = domains.filter(d => linkedDomainIds.includes(d.domain));
+                                  console.log('Linked domains for calculation:', linkedDomains.map(d => ({ domain: d.domain, referring_domains: d.referring_domains })));
+                                  return linkedDomains.reduce((sum, d) => sum + (d.referring_domains || 0), 0).toLocaleString();
+                                })()}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Linked Domains:</span>
+                              <span className="text-foreground">{linkedDomainIds.length}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">Average DR:</span>
+                              <span className="text-foreground">
+                                {(() => {
+                                  const linkedDomains = domains.filter(d => linkedDomainIds.includes(d.domain));
+                                  const validDomains = linkedDomains.filter(d => d.domain_rating && d.domain_rating > 0);
+                                  if (validDomains.length === 0) return "N/A";
+                                  const avgDR = Math.round(validDomains.reduce((sum, d) => sum + (d.domain_rating || 0), 0) / validDomains.length);
+                                  return avgDR;
+                                })()}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Expanded domain list */}
+                          {expandedBacklinks && (
+                            <div className="mt-4 border-t border-green-200 dark:border-green-800 pt-3">
+                              <h4 className="text-sm font-medium text-foreground mb-3">Linked Domains:</h4>
+                              <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                                {domains.filter(d => linkedDomainIds.includes(d.domain)).length === 0 ? (
+                                  <div className="text-center py-2 text-muted-foreground text-sm">
+                                    No domain data loaded yet. Try opening the "Link Domains" section first.
+                                  </div>
+                                ) : (
+                                  domains.filter(d => linkedDomainIds.includes(d.domain)).map(domain => (
+                                    <div key={domain.id} className="flex items-center justify-between p-2 bg-background rounded border border-border">
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-medium text-foreground">
+                                          {domain.display_domain || domain.domain}
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          {domain.source}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs">
+                                        <div className="text-center">
+                                          <div className="font-medium text-foreground">
+                                            {(domain.referring_domains || 0).toLocaleString()}
+                                          </div>
+                                          <div className="text-muted-foreground">Ref Domains</div>
+                                        </div>
+                                        <div className="text-center">
+                                          <div className="font-medium text-foreground">
+                                            {domain.domain_rating || 'N/A'}
+                                          </div>
+                                          <div className="text-muted-foreground">DR</div>
+                                        </div>
+                                        {domain.organic_traffic && (
+                                          <div className="text-center">
+                                            <div className="font-medium text-foreground">
+                                              {domain.organic_traffic.toLocaleString()}
+                                            </div>
+                                            <div className="text-muted-foreground">Traffic</div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
 
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <h2 className="text-lg font-semibold text-white">Description</h2>
-                        <p className="text-neutral-400 whitespace-pre-wrap">{selectedProject.description || "No description provided."}</p>
+                        <h2 className="text-lg font-semibold text-foreground">Description</h2>
+                        <p className="text-muted-foreground whitespace-pre-wrap">{selectedProject.description || "No description provided."}</p>
                       </div>
 
                       <div className="space-y-4">
@@ -1927,6 +2821,9 @@ Task 2
                           projectName={selectedProject.name}
                           projectDescription={selectedProject.description || ''}
                           projectId={selectedProject.id || ''}
+                          onMoveTask={(task) => openTaskMoveDialog(task, selectedProject)}
+                          onMoveSubtask={(task, subtask) => openSubtaskMoveDialog(task, subtask, selectedProject)}
+                          showMonthlyGrouping={true}
                         />
                       </div>
                     </div>
@@ -1935,50 +2832,48 @@ Task 2
               </div>
             )}
           </DialogContent>
-        </AnimatedBorderCard>
       </Dialog>
 
       {/* Customer assignment dialog */}
       <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
-        <AnimatedBorderCard className="w-full max-w-md mx-auto relative">
-          <DialogContent className="bg-neutral-800 border-transparent text-white p-0 overflow-hidden">
+        <DialogContent className="bg-background border-border text-foreground p-0 overflow-hidden max-w-md">
             <div className="relative">
               <div className="p-6 relative z-10">
                 <DialogHeader>
                   <DialogTitle className="text-xl font-semibold">
                     Link Project to Customer
                   </DialogTitle>
-                  <DialogDescription className="text-neutral-400">
-                    Select a customer to associate with the project "{projectToEdit?.name}"
+                  <DialogDescription className="text-muted-foreground">
+                    Select a customer to associate with the project "{projectToEdit?.name || ''}"
                   </DialogDescription>
                 </DialogHeader>
                 
                 <div className="py-4">
                   {loadingCustomers ? (
                     <div className="py-4 flex justify-center">
-                      <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : customers.length === 0 ? (
-                    <div className="py-4 text-center text-neutral-400">
+                    <div className="py-4 text-center text-muted-foreground">
                       <p>No customers found</p>
-                      <p className="text-sm text-neutral-500 mt-1">Create customers first</p>
+                      <p className="text-sm text-muted-foreground mt-1">Create customers first</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
                       <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-500" />
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <input
                           type="text"
                           placeholder="Search customers..."
                           value={customerSearch}
                           onChange={(e) => setCustomerSearch(e.target.value)}
-                          className="w-full pl-9 pr-4 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                          className="w-full pl-9 pr-4 py-2 bg-gray-200 dark:bg-muted border border-gray-400 dark:border-border rounded-md text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-500"
                         />
                       </div>
                       
                       <div className="max-h-[300px] overflow-y-auto space-y-2 custom-scrollbar">
                         {filteredCustomers.length === 0 ? (
-                          <div className="text-center py-3 text-neutral-400">
+                          <div className="text-center py-3 text-muted-foreground">
                             No customers matching "{customerSearch}"
                           </div>
                         ) : (
@@ -1988,8 +2883,8 @@ Task 2
                               className={cn(
                                 "p-3 border rounded-md cursor-pointer transition-colors",
                                 selectedCustomerId === customer.id 
-                                  ? "bg-blue-900/20 border-blue-600" 
-                                  : "bg-neutral-700 border-neutral-600 hover:bg-neutral-650"
+                                  ? "bg-blue-100 dark:bg-blue-900/20 border-blue-600" 
+                                  : "bg-gray-200 dark:bg-muted border-gray-400 dark:border-border hover:bg-gray-300 dark:hover:bg-gray-300 dark:bg-neutral-650"
                               )}
                               onClick={() => setSelectedCustomerId(customer.id)}
                             >
@@ -2006,11 +2901,11 @@ Task 2
                   <div className="group relative overflow-hidden rounded-lg">
                     <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                     
-                    <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                    <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                       <button
                         type="button"
                         onClick={() => setCustomerDialogOpen(false)}
-                        className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                        className="px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
                       >
                         Cancel
                       </button>
@@ -2021,11 +2916,11 @@ Task 2
                   <div className="group relative overflow-hidden rounded-lg">
                     <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-green-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                     
-                    <div className="relative m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                    <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
                       <button
                         type="button"
                         onClick={updateProjectCustomer}
-                        className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                        className="px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
                       >
                         Link Customer
                       </button>
@@ -2035,8 +2930,148 @@ Task 2
               </div>
             </div>
           </DialogContent>
-        </AnimatedBorderCard>
       </Dialog>
+
+      {/* Folder assignment dialog */}
+      <Dialog open={folderAssignmentDialog} onOpenChange={setFolderAssignmentDialog}>
+        <DialogContent className="bg-background border-border text-foreground p-0 overflow-hidden max-w-md">
+          <div className="relative">
+            <div className="p-6 relative z-10">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-semibold">
+                  Assign Project to Folder
+                </DialogTitle>
+                <DialogDescription className="text-muted-foreground">
+                  Select a folder for the project "{projectToAssignFolder?.name || ''}"
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="py-4">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">Folder</label>
+                    <select
+                      value={selectedProjectFolderId}
+                      onChange={(e) => setSelectedProjectFolderId(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-200 dark:bg-muted border border-gray-400 dark:border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-500"
+                    >
+                      <option value="">Unassigned</option>
+                      {availableFolders.map(folder => (
+                        <option key={folder.id} value={folder.id}>
+                          {folder.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  {availableFolders.length === 0 && (
+                    <div className="text-center py-3 text-muted-foreground">
+                      <p>No folders available</p>
+                      <p className="text-sm text-muted-foreground mt-1">Create folders first using "Manage Folders"</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <DialogFooter className="flex justify-end gap-3 mt-6">
+                {/* Cancel button */}
+                <div className="group relative overflow-hidden rounded-lg">
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                  
+                  <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
+                    <button
+                      type="button"
+                      onClick={() => setFolderAssignmentDialog(false)}
+                      className="px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Save button */}
+                <div className="group relative overflow-hidden rounded-lg">
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-purple-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+                  
+                  <div className="relative m-[1px] bg-background rounded-lg hover:bg-muted transition-colors duration-300">
+                    <button
+                      type="button"
+                      onClick={updateProjectFolder}
+                      className="px-4 py-2 border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
+                    >
+                      Assign Folder
+                    </button>
+                  </div>
+                </div>
+              </DialogFooter>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Time Tracking Summary Dialog */}
+      <Dialog open={!!showTimeTrackingForProject} onOpenChange={() => setShowTimeTrackingForProject(null)}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle>Project Time Tracking</DialogTitle>
+            <DialogDescription>
+              View and manage time spent on this project and its tasks
+            </DialogDescription>
+          </DialogHeader>
+          
+          {showTimeTrackingForProject && (
+            <TimeTrackingSummary 
+              projectId={showTimeTrackingForProject} 
+              className="mt-4"
+            />
+          )}
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowTimeTrackingForProject(null)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Project Folder Management Dialog */}
+      {workspaceId && session?.user?.id && (
+        <ProjectFolderManagementDialog
+          open={showFolderManagement}
+          onOpenChange={setShowFolderManagement}
+          workspaceId={workspaceId}
+          userId={session.user.id}
+          onFoldersChanged={handleFoldersChanged}
+        />
+      )}
+
+      {/* Task Move Dialog */}
+      {workspaceId && (
+        <TaskMoveDialog
+          open={taskMoveDialog.open}
+          onOpenChange={(open) => setTaskMoveDialog(prev => ({ ...prev, open }))}
+          task={taskMoveDialog.task}
+          currentProject={taskMoveDialog.currentProject}
+          workspaceId={workspaceId}
+          onTaskMoved={handleTaskMoved}
+        />
+      )}
+
+      {/* Subtask Move Dialog */}
+      {workspaceId && (
+        <SubtaskMoveDialog
+          open={subtaskMoveDialog.open}
+          onOpenChange={(open) => setSubtaskMoveDialog(prev => ({ ...prev, open }))}
+          task={subtaskMoveDialog.task}
+          subtask={subtaskMoveDialog.subtask}
+          currentProject={subtaskMoveDialog.currentProject}
+          workspaceId={workspaceId}
+          onSubtaskMoved={handleSubtaskMoved}
+        />
+      )}
     </div>
   );
 } 

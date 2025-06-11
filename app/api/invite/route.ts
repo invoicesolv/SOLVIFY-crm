@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { v4 as uuidv4 } from "uuid"
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
 import nodemailer from 'nodemailer'
 import { getServerSession } from "next-auth/next"
 import authOptions from "@/lib/auth";
@@ -25,23 +25,23 @@ async function isAdmin(userId: string, workspaceId?: string): Promise<boolean> {
 
   // If a specific workspace is provided, check admin status for that workspace
   if (workspaceId) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('team_members')
       .select('is_admin')
       .eq('user_id', userId)
-      .eq('workspace_id', workspaceId)
-      .single();
+      .eq('workspace_id', workspaceId);
 
     if (error) {
       console.error('Error checking admin status:', error);
       return false; // Treat errors as non-admin
     }
 
-    return data?.is_admin === true;
+    // Check if any of the records show admin status
+    return data && data.some(record => record.is_admin === true);
   }
 
   // Otherwise, check if user is admin in any workspace
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('team_members')
     .select('is_admin')
     .eq('user_id', userId)
@@ -142,8 +142,8 @@ export async function POST(req: Request) {
     // Set expiration date (24 hours from now)
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // Create invitation record in database
-    const { data: invitationData, error: inviteError } = await supabase
+    // Create invitation record in database using admin client
+    const { data: invitationData, error: inviteError } = await supabaseAdmin
       .from('invitations')
       .insert({
         token,

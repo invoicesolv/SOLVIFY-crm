@@ -17,7 +17,7 @@ export function getUnsplashApi() {
     return null;
   }
   
-  console.log(`Initializing Unsplash API with key: ${accessKey.substring(0, 4)}...${accessKey.length > 8 ? accessKey.substring(accessKey.length - 4) : '****'}`);
+  console.log(`Initializing Unsplash API with key: ${accessKey ? 'present' : 'missing'}`);
   
   try {
     // Create the Unsplash API client with node-fetch for server-side usage
@@ -55,7 +55,7 @@ export function initializeWithApiKey(apiKey: string): boolean {
     return false;
   }
   
-  console.log(`Manually initializing Unsplash API with key: ${apiKey.substring(0, 4)}...${apiKey.length > 8 ? apiKey.substring(apiKey.length - 4) : '****'}`);
+      console.log(`Manually initializing Unsplash API with key: ${apiKey ? 'present' : 'missing'}`);
   
   try {
     unsplashApi = createApi({

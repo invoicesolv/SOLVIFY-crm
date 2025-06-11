@@ -104,7 +104,7 @@ export function DealForm({
           <div>
             <label
               htmlFor="lead_name"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Lead Name *
             </label>
@@ -115,7 +115,7 @@ export function DealForm({
               onChange={(e) =>
                 setFormData({ ...formData, lead_name: e.target.value })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
@@ -123,7 +123,7 @@ export function DealForm({
           <div>
             <label
               htmlFor="company"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Company *
             </label>
@@ -134,7 +134,7 @@ export function DealForm({
               onChange={(e) =>
                 setFormData({ ...formData, company: e.target.value })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
@@ -142,7 +142,7 @@ export function DealForm({
           <div>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Email *
             </label>
@@ -153,7 +153,7 @@ export function DealForm({
               onChange={(e) =>
                 setFormData({ ...formData, email: e.target.value })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
@@ -161,7 +161,7 @@ export function DealForm({
           <div>
             <label
               htmlFor="phone"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Phone
             </label>
@@ -172,14 +172,14 @@ export function DealForm({
               onChange={(e) =>
                 setFormData({ ...formData, phone: e.target.value })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
             <label
               htmlFor="value"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Deal Value
             </label>
@@ -190,7 +190,7 @@ export function DealForm({
               onChange={(e) =>
                 setFormData({ ...formData, value: parseFloat(e.target.value) })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               min="0"
               step="0.01"
             />
@@ -199,7 +199,7 @@ export function DealForm({
           <div>
             <label
               htmlFor="stage"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Stage
             </label>
@@ -212,7 +212,7 @@ export function DealForm({
                   stage: e.target.value as any,
                 })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="new">New</option>
               <option value="contacted">Contacted</option>
@@ -226,7 +226,7 @@ export function DealForm({
           <div>
             <label
               htmlFor="notes"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Notes
             </label>
@@ -236,7 +236,7 @@ export function DealForm({
               onChange={(e) =>
                 setFormData({ ...formData, notes: e.target.value })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={4}
             />
           </div>
@@ -245,12 +245,12 @@ export function DealForm({
             <div className="group relative overflow-hidden rounded-lg">
               <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-neutral-600 via-neutral-500 to-neutral-600 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
               
-              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
                 <button
               type="button"
               onClick={onCancel}
               disabled={loading}
-                  className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                  className="px-4 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
             >
               Cancel
                 </button>
@@ -260,11 +260,11 @@ export function DealForm({
             <div className="group relative overflow-hidden rounded-lg">
               <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
               
-              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+              <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white flex items-center gap-2"
+                  className="px-4 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground flex items-center gap-2"
                 >
                   {loading ? (
                     <>

@@ -1,10 +1,10 @@
-# Vibe CRM Pages Documentation
+# Solvify CRM Pages Documentation
 
 ## Public Pages
 
-### Landing Page (`/landing`, `/sv`)
+### Landing Page (`/landing`)
 - Main marketing page
-- Available in English (`/landing`) and Swedish (`/sv`)
+- Available in English (`/landing`)
 - Features product information, pricing, and contact details
 - Accessible to all users
 
@@ -122,6 +122,6 @@
    - Clears session
 
 ## Protected Routes
-- All routes except `/landing`, `/login`, `/register`, and `/sv` require authentication
+- All routes except `/landing`, `/login`, `/register` require authentication
 - Unauthorized access redirects to login page
 - Authenticated users accessing public pages are redirected to dashboard 

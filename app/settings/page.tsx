@@ -9,6 +9,7 @@ import { useSearchParams } from 'next/navigation';
 import { toast } from "sonner";
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { useSession, signIn } from "next-auth/react";
+import Image from 'next/image';
 import { 
   Settings, 
   Search, 
@@ -20,7 +21,10 @@ import {
   FolderOpen,
   Users,
   Inbox,
-  CreditCard
+  CreditCard,
+  Brain,
+  Zap,
+  Globe
 } from "lucide-react";
 import { saveServiceSettings, getServiceSettings, deleteServiceSettings } from '@/lib/settings';
 import { getActiveWorkspaceId } from '@/lib/permission';
@@ -65,7 +69,7 @@ function SettingsContent() {
       name: 'Google Analytics',
       description: 'Track and analyze website traffic and user behavior',
       isAuthenticated: false,
-      icon: <BarChart className="h-5 w-5 text-neutral-400" />,
+      icon: <BarChart className="h-5 w-5 text-muted-foreground" />,
       scopes: [
         'https://www.googleapis.com/auth/analytics.readonly',
         'https://www.googleapis.com/auth/analytics',
@@ -79,7 +83,7 @@ function SettingsContent() {
       name: 'Search Console',
       description: 'Monitor search performance and optimize visibility',
       isAuthenticated: false,
-      icon: <Search className="h-5 w-5 text-neutral-400" />,
+      icon: <Search className="h-5 w-5 text-muted-foreground" />,
       scopes: [
         'https://www.googleapis.com/auth/webmasters.readonly',
         'https://www.googleapis.com/auth/webmasters'
@@ -90,7 +94,7 @@ function SettingsContent() {
       name: 'Google Calendar',
       description: 'Manage appointments and schedule events',
       isAuthenticated: false,
-      icon: <Calendar className="h-5 w-5 text-neutral-400" />,
+      icon: <Calendar className="h-5 w-5 text-muted-foreground" />,
       scopes: [
         'https://www.googleapis.com/auth/calendar.readonly',
         'https://www.googleapis.com/auth/calendar'
@@ -101,7 +105,7 @@ function SettingsContent() {
       name: 'Google Drive',
       description: 'Store and manage files and reports',
       isAuthenticated: false,
-      icon: <FolderOpen className="h-5 w-5 text-neutral-400" />,
+      icon: <FolderOpen className="h-5 w-5 text-muted-foreground" />,
       scopes: [
         'https://www.googleapis.com/auth/drive.file',
         'https://www.googleapis.com/auth/drive.appdata',
@@ -113,7 +117,7 @@ function SettingsContent() {
       name: 'Gmail Lead Hub',
       description: 'Connect Gmail to pull potential leads',
       isAuthenticated: false,
-      icon: <Inbox className="h-5 w-5 text-neutral-400" />,
+      icon: <Inbox className="h-5 w-5 text-muted-foreground" />,
       scopes: ['https://www.googleapis.com/auth/gmail.readonly']
     }
   ]);
@@ -123,7 +127,11 @@ function SettingsContent() {
   const [fortnoxStatus, setFortnoxStatus] = useState<FortnoxStatus>({ connected: false });
   const [gmailConnected, setGmailConnected] = useState(false);
 
+  // AI Model Configuration
   const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [openaiModel, setOpenaiModel] = useState('gpt-4');
+  const [claudeApiKey, setClaudeApiKey] = useState('');
+  const [claudeModel, setClaudeModel] = useState('claude-3-sonnet');
   const [unsplashApiKey, setUnsplashApiKey] = useState('');
   const [loopiaApiKey, setLoopiaApiKey] = useState('');
   const [loopiaApiUser, setLoopiaApiUser] = useState('');
@@ -135,6 +143,18 @@ function SettingsContent() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Social Media Integration States
+  const [socialMediaConnections, setSocialMediaConnections] = useState({
+    instagram: false,
+    facebook: false,
+    threads: false,
+    tiktok: false,
+    linkedin: false,
+    twitter: false,
+    youtube: false
+  });
+  const [socialMediaLoading, setSocialMediaLoading] = useState(false);
 
   const buttonVariants = {
     default: "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -222,7 +242,7 @@ function SettingsContent() {
       try {
         const { data, error } = await supabase
           .from('workspace_settings')
-          .select('openai_api_key, unsplash_api_key, loopia_api_key, loopia_api_user, blog_url')
+          .select('openai_api_key, claude_api_key, claude_model, openai_model, unsplash_api_key, loopia_api_key, loopia_api_user, blog_url')
           .eq('workspace_id', currentWorkspaceId)
           .maybeSingle();
 
@@ -231,12 +251,18 @@ function SettingsContent() {
         }
         if (data) {
           if (data.openai_api_key) setOpenaiApiKey(data.openai_api_key);
+          if (data.openai_model) setOpenaiModel(data.openai_model);
+          if (data.claude_api_key) setClaudeApiKey(data.claude_api_key);
+          if (data.claude_model) setClaudeModel(data.claude_model);
           if (data.unsplash_api_key) setUnsplashApiKey(data.unsplash_api_key);
           if (data.loopia_api_key) setLoopiaApiKey(data.loopia_api_key);
           if (data.loopia_api_user) setLoopiaApiUser(data.loopia_api_user);
           if (data.blog_url) setBlogUrl(data.blog_url);
         } else {
           setOpenaiApiKey('');
+          setOpenaiModel('gpt-4');
+          setClaudeApiKey('');
+          setClaudeModel('claude-3-sonnet');
           setUnsplashApiKey('');
           setLoopiaApiKey('');
           setLoopiaApiUser('');
@@ -462,6 +488,9 @@ function SettingsContent() {
         .upsert({
           workspace_id: currentWorkspaceId,
           openai_api_key: openaiApiKey,
+          openai_model: openaiModel,
+          claude_api_key: claudeApiKey,
+          claude_model: claudeModel,
           unsplash_api_key: unsplashApiKey,
           loopia_api_key: loopiaApiKey,
           loopia_api_user: loopiaApiUser,
@@ -522,192 +551,670 @@ function SettingsContent() {
     }
   };
 
+  // Social Media OAuth Handlers
+  const handleSocialMediaConnect = async (platform: string) => {
+    setSocialMediaLoading(true);
+    try {
+      if (platform === 'youtube') {
+        // YouTube uses Google OAuth - handle it specially
+        if (!session?.user?.id) {
+          toast.error('Please log in first');
+          setSocialMediaLoading(false);
+          return;
+        }
+        
+        try {
+          toast.info('Connecting to YouTube...');
+          // Import signIn from next-auth/react
+          const { signIn } = await import('next-auth/react');
+          
+          // Use the same pattern as other Google services
+          const youtubeScopes = [
+            'openid',
+            'email', 
+            'profile',
+            'https://www.googleapis.com/auth/youtube',
+            'https://www.googleapis.com/auth/youtube.upload',
+            'https://www.googleapis.com/auth/youtube.readonly',
+            'https://www.googleapis.com/auth/youtube.force-ssl'
+          ];
+          
+          await signIn('google', {
+            callbackUrl: '/settings?success=youtube_connected',
+            scope: youtubeScopes.join(' ')
+          }, { prompt: 'consent' });
+          return;
+        } catch (error) {
+          console.error('YouTube OAuth error:', error);
+          toast.error('Failed to connect YouTube');
+          setSocialMediaLoading(false);
+          return;
+        }
+      }
+      
+      // For other platforms, use the existing OAuth URLs
+      const oauthUrls = {
+        instagram: '/api/oauth/instagram',
+        facebook: '/api/oauth/facebook',
+        threads: '/api/oauth/threads',
+        tiktok: '/api/oauth/tiktok',
+        linkedin: '/api/oauth/linkedin',
+        twitter: '/api/oauth/twitter'
+      };
+      
+      const url = oauthUrls[platform as keyof typeof oauthUrls];
+      if (url) {
+        // Add state parameter for the OAuth flow
+        const state = encodeURIComponent(JSON.stringify({ 
+          platform: platform, 
+          userId: session?.user?.id,
+          returnTo: '/settings'
+        }));
+        window.location.href = `${url}?state=${state}`;
+      } else {
+        toast.error(`OAuth flow not implemented for ${platform}`);
+      }
+    } catch (error) {
+      console.error(`Error connecting to ${platform}:`, error);
+      toast.error(`Failed to connect to ${platform}`);
+    } finally {
+      setSocialMediaLoading(false);
+    }
+  };
+
+  const handleSocialMediaDisconnect = async (platform: string) => {
+    if (!session?.user?.id) {
+      toast.error('Please sign in first');
+      return;
+    }
+
+    try {
+      if (platform === 'youtube') {
+        // YouTube is stored in integrations table
+        const { error } = await supabase
+          .from('integrations')
+          .delete()
+          .eq('user_id', session.user.id)
+          .eq('service_name', 'youtube');
+
+        if (error) throw error;
+      } else {
+        // Other platforms are in social_accounts table
+        const { error } = await supabase
+          .from('social_accounts')
+          .delete()
+          .eq('user_id', session.user.id)
+          .eq('platform', platform);
+
+        if (error) throw error;
+      }
+
+      setSocialMediaConnections(prev => ({
+        ...prev,
+        [platform]: false
+      }));
+
+      toast.success(`${platform} disconnected successfully`);
+    } catch (error) {
+      console.error(`Error disconnecting ${platform}:`, error);
+      toast.error(`Failed to disconnect ${platform}`);
+    }
+  };
+
+  // Load social media connection status
+  const loadSocialMediaStatus = useCallback(async () => {
+    if (!session?.user?.id) return;
+    
+    try {
+      // Check social_accounts table for most platforms
+      const { data: connections, error } = await supabase
+        .from('social_accounts')
+        .select('platform, is_connected')
+        .eq('user_id', session.user.id);
+
+      if (error) throw error;
+
+      const connectionStatus = {
+        instagram: false,
+        facebook: false,
+        threads: false,
+        tiktok: false,
+        linkedin: false,
+        twitter: false,
+        youtube: false
+      };
+
+      connections?.forEach(conn => {
+        if (conn.platform && conn.is_connected) {
+          connectionStatus[conn.platform as keyof typeof connectionStatus] = true;
+        }
+      });
+
+      // Also check for YouTube connection in integrations table
+      const { data: youtubeIntegration, error: youtubeError } = await supabase
+        .from('integrations')
+        .select('service_name')
+        .eq('user_id', session.user.id)
+        .eq('service_name', 'youtube')
+        .single();
+
+      if (!youtubeError && youtubeIntegration) {
+        connectionStatus.youtube = true;
+      }
+
+      setSocialMediaConnections(connectionStatus);
+    } catch (error) {
+      console.error('Error loading social media connections:', error);
+    }
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (status === "authenticated" && session?.user?.id) {
+      loadSocialMediaStatus();
+    }
+  }, [session, status, loadSocialMediaStatus]);
+
+  // Handle social media OAuth success/error messages
+  useEffect(() => {
+    const success = searchParams.get('success');
+    const error = searchParams.get('error');
+    
+    if (success) {
+      // Handle different success cases
+      switch (success) {
+        case 'facebook_connected':
+          toast.success('Facebook account connected successfully!');
+          break;
+        case 'instagram_connected':
+          toast.success('Instagram account connected successfully!');
+          break;
+        case 'linkedin_connected':
+          toast.success('LinkedIn account connected successfully!');
+          break;
+        case 'twitter_connected':
+          toast.success('Twitter/X account connected successfully!');
+          break;
+        case 'youtube_connected':
+          toast.success('YouTube account connected successfully!');
+          break;
+        case 'tiktok_connected':
+          toast.success('TikTok account connected successfully!');
+          break;
+        case 'threads_connected':
+          toast.success('Threads account connected successfully!');
+          break;
+        default:
+          toast.success('Account connected successfully!');
+      }
+      
+      // Reload social media connections to update UI
+      loadSocialMediaStatus();
+      
+      // Clear the success parameter from URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete('success');
+      window.history.replaceState({}, '', url.toString());
+    }
+    
+    if (error) {
+      // Handle different error cases
+      switch (error) {
+        case 'facebook_auth_failed':
+          toast.error('Failed to connect Facebook account. Please try again.');
+          break;
+        case 'instagram_auth_failed':
+          toast.error('Failed to connect Instagram account. Please try again.');
+          break;
+        case 'instagram_config_missing':
+          toast.error('Instagram configuration missing. Please check your environment variables.');
+          break;
+        case 'no_instagram_business_accounts':
+          toast.error('No Instagram Business accounts found. Please connect an Instagram Business account to your Facebook page first.');
+          break;
+        case 'linkedin_auth_failed':
+          toast.error('Failed to connect LinkedIn account. Please try again.');
+          break;
+        case 'twitter_auth_failed':
+          toast.error('Failed to connect Twitter/X account. Please try again.');
+          break;
+        case 'youtube_auth_failed':
+          toast.error('Failed to connect YouTube account. Please try again.');
+          break;
+        case 'tiktok_auth_failed':
+          toast.error('Failed to connect TikTok account. Please try again.');
+          break;
+        case 'threads_auth_failed':
+          toast.error('Failed to connect Threads account. Please try again.');
+          break;
+        case 'no_code':
+          toast.error('Authorization was cancelled or no permission granted.');
+          break;
+        default:
+          toast.error('Failed to connect account. Please try again.');
+      }
+      
+      // Clear the error parameter from URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete('error');
+      url.searchParams.delete('details'); // Also clear details if present
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [searchParams, loadSocialMediaStatus]);
+
   return (
     <SidebarDemo>
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-white">Settings</h1>
-            <p className="text-sm text-neutral-400">
+            <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
+            <p className="text-sm text-muted-foreground">
               Manage your account settings and service permissions
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Google Integration Column */}
-          <Card className="bg-neutral-900 border-neutral-800">
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Settings className="h-5 w-5 text-neutral-400" />
-                <h2 className="text-lg font-medium text-white">Google Integrations</h2>
-              </div>
-              
-              <div className="space-y-4">
-                {/* Gmail Specific Card */}
-                <div className="p-4 rounded-lg bg-neutral-800/50">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 rounded-md bg-neutral-700">
-                      <Inbox className="h-5 w-5 text-neutral-400" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-white">Gmail Lead Hub</h3>
-                        {gmailConnected && (
-                          <CheckCircle2 className="h-4 w-4 text-green-500" />
-                        )}
-                      </div>
-                      <p className="text-sm text-neutral-400">Connect Gmail to pull potential leads.</p>
-                    </div>
-                    {!gmailConnected ? (
-                      <Button
-                        onClick={() => handleAuthenticate()} // Generic connect triggers re-auth with all scopes
-                        disabled={authenticating}
-                      >
-                        {authenticating ? 'Connecting...' : 'Connect Google'}
-                      </Button>
-                    ) : (
-                      <Button 
-                        variant="outline" 
-                        className="text-red-500 hover:bg-red-500/10 hover:text-red-400 border-red-500/20"
-                        onClick={() => handleDisconnectService('google-gmail')}
-                      >
-                        Disconnect
-                      </Button>
-                    )}
-                  </div>
+        {/* All Integrations Section */}
+        <Card className="bg-background border-border">
+          <div className="p-6">
+            <div className="flex items-center gap-2 mb-6">
+              <Zap className="h-6 w-6 text-blue-500" />
+              <h2 className="text-xl font-bold text-foreground">All Integrations</h2>
+            </div>
+            <p className="text-muted-foreground mb-6">Connect and configure all your services and AI models in one place</p>
+            
+            <div className="space-y-6">
+              {/* AI Models Section */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Brain className="h-5 w-5 text-purple-500" />
+                  <h3 className="text-lg font-semibold text-foreground">AI Models</h3>
                 </div>
-
-                {/* Other Google Services - Display Status Only */}
-                {services.filter(s => s.id !== 'google-gmail' && s.id.startsWith('google-')).map(service => (
-                   <div
-                    key={service.id}
-                    className="p-4 rounded-lg bg-neutral-800/50"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-2 rounded-md bg-neutral-700">
-                        {service.icon}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium text-white">{service.name}</h3>
-                          {service.isAuthenticated ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <AlertCircle className="h-4 w-4 text-yellow-500" />
-                          )}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* OpenAI */}
+                  <Card className="bg-background border-border">
+                    <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 flex items-center justify-center">
+                          <Image src="/integration-logos/openai.svg" alt="OpenAI" width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
                         </div>
-                        <p className="text-sm text-neutral-400">
-                          {service.isAuthenticated ? 'Connected' : 'Not Connected - Click Connect Google'}
-                        </p>
+                        <div>
+                          <h4 className="font-medium text-foreground">OpenAI (ChatGPT)</h4>
+                          <p className="text-xs text-muted-foreground">GPT models for AI chat and content generation</p>
+                        </div>
                       </div>
-                       {service.isAuthenticated && (
-                         <Button 
-                            variant="outline" 
-                            className="text-red-500 hover:bg-red-500/10 hover:text-red-400 border-red-500/20"
-                            onClick={() => handleDisconnectService(service.id)}
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs font-medium text-foreground mb-1 block">Model</label>
+                          <select
+                            value={openaiModel}
+                            onChange={(e) => setOpenaiModel(e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-muted border border-border rounded"
                           >
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                          </select>
+                        </div>
+                        <Input
+                          type="password"
+                          placeholder="OpenAI API Key"
+                          value={openaiApiKey}
+                          onChange={(e) => setOpenaiApiKey(e.target.value)}
+                          className="text-xs bg-muted border-border"
+                        />
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Claude */}
+                  <Card className="bg-background border-border">
+                    <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 flex items-center justify-center">
+                          <Image src="/integration-logos/Claude_AI_logo.svg" alt="Claude" width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-foreground">Claude (Anthropic)</h4>
+                          <p className="text-xs text-muted-foreground">Advanced AI assistant with longer context</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs font-medium text-foreground mb-1 block">Model</label>
+                          <select
+                            value={claudeModel}
+                            onChange={(e) => setClaudeModel(e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-muted border border-border rounded"
+                          >
+                            <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                            <option value="claude-3-haiku">Claude 3 Haiku</option>
+                            <option value="claude-3-opus">Claude 3 Opus</option>
+                            <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                          </select>
+                        </div>
+                        <Input
+                          type="password"
+                          placeholder="Claude API Key"
+                          value={claudeApiKey}
+                          onChange={(e) => setClaudeApiKey(e.target.value)}
+                          className="text-xs bg-muted border-border"
+                        />
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Google Services Section */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Image src="/integration-logos/google.png" alt="Google" width={20} height={20} className="object-contain" />
+                  <h3 className="text-lg font-semibold text-foreground">Google Services</h3>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Gmail */}
+                  <Card className="bg-background border-border">
+                    <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 flex items-center justify-center">
+                          <Image src="/integration-logos/gmail.svg" alt="Gmail" width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-foreground">Gmail Lead Hub</h4>
+                            {gmailConnected && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                          </div>
+                          <p className="text-xs text-muted-foreground">Connect Gmail to pull potential leads</p>
+                        </div>
+                        {!gmailConnected ? (
+                          <Button size="sm" onClick={() => handleAuthenticate()} disabled={authenticating}>
+                            {authenticating ? 'Connecting...' : 'Connect'}
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-500/10" onClick={() => handleDisconnectService('google-gmail')}>
                             Disconnect
                           </Button>
-                       )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-
-          {/* Fortnox Integration Column */}
-          <Card className="bg-neutral-900 border-neutral-800">
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Receipt className="h-5 w-5 text-neutral-400" />
-                <h2 className="text-lg font-medium text-white">Fortnox Integration</h2>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="p-4 rounded-lg bg-neutral-800/50">
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 rounded-md bg-neutral-700">
-                      <Receipt className="h-5 w-5 text-neutral-400" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-white">Fortnox</h3>
-                        {fortnoxStatus.connected && (
-                          <CheckCircle2 className="h-4 w-4 text-green-500" />
                         )}
                       </div>
-                      <p className="text-sm text-neutral-400">
-                        Access invoices and financial data
-                      </p>
-                      {fortnoxStatus.connected && fortnoxStatus.company_info && (
-                        <div className="mt-2 text-sm text-neutral-400">
-                          Connected to: {fortnoxStatus.company_info.CompanyName}
-                        </div>
-                      )}
                     </div>
-                    {!fortnoxStatus.connected ? (
-                      <Button
-                        onClick={() => window.location.href = '/api/fortnox/auth'}
-                        className="ml-4"
-                      >
-                        Connect
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={handleFortnoxDisconnect}
-                        variant="outline"
-                        className="ml-4 bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20"
-                      >
-                        Disconnect
-                      </Button>
-                    )}
-                  </div>
+                  </Card>
+
+                  {/* Other Google Services */}
+                  {[
+                    { id: 'google-analytics', name: 'Google Analytics', logo: '/integration-logos/google-analytics.png', desc: 'Website traffic analytics' },
+                    { id: 'google-searchconsole', name: 'Search Console', logo: '/integration-logos/search-console-icon.png', desc: 'Search performance monitoring' },
+                    { id: 'google-calendar', name: 'Google Calendar', logo: '/integration-logos/google-calendar.svg', desc: 'Calendar and event management' },
+                    { id: 'google-drive', name: 'Google Drive', logo: '/integration-logos/google-drive.png', desc: 'File storage and sharing' }
+                  ].map(service => {
+                    const serviceData = services.find(s => s.id === service.id);
+                    return (
+                      <Card key={service.id} className="bg-background border-border">
+                        <div className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 flex items-center justify-center">
+                              <Image src={service.logo} alt={service.name} width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-foreground">{service.name}</h4>
+                                {serviceData?.isAuthenticated ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                ) : (
+                                  <AlertCircle className="h-4 w-4 text-yellow-500" />
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">{service.desc}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {serviceData?.isAuthenticated ? 'Connected' : 'Use "Connect" button above'}
+                              </p>
+                            </div>
+                            {serviceData?.isAuthenticated && (
+                              <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-500/10" onClick={() => handleDisconnectService(service.id)}>
+                                Disconnect
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
-          </Card>
-        </div>
 
-        <Card className="bg-neutral-900 border-neutral-800">
+              {/* Business Integrations */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Receipt className="h-5 w-5 text-green-500" />
+                  <h3 className="text-lg font-semibold text-foreground">Business Services</h3>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Fortnox */}
+                  <Card className="bg-background border-border">
+                    <div className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 flex items-center justify-center">
+                          <Image src="/integration-logos/fortnox-icon.svg" alt="Fortnox" width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-foreground">Fortnox</h4>
+                            {fortnoxStatus.connected && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                          </div>
+                          <p className="text-xs text-muted-foreground">Access invoices and financial data</p>
+                          {fortnoxStatus.connected && fortnoxStatus.company_info && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Connected to: {fortnoxStatus.company_info.CompanyName}
+                            </p>
+                          )}
+                        </div>
+                        {!fortnoxStatus.connected ? (
+                          <Button size="sm" onClick={() => window.location.href = '/api/fortnox/auth'}>
+                            Connect
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-500/10" onClick={handleFortnoxDisconnect}>
+                            Disconnect
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Social Media */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Globe className="h-5 w-5 text-blue-500" />
+                  <h3 className="text-lg font-semibold text-foreground">Social Media</h3>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {[
+                    { platform: 'instagram', name: 'Instagram Business', desc: 'Post photos, videos and stories' },
+                    { platform: 'facebook', name: 'Facebook Pages', desc: 'Share content to business page' },
+                    { platform: 'threads', name: 'Threads', desc: 'Share text posts and conversations' },
+                    { platform: 'tiktok', name: 'TikTok for Business', desc: 'Upload videos to TikTok' },
+                    { platform: 'linkedin', name: 'LinkedIn Company', desc: 'Share professional content' },
+                    { platform: 'twitter', name: 'X (Twitter)', desc: 'Post tweets and threads' },
+                    { platform: 'youtube', name: 'YouTube', desc: 'Upload videos and manage channel' }
+                  ].map(social => (
+                    <Card key={social.platform} className="bg-background border-border">
+                      <div className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 flex items-center justify-center">
+                            <Image src={`/social-logos/${social.platform === 'twitter' ? 'x-twitter' : social.platform}.png`} alt={social.name} width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium text-foreground">{social.name}</h4>
+                              {socialMediaConnections[social.platform as keyof typeof socialMediaConnections] && (
+                                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">{social.desc}</p>
+                          </div>
+                          {!socialMediaConnections[social.platform as keyof typeof socialMediaConnections] ? (
+                            <Button size="sm" onClick={() => handleSocialMediaConnect(social.platform)} disabled={socialMediaLoading}>
+                              {socialMediaLoading ? 'Connecting...' : 'Connect'}
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-500/10" onClick={() => handleSocialMediaDisconnect(social.platform)}>
+                              Disconnect
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+
+              {/* API Services */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Settings className="h-5 w-5 text-orange-500" />
+                  <h3 className="text-lg font-semibold text-foreground">API Services</h3>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Unsplash */}
+                  <Card className="bg-background border-border">
+                    <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 flex items-center justify-center">
+                          <Image src="/integration-logos/Unsplash_wordmark_logo.svg.png" alt="Unsplash" width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-foreground">Unsplash</h4>
+                          <p className="text-xs text-muted-foreground">High-quality images for content</p>
+                        </div>
+                      </div>
+                      <Input
+                        type="password"
+                        placeholder="Unsplash API Key"
+                        value={unsplashApiKey}
+                        onChange={(e) => setUnsplashApiKey(e.target.value)}
+                        className="text-xs bg-muted border-border"
+                      />
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Don't have an API key? <a href="https://unsplash.com/developers" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Get one here</a>
+                      </p>
+                    </div>
+                  </Card>
+
+                  {/* Loopia */}
+                  <Card className="bg-background border-border">
+                    <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 flex items-center justify-center">
+                          <Image src="/integration-logos/83fbae5dcce1421a_800x800ar.png" alt="Loopia" width={24} height={24} className="object-contain" style={{ width: 'auto', height: '24px' }} />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-foreground">Loopia</h4>
+                          <p className="text-xs text-muted-foreground">Domain management and DNS</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Input
+                          type="text"
+                          placeholder="Loopia API Username"
+                          value={loopiaApiUser}
+                          onChange={(e) => setLoopiaApiUser(e.target.value)}
+                          className="text-xs bg-muted border-border"
+                        />
+                        <Input
+                          type="password"
+                          placeholder="Loopia API Password"
+                          value={loopiaApiKey}
+                          onChange={(e) => setLoopiaApiKey(e.target.value)}
+                          className="text-xs bg-muted border-border"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Don't have API credentials? <a href="https://www.loopia.com/api/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Learn more here</a>
+                      </p>
+                    </div>
+                  </Card>
+
+                  {/* Blog Connection */}
+                  <Card className="bg-background border-border">
+                    <div className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-8 h-8 bg-muted rounded flex items-center justify-center">
+                          <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-foreground">Blog Connection</h4>
+                          <p className="text-xs text-muted-foreground">Connect your blog for publishing</p>
+                        </div>
+                      </div>
+                      <Input
+                        type="text"
+                        placeholder="Your blog URL (e.g., https://yourblog.com)"
+                        value={blogUrl}
+                        onChange={(e) => setBlogUrl(e.target.value)}
+                        className="text-xs bg-muted border-border"
+                      />
+                    </div>
+                  </Card>
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex justify-end pt-4">
+                <Button
+                  onClick={handleSaveApiKey}
+                  disabled={apiKeyLoading}
+                  className="bg-blue-600 hover:bg-blue-500 text-white"
+                >
+                  {apiKeyLoading ? 'Saving...' : 'Save All Settings'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Account Information */}
+        <Card className="bg-background border-border">
           <div className="p-6">
             <div className="flex items-center gap-2 mb-4">
-              <AlertCircle className="h-5 w-5 text-neutral-400" />
-              <h2 className="text-lg font-medium text-white">Account Information</h2>
+              <AlertCircle className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-medium text-foreground">Account Information</h2>
             </div>
             
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm text-neutral-400">Email</label>
-                  <p className="text-white">{session?.user?.email || 'Not logged in'}</p>
+                  <label className="text-sm text-muted-foreground">Email</label>
+                  <p className="text-foreground">{session?.user?.email || 'Not logged in'}</p>
                 </div>
                 <div>
-                  <label className="text-sm text-neutral-400">Name</label>
-                  <p className="text-white">{session?.user?.name || 'Not available'}</p>
+                  <label className="text-sm text-muted-foreground">Name</label>
+                  <p className="text-foreground">{session?.user?.name || 'Not available'}</p>
                 </div>
                 <div>
-                  <label className="text-sm text-neutral-400">Role</label>
-                  <p className="text-white">Administrator</p>
+                  <label className="text-sm text-muted-foreground">Role</label>
+                  <p className="text-foreground">Administrator</p>
                 </div>
                 <div>
-                  <label className="text-sm text-neutral-400">User ID</label>
-                  <p className="text-white">{session?.user?.id || 'Not available'}</p>
+                  <label className="text-sm text-muted-foreground">User ID</label>
+                  <p className="text-foreground">{session?.user?.id || 'Not available'}</p>
                 </div>
               </div>
             </div>
           </div>
         </Card>
 
-        <Card className="bg-neutral-900 border-neutral-800">
+        {/* Account Settings */}
+        <Card className="bg-background border-border">
           <div className="p-6">
             <div className="flex items-center gap-2 mb-4">
-              <Users className="h-5 w-5 text-neutral-400" />
-              <h2 className="text-lg font-medium text-white">Account Settings</h2>
+              <Users className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-medium text-foreground">Account Settings</h2>
             </div>
             
-            <p className="text-neutral-400 mb-4">
+            <p className="text-muted-foreground mb-4">
               Manage workspaces and invite team members to collaborate with you
             </p>
             
@@ -732,236 +1239,92 @@ function SettingsContent() {
         </Card>
 
         {/* Password Management Section */}
-        <section className="mb-12">
-          <Card className="p-6 border-neutral-800 bg-neutral-900">
-            <h2 className="mb-6 text-xl font-semibold text-white">Password Management</h2>
-            
-            {!showPasswordForm ? (
-              <div>
-                <p className="mb-4 text-neutral-400">
-                  Change your password or reset it if you've forgotten it.
-                </p>
-                <Button 
-                  onClick={() => setShowPasswordForm(true)}
-                  className="mb-2 bg-blue-600 hover:bg-blue-500 text-white"
-                >
-                  Change Password
-                </Button>
-              </div>
-            ) : (
-              <form onSubmit={handlePasswordChange} className="space-y-4">
-                <div className="space-y-2">
-                  <label htmlFor="currentPassword" className="block text-sm font-medium text-neutral-200">
-                    Current Password
-                  </label>
-                  <Input
-                    type="password"
-                    id="currentPassword"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
-                    required
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <label htmlFor="newPassword" className="block text-sm font-medium text-neutral-200">
-                    New Password
-                  </label>
-                  <Input
-                    type="password"
-                    id="newPassword"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
-                    required
-                    minLength={8}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-neutral-200">
-                    Confirm New Password
-                  </label>
-                  <Input
-                    type="password"
-                    id="confirmPassword"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
-                    required
-                    minLength={8}
-                  />
-                </div>
-                
-                <div className="flex space-x-2 pt-2">
-                  <Button 
-                    type="submit" 
-                    disabled={passwordLoading}
-                    className="bg-blue-600 hover:bg-blue-500 text-white"
-                  >
-                    {passwordLoading ? 'Changing Password...' : 'Save New Password'}
-                  </Button>
-                  <Button 
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setShowPasswordForm(false);
-                      setCurrentPassword('');
-                      setNewPassword('');
-                      setConfirmPassword('');
-                    }}
-                    className="border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            )}
-          </Card>
-        </section>
-
-        <div className="mb-8">
-          <h3 className="text-xl font-semibold mb-4 text-white">AI Configuration</h3>
-          <p className="text-neutral-500 mb-6">Configure your OpenAI API key for chatbot features.</p>
-          <div className="space-y-4">
-            <Card className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between bg-neutral-900 border-neutral-800">
-              <div className="flex items-start space-x-4 mb-4 md:mb-0">
-                <div>
-                  <h4 className="font-medium text-white">OpenAI API Key</h4>
-                  <p className="text-sm text-neutral-500">
-                    Used for powering AI chat functionalities within your workspace.
-                  </p>
-                </div>
-              </div>
-              <div className="w-full md:w-auto flex flex-col md:flex-row items-stretch md:items-center gap-2">
+        <Card className="p-6 border-border bg-background">
+          <h2 className="mb-6 text-xl font-semibold text-foreground">Password Management</h2>
+          
+          {!showPasswordForm ? (
+            <div>
+              <p className="mb-4 text-muted-foreground">
+                Change your password or reset it if you've forgotten it.
+              </p>
+              <Button 
+                onClick={() => setShowPasswordForm(true)}
+                className="mb-2 bg-blue-600 hover:bg-blue-500 text-foreground"
+              >
+                Change Password
+              </Button>
+            </div>
+          ) : (
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              <div className="space-y-2">
+                <label htmlFor="currentPassword" className="block text-sm font-medium text-foreground">
+                  Current Password
+                </label>
                 <Input
                   type="password"
-                  placeholder="Enter your OpenAI API Key"
-                  value={openaiApiKey}
-                  onChange={(e) => setOpenaiApiKey(e.target.value)}
-                  disabled={apiKeyLoading || !currentWorkspaceId}
-                  className="flex-grow bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                  id="currentPassword"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                  required
                 />
+              </div>
+              
+              <div className="space-y-2">
+                <label htmlFor="newPassword" className="block text-sm font-medium text-foreground">
+                  New Password
+                </label>
+                <Input
+                  type="password"
+                  id="newPassword"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                  required
+                  minLength={8}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-foreground">
+                  Confirm New Password
+                </label>
+                <Input
+                  type="password"
+                  id="confirmPassword"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                  required
+                  minLength={8}
+                />
+              </div>
+              
+              <div className="flex space-x-2 pt-2">
                 <Button 
-                  onClick={handleSaveApiKey} 
-                  disabled={apiKeyLoading || !currentWorkspaceId}
-                  className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white"
-                  variant="default"
+                  type="submit" 
+                  disabled={passwordLoading}
+                  className="bg-blue-600 hover:bg-blue-500 text-foreground"
                 >
-                  {apiKeyLoading ? 'Saving...' : 'Save Key'}
+                  {passwordLoading ? 'Changing Password...' : 'Save New Password'}
+                </Button>
+                <Button 
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowPasswordForm(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  }}
+                  className="border-border text-neutral-300 hover:bg-muted hover:text-foreground"
+                >
+                  Cancel
                 </Button>
               </div>
-            </Card>
-            {!currentWorkspaceId && status === 'authenticated' && (
-              <p className="text-sm text-destructive">Please select a workspace to manage the API key.</p> 
-            )}
-          </div>
-        </div>
-
-        <div className="mt-8">
-          <h2 className="text-xl font-bold text-neutral-200 mb-4">External API Integrations</h2>
-          
-          {/* OpenAI API Key */}
-          <Card className="bg-neutral-900 border-neutral-800 mb-4">
-            <div className="px-6 py-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-neutral-100">OpenAI API Key</h3>
-                <p className="text-sm text-neutral-400 mt-1">Used for content generation</p>
-              </div>
-            </div>
-            <div className="px-6 pb-5 flex flex-col space-y-3">
-              <Input
-                className="bg-neutral-800 border-neutral-700 text-neutral-200"
-                type="password"
-                placeholder="Enter your OpenAI API key"
-                value={openaiApiKey}
-                onChange={(e) => setOpenaiApiKey(e.target.value)}
-              />
-            </div>
-          </Card>
-          
-          {/* Unsplash API Key */}
-          <Card className="bg-neutral-900 border-neutral-800 mb-4">
-            <div className="px-6 py-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-neutral-100">Unsplash API Key</h3>
-                <p className="text-sm text-neutral-400 mt-1">Used for fetching images in content generation</p>
-              </div>
-            </div>
-            <div className="px-6 pb-5 flex flex-col space-y-3">
-              <Input
-                className="bg-neutral-800 border-neutral-700 text-neutral-200"
-                type="password"
-                placeholder="Enter your Unsplash API key"
-                value={unsplashApiKey}
-                onChange={(e) => setUnsplashApiKey(e.target.value)}
-              />
-              <p className="text-xs text-neutral-500">
-                Don't have an Unsplash API key? <a href="https://unsplash.com/developers" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Get one here</a>
-              </p>
-            </div>
-          </Card>
-          
-          {/* Loopia API */}
-          <Card className="bg-neutral-900 border-neutral-800 mb-4">
-            <div className="px-6 py-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-neutral-100">Loopia API Access</h3>
-                <p className="text-sm text-neutral-400 mt-1">Used for domain management</p>
-              </div>
-            </div>
-            <div className="px-6 pb-5 flex flex-col space-y-3">
-              <Input
-                className="bg-neutral-800 border-neutral-700 text-neutral-200"
-                type="text"
-                placeholder="Loopia API Username"
-                value={loopiaApiUser}
-                onChange={(e) => setLoopiaApiUser(e.target.value)}
-              />
-              <Input
-                className="bg-neutral-800 border-neutral-700 text-neutral-200"
-                type="password"
-                placeholder="Loopia API Password"
-                value={loopiaApiKey}
-                onChange={(e) => setLoopiaApiKey(e.target.value)}
-              />
-              <p className="text-xs text-neutral-500">
-                Don't have Loopia API credentials? <a href="https://www.loopia.com/api/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Learn more here</a>
-              </p>
-            </div>
-          </Card>
-          
-          {/* Blog URL */}
-          <Card className="bg-neutral-900 border-neutral-800 mb-4">
-            <div className="px-6 py-5 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-neutral-100">Blog Connection</h3>
-                <p className="text-sm text-neutral-400 mt-1">Connect your blog to publish content directly</p>
-              </div>
-            </div>
-            <div className="px-6 pb-5 flex flex-col space-y-3">
-              <Input
-                className="bg-neutral-800 border-neutral-700 text-neutral-200"
-                type="text"
-                placeholder="Your blog URL (e.g., https://yourblog.com)"
-                value={blogUrl}
-                onChange={(e) => setBlogUrl(e.target.value)}
-              />
-              <p className="text-xs text-neutral-500">
-                This URL will be used for publishing content from the Content Generator
-              </p>
-            </div>
-          </Card>
-          
-          <Button
-            className={buttonVariants.default}
-            onClick={handleSaveApiKey}
-            disabled={apiKeyLoading}
-          >
-            {apiKeyLoading ? 'Saving...' : 'Save All Settings'}
-          </Button>
-        </div>
+            </form>
+          )}
+        </Card>
       </div>
     </SidebarDemo>
   );
@@ -975,21 +1338,21 @@ interface IntegrationCardProps {
 
 function IntegrationCard({ service, onToggle, buttonVariants }: IntegrationCardProps) {
   return (
-    <div className="p-4 rounded-lg bg-neutral-800/50">
+    <div className="p-4 rounded-lg bg-muted/50">
       <div className="flex items-center gap-4">
-        <div className="p-2 rounded-md bg-neutral-700">
+        <div className="p-2 rounded-md bg-muted">
           {service.icon}
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="font-medium text-white">{service.name}</h3>
+            <h3 className="font-medium text-foreground">{service.name}</h3>
             {service.isAuthenticated ? (
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             ) : (
               <AlertCircle className="h-4 w-4 text-yellow-500" />
             )}
           </div>
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-muted-foreground">
             {service.isAuthenticated ? 'Connected' : 'Not Connected - Click Connect Google'}
           </p>
         </div>
@@ -1015,23 +1378,23 @@ function FortnoxCard({ status, onConnect, onDisconnect, loading, buttonVariants 
   buttonVariants: Record<string, string>;
 }) {
   return (
-    <div className="p-4 rounded-lg bg-neutral-800/50">
+    <div className="p-4 rounded-lg bg-muted/50">
       <div className="flex items-center gap-4">
-        <div className="p-2 rounded-md bg-neutral-700">
-          <Receipt className="h-5 w-5 text-neutral-400" />
+        <div className="p-2 rounded-md bg-muted">
+          <Receipt className="h-5 w-5 text-muted-foreground" />
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="font-medium text-white">Fortnox</h3>
+            <h3 className="font-medium text-foreground">Fortnox</h3>
             {status.connected && (
               <CheckCircle2 className="h-4 w-4 text-green-500" />
             )}
           </div>
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-muted-foreground">
             Access invoices and financial data
           </p>
           {status.connected && status.company_info && (
-            <div className="mt-2 text-sm text-neutral-400">
+            <div className="mt-2 text-sm text-muted-foreground">
               Connected to: {status.company_info.CompanyName}
             </div>
           )}

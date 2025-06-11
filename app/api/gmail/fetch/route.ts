@@ -74,217 +74,159 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized: No valid session' }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-
-  const userId = session.user.id;
-  let accessToken = (session as any).access_token;
-
-  // Try to get token from integrations table if not in session
-  if (!accessToken) {
-    console.log('[API/Gmail] No access token in session, trying integrations table');
-    try {
-      const { data: integration, error } = await supabase
-        .from('integrations')
-        .select('access_token')
-        .eq('user_id', userId)
-        .eq('service_name', 'google-gmail')
-        .single();
-
-      if (error) {
-        console.error('[API/Gmail] Error fetching token from integrations:', error);
-        return NextResponse.json({ 
-          error: 'Gmail integration not found. Please connect your Gmail account in settings.',
-          code: 'NO_INTEGRATION' 
-        }, { status: 401 });
-      }
-
-      accessToken = integration.access_token;
-    } catch (error) {
-      console.error('[API/Gmail] Error fetching token:', error);
-      return NextResponse.json({ error: 'Failed to retrieve Gmail token' }, { status: 500 });
-    }
-  }
-
-  // Check if we need to refresh the token
-  const newToken = await getRefreshedToken(userId);
-  if (newToken) {
-    accessToken = newToken;
-  }
-
-  if (!accessToken) {
-    return NextResponse.json({ 
-      error: 'No valid Gmail access token. Please reconnect your Gmail account in settings.',
-      code: 'INVALID_TOKEN' 
-    }, { status: 401 });
-  }
-
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET
-  );
-  oauth2Client.setCredentials({ access_token: accessToken });
-
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
   try {
-    // Get custom search query from URL params
-    const url = new URL(req.url);
-    const customQuery = url.searchParams.get('q');
+    const searchParams = req.nextUrl.searchParams;
+    const searchQuery = searchParams.get('q') || '';
     
-    // Use the provided query or default to showing all recent emails (no filters)
-    const searchQuery = customQuery || '';
-    console.log(`[API/Gmail] Fetching emails with query: ${searchQuery}`); 
+    // Check if the user has Gmail integration
+    const { data: integration, error: integrationError } = await supabase
+      .from('integrations')
+      .select('access_token, refresh_token')
+      .eq('user_id', session.user.id)
+      .eq('service_name', 'google-gmail')
+      .maybeSingle();
 
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      q: searchQuery, 
-      maxResults: 50,
-    });
-
-    const messages = response.data.messages || [];
-    if (messages.length === 0) {
-      return NextResponse.json({ emails: [] });
+    if (integrationError || !integration) {
+      console.log('No Gmail integration found for user');
+      return NextResponse.json({ 
+        error: 'Gmail integration not found', 
+        setupRequired: true 
+      }, { status: 401 });
     }
 
-    // Fetch full details for each message
-    const emailPromises = messages.map(async (message) => {
-      try {
-        const { data: fullMessage } = await gmail.users.messages.get({
-          userId: 'me',
-          id: message.id!,
-          format: 'metadata',
-          metadataHeaders: ['From', 'Subject', 'Date'],
-        });
-
-        const headers = fullMessage.payload?.headers || [];
-        const from = headers.find(h => h.name === 'From')?.value || '';
-        const subject = headers.find(h => h.name === 'Subject')?.value || '';
-        const date = headers.find(h => h.name === 'Date')?.value || '';
-        
-        // Check if the email is unread
-        const isUnread = fullMessage.labelIds?.includes('UNREAD') || false;
-
-        // Extract email address from "Name <email@example.com>" format
-        const fromEmail = from.match(/<([^>]+)>/) ? from.match(/<([^>]+)>/)?.[1] : from;
-
-        return {
-          id: fullMessage.id!,
-          threadId: fullMessage.threadId!,
-          snippet: fullMessage.snippet || '',
-          from,
-          from_email: fromEmail,
-          subject,
-          date,
-          unread: isUnread,
-        };
-      } catch (error) {
-        console.error(`[API/Gmail] Error fetching email ${message.id}:`, error);
-        return null;
+    // Get or refresh the access token
+    let accessToken = integration.access_token;
+    
+    // If integration exists but we need a fresh token, get it
+    if (!accessToken || !integration.access_token) {
+      const refreshedToken = await getRefreshedToken(session.user.id);
+      if (!refreshedToken) {
+        return NextResponse.json({ 
+          error: 'Failed to refresh access token', 
+          code: 'AUTH_FAILED_AFTER_REFRESH' 
+        }, { status: 401 });
       }
-    });
-
-    const emails = (await Promise.all(emailPromises)).filter(email => email !== null);
-
-    return NextResponse.json({ emails });
-  } catch (error: any) {
-    console.error('Error fetching emails:', error);
-
-    // Check if it's an auth error and try to refresh the token
-    if (error.code === 401 || (error.response && error.response.status === 401)) {
-      const newToken = await getRefreshedToken(userId);
-      if (newToken) {
-        // Retry the request with the new token
-        oauth2Client.setCredentials({ access_token: newToken });
-        try {
-          // Get custom search query from URL params again
-          const url = new URL(req.url);
-          const customQuery = url.searchParams.get('q');
-          
-          const response = await gmail.users.messages.list({
-            userId: 'me',
-            q: '', // No filter, show all emails
-            maxResults: 50,
-          });
-
-          const messages = response.data.messages || [];
-          if (messages.length === 0) {
-            return NextResponse.json({ emails: [] });
-          }
-
-          const emailPromises = messages.map(async (message) => {
-            try {
-              const { data: fullMessage } = await gmail.users.messages.get({
-                userId: 'me',
-                id: message.id!,
-                format: 'metadata',
-                metadataHeaders: ['From', 'Subject', 'Date'],
-              });
-
-              const headers = fullMessage.payload?.headers || [];
-              const from = headers.find(h => h.name === 'From')?.value || '';
-              const subject = headers.find(h => h.name === 'Subject')?.value || '';
-              const date = headers.find(h => h.name === 'Date')?.value || '';
-              
-              // Check if the email is unread
-              const isUnread = fullMessage.labelIds?.includes('UNREAD') || false;
-              
-              // Extract email address
-              const fromEmail = from.match(/<([^>]+)>/) ? from.match(/<([^>]+)>/)?.[1] : from;
-
-              return {
-                id: fullMessage.id!,
-                threadId: fullMessage.threadId!,
-                snippet: fullMessage.snippet || '',
-                from,
-                from_email: fromEmail,
-                subject,
-                date,
-                unread: isUnread,
-              };
-            } catch (error) {
-              console.error(`[API/Gmail] Error fetching email ${message.id} after token refresh:`, error);
-              return null;
-            }
-          });
-
-          const emails = (await Promise.all(emailPromises)).filter(email => email !== null);
-          return NextResponse.json({ emails });
-        } catch (retryError) {
-          console.error('Error after token refresh:', retryError);
-          return NextResponse.json(
-            { 
-              error: 'Failed to access Gmail even after token refresh. Please reconnect your Gmail account.',
-              code: 'AUTH_FAILED_AFTER_REFRESH'
-            },
-            { status: 403 }
-          );
-        }
-      } else {
-        return NextResponse.json(
-          { 
-            error: 'Gmail authentication failed and token refresh failed. Please reconnect your Gmail account in settings.',
-            code: 'REFRESH_FAILED'
-          },
-          { status: 401 }
-        );
-      }
-    }
-
-    // Handle permission errors with a clearer message
-    if (error.code === 403 || (error.response && error.response.status === 403)) {
-      return NextResponse.json(
-        { 
-          error: 'Gmail access denied. You may need additional permissions. Please reconnect your Gmail account with the correct scopes.',
-          code: 'PERMISSION_DENIED'
-        },
-        { status: 403 }
-      );
+      accessToken = refreshedToken;
     }
     
-    return NextResponse.json(
-      { error: 'Failed to fetch emails', details: error.message },
-      { status: error.code || 500 }
+    // Create an OAuth2 client with the token
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
     );
+    oauth2Client.setCredentials({ access_token: accessToken });
+    
+    // Create the Gmail API client
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    
+    // Set up query parameters for the Gmail API
+    const queryParams: any = {
+      userId: 'me',
+      maxResults: 20, // Adjust as needed
+    };
+    
+    // Add search query if provided
+    if (searchQuery) {
+      queryParams.q = searchQuery;
+    }
+    
+    try {
+      // Call the Gmail API to list messages
+      const response = await gmail.users.messages.list(queryParams);
+      
+      // If no messages are found, return empty array
+      if (!response.data.messages || response.data.messages.length === 0) {
+    return NextResponse.json({
+      emails: [],
+          nextPageToken: null
+        });
+      }
+      
+      // Fetch details for each message (in parallel for performance)
+      const messagePromises = response.data.messages.map(async (message: any) => {
+        const msgResponse = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject', 'Date']
+        });
+        
+        return msgResponse.data;
+      });
+      
+      const messageDetails = await Promise.all(messagePromises);
+      
+      // Format the emails for the frontend
+      const emails = messageDetails.map((message: any) => {
+        // Extract headers
+        const headers = message.payload.headers;
+        const fromHeader = headers.find((h: any) => h.name === 'From');
+        const subjectHeader = headers.find((h: any) => h.name === 'Subject');
+        const dateHeader = headers.find((h: any) => h.name === 'Date');
+        
+        // Parse the 'From' field to extract email and name
+        const fromText = fromHeader ? fromHeader.value : 'Unknown';
+        const emailMatch = fromText.match(/<(.+)>/);
+        const fromEmail = emailMatch ? emailMatch[1] : fromText;
+        
+        return {
+          id: message.id,
+          threadId: message.threadId,
+          snippet: message.snippet,
+          from: fromText,
+          from_email: fromEmail,
+          subject: subjectHeader ? subjectHeader.value : 'No Subject',
+          date: dateHeader ? dateHeader.value : new Date().toISOString(),
+          unread: message.labelIds?.includes('UNREAD') || false
+        };
+      });
+      
+      return NextResponse.json({
+        emails,
+        nextPageToken: response.data.nextPageToken || null
+      });
+    } catch (apiError: any) {
+      console.error('Gmail API error:', apiError);
+      
+      // Handle token expiration errors
+      if (apiError.code === 401 || 
+          (apiError.response && apiError.response.status === 401)) {
+        // Try to refresh the token
+        const refreshedToken = await getRefreshedToken(session.user.id);
+        
+        if (!refreshedToken) {
+          return NextResponse.json({ 
+            error: 'Authentication failed after token refresh', 
+            code: 'AUTH_FAILED_AFTER_REFRESH' 
+          }, { status: 401 });
+        }
+        
+        // If we got here but still getting errors, return a proper error
+        return NextResponse.json({ 
+          error: 'Authentication failed even after token refresh', 
+          code: 'AUTH_FAILED_AFTER_REFRESH'
+        }, { status: 401 });
+      }
+      
+      // Handle other specific errors
+      if (apiError.message?.includes('insufficient permission')) {
+        return NextResponse.json({ 
+          error: 'Insufficient permissions to access Gmail', 
+          code: 'PERMISSION_DENIED' 
+        }, { status: 403 });
+      }
+      
+      // General error
+      return NextResponse.json({ 
+        error: 'Failed to fetch emails from Gmail API: ' + (apiError.message || 'Unknown error'), 
+        code: 'API_ERROR'
+      }, { status: 500 });
+    }
+  } catch (error) {
+    console.error('Error fetching emails from Gmail:', error);
+    return NextResponse.json({ error: 'Failed to fetch emails' }, { status: 500 });
   }
 } 

@@ -15,7 +15,11 @@ const SCOPE_TO_SERVICE = {
   'https://www.googleapis.com/auth/calendar': 'google-calendar',
   'https://www.googleapis.com/auth/drive.file': 'google-drive',
   'https://www.googleapis.com/auth/drive.appdata': 'google-drive',
-  'https://www.googleapis.com/auth/drive.readonly': 'google-drive'
+  'https://www.googleapis.com/auth/drive.readonly': 'google-drive',
+  'https://www.googleapis.com/auth/youtube': 'youtube',
+  'https://www.googleapis.com/auth/youtube.upload': 'youtube',
+  'https://www.googleapis.com/auth/youtube.readonly': 'youtube',
+  'https://www.googleapis.com/auth/youtube.force-ssl': 'youtube'
 };
 
 export async function GET(request: NextRequest) {

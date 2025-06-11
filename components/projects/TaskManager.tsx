@@ -38,6 +38,9 @@ interface TaskManagerProps {
   projectName: string;
   projectDescription: string;
   projectId: string;
+  onMoveTask?: (task: Task) => void;
+  onMoveSubtask?: (task: Task, subtask: ChecklistItem) => void;
+  showMonthlyGrouping?: boolean;
 }
 
 export function TaskManager({
@@ -49,6 +52,9 @@ export function TaskManager({
   projectName,
   projectDescription,
   projectId,
+  onMoveTask,
+  onMoveSubtask,
+  showMonthlyGrouping,
 }: TaskManagerProps) {
   const { data: session } = useSession();
   const [isImportingTasks, setIsImportingTasks] = useState(false);
@@ -819,7 +825,7 @@ export function TaskManager({
       )}
 
       {isImportingTasks && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-gray-900/60 dark:bg-black/60 z-50 flex items-center justify-center p-4">
           <BulkTaskImport
             projectId={projectId}
             projectDeadline={projectDeadline}
@@ -833,9 +839,9 @@ export function TaskManager({
         <motion.div layout className="flex-1 space-y-3">
           {/* Bulk selection header */}
           <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl font-semibold text-white">Task List</h2>
+            <h2 className="text-xl font-semibold text-foreground">Task List</h2>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 text-sm text-neutral-400">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Checkbox 
                   id="select-all-tasks"
                   checked={tasks.length > 0 && selectedTasks.length === tasks.length}
@@ -854,64 +860,167 @@ export function TaskManager({
           </div>
 
           <AnimatePresence mode="popLayout" initial={false}>
-            {tasks
-              .sort((a, b) => {
-                // Calculate completion percentage for each task
-                const aCompleted = a.checklist.length > 0 
-                  ? a.checklist.filter(item => item.done).length / a.checklist.length 
-                  : 0;
-                const bCompleted = b.checklist.length > 0 
-                  ? b.checklist.filter(item => item.done).length / b.checklist.length 
-                  : 0;
-                
-                // Sort by completion (incomplete first)
-                if (aCompleted === 1 && bCompleted !== 1) return 1;
-                if (bCompleted === 1 && aCompleted !== 1) return -1;
-                
-                // If both have same completion status, sort by progress
-                if (aCompleted === bCompleted) {
-                  return a.progress - b.progress;
-                }
-                
-                return 0;
-              })
-              .map((task) => (
-                <motion.div
-                  key={task.id}
-                  layout
-                  layoutId={`task-container-${task.id}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{
-                    layout: {
-                      type: "spring",
-                      bounce: 0.2,
-                      duration: 0.6
-                    },
-                    opacity: { duration: 0.3 }
-                  }}
-                  style={{ position: "relative" }}
-                  className="flex gap-2 items-start"
-                >
-                  {/* Task selection checkbox */}
-                  <div className="pt-4">
-                    <Checkbox 
-                      id={`select-task-${task.id}`}
-                      checked={selectedTasks.includes(task.id)}
-                      onCheckedChange={() => toggleTaskSelection(task.id)}
-                      className="h-4 w-4 rounded-sm border-neutral-500"
-                    />
+            {showMonthlyGrouping ? (
+              // Group tasks by month
+              (() => {
+                // Group tasks by creation month
+                const tasksByMonth = tasks.reduce((groups, task) => {
+                  // Use created_at if available, otherwise use current date
+                  const taskDate = (task as any).created_at ? new Date((task as any).created_at) : new Date();
+                  const monthKey = `${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}`;
+                  const monthName = taskDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+                  
+                  if (!groups[monthKey]) {
+                    groups[monthKey] = {
+                      monthName,
+                      tasks: []
+                    };
+                  }
+                  groups[monthKey].tasks.push(task);
+                  return groups;
+                }, {} as Record<string, { monthName: string; tasks: Task[] }>);
+
+                // Sort months in descending order (newest first)
+                const sortedMonths = Object.entries(tasksByMonth).sort(([a], [b]) => b.localeCompare(a));
+
+                return sortedMonths.map(([monthKey, { monthName, tasks: monthTasks }]) => (
+                  <div key={monthKey} className="space-y-3">
+                    {/* Month Header */}
+                    <div className="flex items-center gap-3 py-2 px-3 bg-muted/50 rounded-lg border border-border/50">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <h3 className="text-sm font-medium text-foreground">{monthName}</h3>
+                      <span className="text-xs text-muted-foreground">({monthTasks.length} tasks)</span>
+                    </div>
+                    
+                    {/* Tasks for this month */}
+                    {monthTasks
+                      .sort((a, b) => {
+                        // Calculate completion percentage for each task
+                        const aCompleted = a.checklist.length > 0 
+                          ? a.checklist.filter(item => item.done).length / a.checklist.length 
+                          : 0;
+                        const bCompleted = b.checklist.length > 0 
+                          ? b.checklist.filter(item => item.done).length / b.checklist.length 
+                          : 0;
+                        
+                        // Sort by completion (incomplete first)
+                        if (aCompleted === 1 && bCompleted !== 1) return 1;
+                        if (bCompleted === 1 && aCompleted !== 1) return -1;
+                        
+                        // If both have same completion status, sort by progress
+                        if (aCompleted === bCompleted) {
+                          return a.progress - b.progress;
+                        }
+                        
+                        return 0;
+                      })
+                      .map((task) => (
+                        <motion.div
+                          key={task.id}
+                          layout
+                          layoutId={`task-container-${task.id}`}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -20 }}
+                          transition={{
+                            layout: {
+                              type: "spring",
+                              bounce: 0.2,
+                              duration: 0.6
+                            },
+                            opacity: { duration: 0.3 }
+                          }}
+                          style={{ position: "relative" }}
+                          className="flex gap-2 items-start ml-6"
+                        >
+                          {/* Task selection checkbox */}
+                          <div className="pt-4">
+                            <Checkbox 
+                              id={`select-task-${task.id}`}
+                              checked={selectedTasks.includes(task.id)}
+                              onCheckedChange={() => toggleTaskSelection(task.id)}
+                              className="h-4 w-4 rounded-sm border-neutral-500"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <TaskCard
+                              task={task}
+                              onUpdate={handleTaskUpdate}
+                              onDelete={handleDeleteTask}
+                              onMoveTask={onMoveTask}
+                              onMoveSubtask={onMoveSubtask}
+                              projectName={projectName}
+                            />
+                          </div>
+                        </motion.div>
+                      ))}
                   </div>
-                  <div className="flex-1">
-                    <TaskCard
-                      task={task}
-                      onUpdate={handleTaskUpdate}
-                      onDelete={handleDeleteTask}
-                    />
-                  </div>
-                </motion.div>
-              ))}
+                ));
+              })()
+            ) : (
+              // Regular task list without grouping
+              tasks
+                .sort((a, b) => {
+                  // Calculate completion percentage for each task
+                  const aCompleted = a.checklist.length > 0 
+                    ? a.checklist.filter(item => item.done).length / a.checklist.length 
+                    : 0;
+                  const bCompleted = b.checklist.length > 0 
+                    ? b.checklist.filter(item => item.done).length / b.checklist.length 
+                    : 0;
+                  
+                  // Sort by completion (incomplete first)
+                  if (aCompleted === 1 && bCompleted !== 1) return 1;
+                  if (bCompleted === 1 && aCompleted !== 1) return -1;
+                  
+                  // If both have same completion status, sort by progress
+                  if (aCompleted === bCompleted) {
+                    return a.progress - b.progress;
+                  }
+                  
+                  return 0;
+                })
+                .map((task) => (
+                  <motion.div
+                    key={task.id}
+                    layout
+                    layoutId={`task-container-${task.id}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{
+                      layout: {
+                        type: "spring",
+                        bounce: 0.2,
+                        duration: 0.6
+                      },
+                      opacity: { duration: 0.3 }
+                    }}
+                    style={{ position: "relative" }}
+                    className="flex gap-2 items-start"
+                  >
+                    {/* Task selection checkbox */}
+                    <div className="pt-4">
+                      <Checkbox 
+                        id={`select-task-${task.id}`}
+                        checked={selectedTasks.includes(task.id)}
+                        onCheckedChange={() => toggleTaskSelection(task.id)}
+                        className="h-4 w-4 rounded-sm border-neutral-500"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <TaskCard
+                        task={task}
+                        onUpdate={handleTaskUpdate}
+                        onDelete={handleDeleteTask}
+                        onMoveTask={onMoveTask}
+                        onMoveSubtask={onMoveSubtask}
+                        projectName={projectName}
+                      />
+                    </div>
+                  </motion.div>
+                ))
+            )}
           </AnimatePresence>
 
           {/* Add Task Form */}
@@ -922,28 +1031,28 @@ export function TaskManager({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
               >
-                <Card className="p-4 bg-neutral-900 border-neutral-800 relative overflow-hidden">
+                <Card className="p-4 bg-background border-border relative overflow-hidden">
                   <div className="space-y-4 relative z-10">
                     <input
                       type="text"
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
                       placeholder="Task title"
-                      className="w-full px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                      className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder:text-foreground0 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                     />
                     <div className="flex justify-end gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => setIsAddingTask(false)}
-                        className="text-neutral-400 hover:text-white border-neutral-700 hover:bg-neutral-800"
+                        className="text-muted-foreground hover:text-foreground border-border dark:border-border hover:bg-background"
                       >
                         Cancel
                       </Button>
                       <Button
                         size="sm"
                         onClick={handleAddTask}
-                        className="bg-neutral-700 hover:bg-neutral-600 text-white"
+                        className="bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 text-foreground"
                       >
                         Add Task
                       </Button>
@@ -960,7 +1069,7 @@ export function TaskManager({
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={() => setIsAddingTask(true)}
-                className="flex-1 p-4 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-neutral-700 transition-all duration-200 text-neutral-400 hover:text-neutral-300 flex items-center justify-center gap-2 relative overflow-hidden"
+                className="flex-1 p-4 rounded-lg bg-background border border-border hover:border-border dark:border-border transition-all duration-200 text-muted-foreground hover:text-foreground dark:text-neutral-300 flex items-center justify-center gap-2 relative overflow-hidden"
               >
                 <div className="relative z-10 flex items-center justify-center gap-2">
                   <Plus className="h-4 w-4" />
@@ -975,7 +1084,7 @@ export function TaskManager({
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.99 }}
                   onClick={() => setIsImportingTasks(true)}
-                  className="p-4 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-neutral-700 transition-all duration-200 text-neutral-400 hover:text-neutral-300 flex items-center justify-center gap-2 relative overflow-hidden"
+                  className="p-4 rounded-lg bg-background border border-border hover:border-border dark:border-border transition-all duration-200 text-muted-foreground hover:text-foreground dark:text-neutral-300 flex items-center justify-center gap-2 relative overflow-hidden"
                 >
                   <div className="relative z-10 flex items-center justify-center gap-2">
                     <FileText className="h-4 w-4" />
@@ -991,30 +1100,30 @@ export function TaskManager({
           layout
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="w-80 flex flex-col p-4 rounded-lg bg-neutral-900 border border-neutral-800 sticky top-4 h-fit overflow-hidden"
+          className="w-80 flex flex-col p-4 rounded-lg bg-background border border-border sticky top-4 h-fit overflow-hidden"
         >
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-3">
-              <CheckCircle className="w-4 h-4 text-neutral-400" />
-              <h2 className="text-sm font-medium text-white">
+              <CheckCircle className="w-4 h-4 text-muted-foreground" />
+              <h2 className="text-sm font-medium text-foreground">
                 Progress
               </h2>
             </div>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-neutral-400">Completed</span>
+                <span className="text-muted-foreground">Completed</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-white">
+                  <span className="font-medium text-foreground">
                     {tasks.reduce((count, task) => count + task.checklist.filter(item => item.done).length, 0)} / {tasks.reduce((count, task) => count + task.checklist.length, 0)}
                   </span>
-                  <span className="text-neutral-500">
+                  <span className="text-foreground0">
                     ({Math.round((tasks.reduce((count, task) => count + task.checklist.filter(item => item.done).length, 0) / Math.max(1, tasks.reduce((count, task) => count + task.checklist.length, 0))) * 100)}%)
                   </span>
                 </div>
               </div>
 
-              <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
+              <div className="h-2 bg-background rounded-full overflow-hidden">
                 <motion.div
                   className="h-full bg-green-600"
                   initial={{ width: 0 }}
@@ -1025,7 +1134,7 @@ export function TaskManager({
                 />
               </div>
 
-              <div className="flex items-center gap-2 text-sm text-neutral-400">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Clock className="w-4 h-4" />
                 <span>Deadline: {new Date(projectDeadline).toLocaleDateString()}</span>
               </div>
@@ -1036,10 +1145,10 @@ export function TaskManager({
 
       {/* Invoice Dialog */}
       <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
-        <DialogContent className="bg-neutral-900 border-neutral-800 text-white max-w-md">
+        <DialogContent className="bg-background border-border text-foreground max-w-md">
           <DialogHeader>
             <DialogTitle>Create Invoice for Selected Tasks</DialogTitle>
-            <DialogDescription className="text-neutral-400">
+            <DialogDescription className="text-muted-foreground">
               {selectedTasks.length} tasks selected for invoicing
             </DialogDescription>
           </DialogHeader>
@@ -1049,15 +1158,15 @@ export function TaskManager({
             {selectedTasks.length > 0 && (
               <div className="mb-4 space-y-2">
                 <Label className="text-sm font-medium">Selected Tasks</Label>
-                <div className="max-h-32 overflow-y-auto rounded-md bg-neutral-800 p-2 border border-neutral-700">
+                <div className="max-h-32 overflow-y-auto rounded-md bg-background p-2 border border-border dark:border-border">
                   {tasks
                     .filter(task => selectedTasks.includes(task.id))
                     .map(task => (
                       <div 
                         key={task.id} 
-                        className="flex items-center py-1.5 px-2 text-sm text-neutral-300 rounded-sm hover:bg-neutral-700"
+                        className="flex items-center py-1.5 px-2 text-sm text-foreground dark:text-neutral-300 rounded-sm hover:bg-gray-200 dark:bg-muted"
                       >
-                        <Check className="h-3.5 w-3.5 mr-2 text-green-500" />
+                        <Check className="h-3.5 w-3.5 mr-2 text-green-600 dark:text-green-400" />
                         {task.title}
                       </div>
                     ))
@@ -1072,7 +1181,7 @@ export function TaskManager({
                 value={invoiceDescription}
                 onChange={(e) => setInvoiceDescription(e.target.value)}
                 placeholder="Services for project..."
-                className="bg-neutral-800 border-neutral-700"
+                className="bg-background border-border dark:border-border"
               />
             </div>
             
@@ -1083,7 +1192,7 @@ export function TaskManager({
                 type="number"
                 value={invoicePrice}
                 onChange={(e) => setInvoicePrice(Number(e.target.value))}
-                className="bg-neutral-800 border-neutral-700"
+                className="bg-background border-border dark:border-border"
               />
               </div>
               
@@ -1093,7 +1202,7 @@ export function TaskManager({
                   type="number"
                   defaultValue={1}
                   onChange={(e) => setInvoiceQuantity(Number(e.target.value))}
-                  className="bg-neutral-800 border-neutral-700"
+                  className="bg-background border-border dark:border-border"
                   min={1}
                 />
               </div>
@@ -1106,10 +1215,10 @@ export function TaskManager({
                   defaultValue="h"
                   onValueChange={setInvoiceUnit}
                 >
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                  <SelectTrigger className="bg-background border-border dark:border-border">
                     <SelectValue placeholder="Select unit" />
                   </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700">
+                  <SelectContent className="bg-background border-border dark:border-border">
                     <SelectItem value="h">Hours (h)</SelectItem>
                     <SelectItem value="st">Pieces (st)</SelectItem>
                     <SelectItem value="tim">Hours (tim)</SelectItem>
@@ -1125,10 +1234,10 @@ export function TaskManager({
                   defaultValue="25"
                   onValueChange={(value) => setInvoiceVat(Number(value))}
                 >
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                  <SelectTrigger className="bg-background border-border dark:border-border">
                     <SelectValue placeholder="Select VAT rate" />
                   </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700">
+                  <SelectContent className="bg-background border-border dark:border-border">
                     <SelectItem value="25">25%</SelectItem>
                     <SelectItem value="12">12%</SelectItem>
                     <SelectItem value="6">6%</SelectItem>
@@ -1144,9 +1253,9 @@ export function TaskManager({
                 type="text"
                 placeholder="e.g. 3011"
                 onChange={(e) => setInvoiceAccountNumber(e.target.value)}
-                className="bg-neutral-800 border-neutral-700"
+                className="bg-background border-border dark:border-border"
               />
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-foreground0">
                 Leave empty to use Fortnox default account
               </p>
             </div>
@@ -1157,15 +1266,15 @@ export function TaskManager({
                 value={invoiceType}
                 onValueChange={setInvoiceType}
               >
-                <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                <SelectTrigger className="bg-background border-border dark:border-border">
                   <SelectValue placeholder="Select invoice type" />
                 </SelectTrigger>
-                <SelectContent className="bg-neutral-800 border-neutral-700">
+                <SelectContent className="bg-background border-border dark:border-border">
                   <SelectItem value="INVOICE">Send Invoice</SelectItem>
                   <SelectItem value="OFFER">Create Draft (Offer)</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-foreground0">
                 {invoiceType === "OFFER" ? 
                   "Creates a draft invoice (offer) - won't be sent to customer" : 
                   "Creates a normal invoice that will be processed"
@@ -1175,7 +1284,7 @@ export function TaskManager({
             
             {/* Info box for projects without Fortnox number */}
             {hasFortnoxProjectNumber === false && (
-              <div className="rounded-md bg-blue-950 p-3 border border-blue-800 text-sm">
+              <div className="rounded-md bg-blue-100 dark:bg-blue-950 p-3 border border-blue-800 text-sm">
                 <div className="flex items-start gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1189,43 +1298,43 @@ export function TaskManager({
             )}
             
             {/* Invoice Preview */}
-            <div className="rounded-md bg-neutral-800 p-3 border border-neutral-700 text-sm mt-4">
-              <h3 className="font-medium text-white mb-2">Invoice Preview</h3>
-              <div className="space-y-1 text-neutral-400">
+            <div className="rounded-md bg-background p-3 border border-border dark:border-border text-sm mt-4">
+              <h3 className="font-medium text-foreground mb-2">Invoice Preview</h3>
+              <div className="space-y-1 text-muted-foreground">
                 <div className="flex justify-between">
                   <span>Description:</span>
-                  <span className="text-white">{invoiceDescription || `Services for project ${projectName}`}</span>
+                  <span className="text-foreground">{invoiceDescription || `Services for project ${projectName}`}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Quantity:</span>
-                  <span className="text-white">{invoiceQuantity} {invoiceUnit}</span>
+                  <span className="text-foreground">{invoiceQuantity} {invoiceUnit}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Price:</span>
-                  <span className="text-white">{invoicePrice.toLocaleString()} SEK</span>
+                  <span className="text-foreground">{invoicePrice.toLocaleString()} SEK</span>
                 </div>
                 <div className="flex justify-between">
                   <span>VAT:</span>
-                  <span className="text-white">{invoiceVat}%</span>
+                  <span className="text-foreground">{invoiceVat}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Amount:</span>
-                  <span className="text-white">{(invoicePrice * invoiceQuantity).toLocaleString()} SEK</span>
+                  <span className="text-foreground">{(invoicePrice * invoiceQuantity).toLocaleString()} SEK</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Amount incl. VAT:</span>
-                  <span className="text-white">
+                  <span className="text-foreground">
                     {(invoicePrice * invoiceQuantity * (1 + invoiceVat/100)).toLocaleString()} SEK
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Type:</span>
-                  <span className="text-white">{invoiceType === "OFFER" ? "Draft (Offer)" : "Invoice"}</span>
+                  <span className="text-foreground">{invoiceType === "OFFER" ? "Draft (Offer)" : "Invoice"}</span>
                 </div>
                 {invoiceAccountNumber && (
                   <div className="flex justify-between">
                     <span>Account:</span>
-                    <span className="text-white">{invoiceAccountNumber}</span>
+                    <span className="text-foreground">{invoiceAccountNumber}</span>
                   </div>
                 )}
               </div>
@@ -1238,10 +1347,10 @@ export function TaskManager({
                   value={selectedInvoice}
                   onValueChange={setSelectedInvoice}
                 >
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                  <SelectTrigger className="bg-background border-border dark:border-border">
                     <SelectValue placeholder="Select an invoice" />
                   </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700">
+                  <SelectContent className="bg-background border-border dark:border-border">
                     {existingInvoices.map(invoice => (
                       <SelectItem key={invoice.id} value={invoice.id}>
                         {invoice.invoice_number}
@@ -1275,7 +1384,7 @@ export function TaskManager({
             <Button
               variant="outline"
               onClick={() => setShowInvoiceDialog(false)}
-              className="border-neutral-700"
+              className="border-border dark:border-border"
             >
               Cancel
             </Button>

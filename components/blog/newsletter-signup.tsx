@@ -25,6 +25,7 @@ export default function NewsletterSignup() {
     setSuccess(false);
     
     try {
+      console.log('Submitting newsletter signup for:', email);
       const response = await fetch('/api/newsletter-signup', {
         method: 'POST',
         headers: {
@@ -34,17 +35,19 @@ export default function NewsletterSignup() {
       });
       
       const data = await response.json();
+      console.log('Newsletter signup response:', data);
       
       if (response.ok) {
         setSuccess(true);
         setMessage(data.message || 'Thank you for subscribing!');
         setEmail('');
       } else {
+        console.error('Newsletter signup failed:', data);
         setError(data.error || 'Something went wrong. Please try again.');
       }
     } catch (err) {
-      setError('Failed to subscribe. Please try again later.');
       console.error('Newsletter signup error:', err);
+      setError('Failed to subscribe. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -66,14 +69,14 @@ export default function NewsletterSignup() {
         </div>
         
         {error && (
-          <div className="text-red-500 flex items-center text-sm">
+          <div className="text-red-600 dark:text-red-400 flex items-center text-sm">
             <AlertCircle className="h-4 w-4 mr-1" />
             <span>{error}</span>
           </div>
         )}
         
         {success && (
-          <div className="text-green-500 flex items-center text-sm">
+          <div className="text-green-600 dark:text-green-400 flex items-center text-sm">
             <CheckCircle className="h-4 w-4 mr-1" />
             <span>{message}</span>
           </div>

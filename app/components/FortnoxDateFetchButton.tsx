@@ -62,7 +62,7 @@ export function FortnoxDateFetchButton({ workspaceId }: { workspaceId?: string }
       <button
         onClick={fetchDates}
         disabled={loading}
-        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+        className="px-4 py-2 bg-blue-600 text-foreground rounded-md hover:bg-blue-700 disabled:opacity-50"
       >
         {loading ? 'Analyzing Fortnox Dates...' : 'Analyze Fortnox Dates'}
       </button>
@@ -85,10 +85,10 @@ export function FortnoxDateFetchButton({ workspaceId }: { workspaceId?: string }
           
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              <span className="inline-block px-2 py-1 bg-gray-100 rounded-full text-sm">
+              <span className="inline-block px-2 py-1 bg-muted rounded-full text-sm">
                 Earliest: {dateData.analysis.earliest_date || 'N/A'}
               </span>
-              <span className="inline-block px-2 py-1 bg-gray-100 rounded-full text-sm">
+              <span className="inline-block px-2 py-1 bg-muted rounded-full text-sm">
                 Latest: {dateData.analysis.latest_date || 'N/A'}
               </span>
               <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
@@ -116,7 +116,7 @@ export function FortnoxDateFetchButton({ workspaceId }: { workspaceId?: string }
                           {dateData.months_by_year[year]?.map(month => (
                             <span 
                               key={`${year}-${month}`} 
-                              className="inline-block px-1.5 py-0.5 bg-gray-100 rounded text-xs"
+                              className="inline-block px-1.5 py-0.5 bg-muted rounded text-xs"
                             >
                               {formatMonthName(month)}
                             </span>
@@ -130,7 +130,7 @@ export function FortnoxDateFetchButton({ workspaceId }: { workspaceId?: string }
             </div>
           </div>
           
-          <div className="mt-4 text-sm text-gray-500">
+          <div className="mt-4 text-sm text-foreground0">
             Data fetched at {new Date().toLocaleString()}
           </div>
         </div>

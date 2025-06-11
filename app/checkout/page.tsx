@@ -25,10 +25,10 @@ export default function CheckoutPage() {
       <div className="text-center">
         <h1 className="text-2xl font-bold mb-4">Redirecting to checkout...</h1>
         {error && (
-          <div className="text-red-500 mb-4">{error}</div>
+          <div className="text-red-600 dark:text-red-400 mb-4">{error}</div>
         )}
-        <p>If you are not redirected automatically, <a href="/api/stripe/direct-checkout" className="text-blue-500 underline">click here</a>.</p>
-        <p className="mt-4 text-sm text-gray-500">Using Stripe key: {process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.substring(0, 10)}...</p>
+        <p>If you are not redirected automatically, <a href="/api/stripe/direct-checkout" className="text-blue-600 dark:text-blue-400 underline">click here</a>.</p>
+        <p className="mt-4 text-sm text-foreground0">Using Stripe key: {process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.substring(0, 10)}...</p>
       </div>
     </div>
   )

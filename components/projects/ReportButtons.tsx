@@ -71,7 +71,7 @@ export function ReportButtons({ projectName, tasks }: ReportButtonsProps) {
           variant="outline"
           onClick={() => sendReport(true)}
           disabled={isSendingReport}
-          className="bg-neutral-800 text-white hover:bg-neutral-700"
+          className="bg-background text-foreground hover:bg-gray-200 dark:bg-muted"
         >
           <Mail className="h-4 w-4 mr-2" />
           {isSendingReport ? 'Sending test...' : 'Send Test Report'}
@@ -79,7 +79,7 @@ export function ReportButtons({ projectName, tasks }: ReportButtonsProps) {
         <Button
           onClick={() => setShowEmailInput(true)}
           disabled={isSendingReport}
-          className="bg-blue-600 text-white hover:bg-blue-500"
+          className="bg-blue-600 text-foreground hover:bg-blue-500"
         >
           <Mail className="h-4 w-4 mr-2" />
           {isSendingReport ? 'Sending report...' : 'Send Report'}
@@ -87,13 +87,13 @@ export function ReportButtons({ projectName, tasks }: ReportButtonsProps) {
       </div>
 
       {showEmailInput && (
-        <div className="absolute right-0 top-12 z-50 w-96 p-4 bg-neutral-900 border border-neutral-800 rounded-lg shadow-xl">
-          <h3 className="text-sm font-medium text-white mb-2">Send Report To</h3>
+        <div className="absolute right-0 top-12 z-50 w-96 p-4 bg-background border border-border rounded-lg shadow-xl">
+          <h3 className="text-sm font-medium text-foreground mb-2">Send Report To</h3>
           <textarea
             value={emails}
             onChange={(e) => setEmails(e.target.value)}
             placeholder="Enter email addresses (one per line)"
-            className="w-full h-32 p-2 mb-4 bg-neutral-800 border border-neutral-700 rounded text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+            className="w-full h-32 p-2 mb-4 bg-background border border-border dark:border-border rounded text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
           />
           <div className="flex justify-end gap-2">
             <Button
@@ -102,14 +102,14 @@ export function ReportButtons({ projectName, tasks }: ReportButtonsProps) {
                 setShowEmailInput(false);
                 setEmails("");
               }}
-              className="bg-neutral-800 text-white hover:bg-neutral-700"
+              className="bg-background text-foreground hover:bg-gray-200 dark:bg-muted"
             >
               Cancel
             </Button>
             <Button
               onClick={() => sendReport(false)}
               disabled={isSendingReport}
-              className="bg-blue-600 text-white hover:bg-blue-500"
+              className="bg-blue-600 text-foreground hover:bg-blue-500"
             >
               {isSendingReport ? 'Sending...' : 'Send'}
             </Button>

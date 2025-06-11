@@ -1,15 +1,12 @@
 /* Email Content Module */
 .emailContent {
-  color: #e0e0e0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  line-height: 1.5;
-  width: 100%;
-  height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
   background-color: #121212;
-  border-radius: 0.5rem;
-  padding: 1rem;
+  color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  overflow-y: auto;
+  padding: 0.5rem;
+  line-height: 1.5;
+  height: 100%;
 }
 
 .emailContent > div {
@@ -18,40 +15,75 @@
   padding: 0.5rem;
 }
 
+/* Strengthen text color rules */
 .emailContent div,
 .emailContent p,
 .emailContent span,
-.emailContent li {
+.emailContent li,
+.emailContent b,
+.emailContent strong,
+.emailContent i,
+.emailContent em,
+.emailContent u,
+.emailContent label,
+.emailContent text,
+.emailContent font,
+.emailContent * {
   color: #e0e0e0 !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif !important;
 }
 
-.emailContent table,
-.emailContent tr,
-.emailContent td,
-.emailContent th {
-  border-color: #333 !important;
-  border-collapse: collapse;
+/* Force override inline styles that might set black text */
+.emailContent [style*="color"],
+.emailContent [style*="Color"] {
+  color: #e0e0e0 !important;
 }
 
-.emailContent td,
-.emailContent th {
+/* Force black backgrounds to be transparent or dark */
+.emailContent [style*="background-color: black"],
+.emailContent [style*="background-color: #000"],
+.emailContent [style*="background: black"],
+.emailContent [style*="background: #000"],
+.emailContent [style*="background-color: rgb(0, 0, 0)"],
+.emailContent [style*="background: rgb(0, 0, 0)"] {
+  background-color: #1a1a1a !important;
+  background: #1a1a1a !important;
+}
+
+/* Force white backgrounds to be dark */
+.emailContent [style*="background-color: white"],
+.emailContent [style*="background-color: #fff"],
+.emailContent [style*="background: white"],
+.emailContent [style*="background: #fff"],
+.emailContent [style*="background-color: rgb(255, 255, 255)"],
+.emailContent [style*="background: rgb(255, 255, 255)"] {
+  background-color: #1a1a1a !important;
+  background: #1a1a1a !important;
+}
+
+.emailContent table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+}
+
+.emailContent td, .emailContent th {
   padding: 0.5rem;
+  border: 1px solid #444;
   color: #e0e0e0 !important;
   background-color: #1a1a1a !important;
 }
 
 .emailContent a {
   color: #77b7ff !important;
-  text-decoration: underline;
+  text-decoration: underline !important;
 }
 
 .emailContent img {
-  max-width: 100% !important;
-  height: auto !important;
-  margin: 0.5rem 0;
-  display: inline-block !important;
-  vertical-align: middle;
+  max-width: 100%;
+  height: auto;
 }
 
 /* Hide broken images with a placeholder */
@@ -98,13 +130,6 @@
   background-color: #1a1a1a !important;
   margin: 0.5rem 0;
   padding: 0.5rem 0 0.5rem 0.75rem;
-}
-
-.emailContent table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1rem 0;
-  border: 1px solid #333;
 }
 
 /* Fix signatures and email quote sections */

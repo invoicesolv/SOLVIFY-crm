@@ -110,14 +110,14 @@ export function TestimonialsSection({
   };
 
   return (
-    <section className="py-20 bg-neutral-950 overflow-hidden relative">
+    <section className="py-20 bg-background overflow-hidden relative">
       {/* Gradient background and effects */}
       <div className="absolute inset-0 bg-gradient-to-br from-indigo-950/10 via-neutral-950 to-neutral-950 pointer-events-none" />
       
       <div className="container mx-auto px-4 relative z-10">
         <div className="text-center mb-14">
           <motion.h2 
-            className="text-3xl md:text-4xl font-bold text-white mb-4"
+            className="text-3xl md:text-4xl font-bold text-foreground mb-4"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -126,7 +126,7 @@ export function TestimonialsSection({
             {displayTitle}
           </motion.h2>
           <motion.p 
-            className="text-neutral-400 max-w-2xl mx-auto"
+            className="text-muted-foreground max-w-2xl mx-auto"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -139,7 +139,7 @@ export function TestimonialsSection({
         <div className="max-w-6xl mx-auto">
           {/* Testimonial with image layout */}
           <motion.div 
-            className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center bg-neutral-900/50 border border-neutral-800 rounded-xl overflow-hidden backdrop-blur-sm"
+            className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center bg-background/50 border border-border rounded-xl overflow-hidden backdrop-blur-sm"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -151,7 +151,7 @@ export function TestimonialsSection({
                 <Quote size={36} className="opacity-50" />
               </div>
               
-              <blockquote className="text-xl text-white mb-8 leading-relaxed">
+              <blockquote className="text-xl text-foreground mb-8 leading-relaxed">
                 "{testimonialsToDisplay[activeIndex].quote}"
               </blockquote>
               
@@ -167,10 +167,10 @@ export function TestimonialsSection({
                   </div>
                 </div>
                 <div>
-                  <p className="font-medium text-white">
+                  <p className="font-medium text-foreground">
                     {testimonialsToDisplay[activeIndex].author}
                   </p>
-                  <p className="text-neutral-400 text-sm">
+                  <p className="text-muted-foreground text-sm">
                     {testimonialsToDisplay[activeIndex].role}, {testimonialsToDisplay[activeIndex].company}
                   </p>
                 </div>
@@ -178,12 +178,12 @@ export function TestimonialsSection({
 
               {/* Results Badge */}
               {testimonialsToDisplay[activeIndex].results && (
-                <div className="mt-8 pt-6 border-t border-neutral-800">
+                <div className="mt-8 pt-6 border-t border-border">
                   <div className="flex items-start">
-                    <div className="bg-blue-900/30 text-blue-400 text-xs font-medium px-2.5 py-0.5 rounded-full mr-2 mt-1">
+                    <div className="bg-blue-200 dark:bg-blue-900/30 text-blue-400 text-xs font-medium px-2.5 py-0.5 rounded-full mr-2 mt-1">
                       {resultsLabel}
                     </div>
-                    <p className="text-neutral-300">
+                    <p className="text-foreground dark:text-neutral-300">
                       {testimonialsToDisplay[activeIndex].results}
                     </p>
                   </div>
@@ -200,18 +200,13 @@ export function TestimonialsSection({
                 style={{ objectFit: "cover" }}
               />
               {/* Company logo overlay */}
-              {testimonialsToDisplay[activeIndex].companyLogo && (
-                <div className="absolute bottom-4 right-4 bg-neutral-900/80 border border-neutral-800 p-2 rounded-lg backdrop-blur-sm">
-                  <div className="relative h-8 w-24">
-                    <Image
-                      src={testimonialsToDisplay[activeIndex].companyLogo}
-                      alt={testimonialsToDisplay[activeIndex].company}
-                      fill
-                      style={{ objectFit: "contain" }}
-                    />
-                  </div>
+              <div className="absolute bottom-4 right-4 bg-background/80 border border-border p-2 rounded-lg backdrop-blur-sm">
+                <div className="h-8 w-24 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
+                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                    {testimonialsToDisplay[activeIndex].company}
+                  </span>
                 </div>
-              )}
+              </div>
             </div>
           </motion.div>
 
@@ -219,7 +214,7 @@ export function TestimonialsSection({
           <div className="flex justify-center items-center mt-8 space-x-4">
             <button
               onClick={prevTestimonial}
-              className="flex items-center justify-center h-10 w-10 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700 transition-colors"
+              className="flex items-center justify-center h-10 w-10 rounded-full bg-background border border-border text-muted-foreground hover:text-foreground hover:border-border dark:border-border transition-colors"
               aria-label={previousButtonText}
             >
               <ArrowLeft size={16} />
@@ -233,7 +228,7 @@ export function TestimonialsSection({
                   className={`h-2 rounded-full transition-all ${
                     index === activeIndex 
                       ? "w-8 bg-blue-500" 
-                      : "w-2 bg-neutral-700 hover:bg-neutral-600"
+                      : "w-2 bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600"
                   }`}
                   aria-label={`Go to testimonial ${index + 1}`}
                 />
@@ -242,7 +237,7 @@ export function TestimonialsSection({
             
             <button
               onClick={nextTestimonial}
-              className="flex items-center justify-center h-10 w-10 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700 transition-colors"
+              className="flex items-center justify-center h-10 w-10 rounded-full bg-background border border-border text-muted-foreground hover:text-foreground hover:border-border dark:border-border transition-colors"
               aria-label={nextButtonText}
             >
               <ArrowRight size={16} />

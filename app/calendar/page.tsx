@@ -412,10 +412,10 @@ function CalendarPageContent() {
     if (workspaces.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center h-[80vh]">
-          <div className="w-full max-w-md p-6 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg text-center">
-            <Grid className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">No Workspaces Found</h2>
-            <p className="text-neutral-400 mb-6">
+          <div className="w-full max-w-md p-6 bg-background border border-border dark:border-border rounded-lg shadow-lg text-center">
+            <Grid className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-foreground mb-2">No Workspaces Found</h2>
+            <p className="text-muted-foreground mb-6">
               You don't have access to any workspaces yet. Please create a workspace or ask your administrator to invite you.
             </p>
             <Button
@@ -431,9 +431,9 @@ function CalendarPageContent() {
     
     return (
       <div className="flex flex-col items-center justify-center h-[80vh]">
-        <div className="w-full max-w-md p-6 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg">
-          <h2 className="text-xl font-bold text-white mb-4 text-center">Select a Workspace</h2>
-          <p className="text-neutral-400 mb-6 text-center">
+        <div className="w-full max-w-md p-6 bg-background border border-border dark:border-border rounded-lg shadow-lg">
+          <h2 className="text-xl font-bold text-foreground mb-4 text-center">Select a Workspace</h2>
+          <p className="text-muted-foreground mb-6 text-center">
             You need to select a workspace to view your calendar
           </p>
           
@@ -442,14 +442,14 @@ function CalendarPageContent() {
               <button
                 key={workspace.id}
                 onClick={() => handleWorkspaceChange(workspace.id)}
-                className="w-full p-4 bg-neutral-700 hover:bg-neutral-600 rounded-lg flex items-center transition-colors"
+                className="w-full p-4 bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 rounded-lg flex items-center transition-colors"
               >
                 <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center mr-4">
                   <Grid className="h-5 w-5 text-blue-400" />
                 </div>
                 <div className="text-left">
-                  <p className="font-medium text-white">{workspace.name}</p>
-                  <p className="text-xs text-neutral-400">Tap to select this workspace</p>
+                  <p className="font-medium text-foreground">{workspace.name}</p>
+                  <p className="text-xs text-muted-foreground">Tap to select this workspace</p>
                 </div>
               </button>
             ))}
@@ -522,12 +522,19 @@ function CalendarPageContent() {
     }
 
     try {
-      const response = await fetch(`/api/calendar?id=${eventId}`, {
+      // Add cache busting parameter to avoid cached responses
+      const response = await fetch(`/api/calendar?id=${eventId}&t=${Date.now()}`, {
         method: 'DELETE',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete event');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Delete error details:', errorData);
+        throw new Error(`Failed to delete event: ${errorData.error || response.statusText}`);
       }
 
       toast.success('Event deleted successfully');
@@ -535,7 +542,7 @@ function CalendarPageContent() {
       fetchEvents();
     } catch (error) {
       console.error('Error deleting event:', error);
-      toast.error('Failed to delete event');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete event');
     }
   }, [fetchEvents]);
 
@@ -701,8 +708,8 @@ function CalendarPageContent() {
       <div className="h-screen p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="space-y-0.5">
-            <h1 className="text-2xl font-semibold text-white">Calendar</h1>
-            <p className="text-sm text-neutral-400">
+            <h1 className="text-2xl font-semibold text-foreground">Calendar</h1>
+            <p className="text-sm text-muted-foreground">
               View and manage your schedule
             </p>
           </div>
@@ -712,10 +719,10 @@ function CalendarPageContent() {
                 <select
                   value={activeWorkspace}
                   onChange={(e) => handleWorkspaceChange(e.target.value)}
-                  className="bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
+                  className="bg-background border border-border dark:border-border rounded-md px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500 h-10"
                 >
                   {workspaces.map((ws) => (
-                    <option key={ws.id} value={ws.id} className="text-white bg-neutral-900">
+                    <option key={ws.id} value={ws.id} className="text-foreground bg-background">
                       {ws.name}
                     </option>
                   ))}
@@ -726,7 +733,7 @@ function CalendarPageContent() {
                 variant="outline"
                 onClick={handleSaveEventsToDatabase}
                 disabled={isLoading}
-                className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+                className="bg-blue-600 hover:bg-blue-700 text-foreground border-0"
               >
                 Save to Database
               </Button>
@@ -734,22 +741,22 @@ function CalendarPageContent() {
               variant="outline"
               onClick={handleRefresh}
               disabled={isLoading}
-              className="text-neutral-400 hover:text-white"
+              className="text-muted-foreground hover:text-foreground"
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               {isLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
             {session && (
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-muted-foreground">
                 {session.user?.email}
               </div>
             )}
           </div>
         </div>
 
-        <Card className="bg-neutral-900 border-neutral-800 h-[calc(100vh-8rem)]">
+        <Card className="bg-background border-border h-[calc(100vh-8rem)]">
           {error ? (
-            <div className="flex flex-col items-center justify-center h-full text-neutral-400">
+            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <p>{error}</p>
             </div>
           ) : isLoading ? (
@@ -760,11 +767,11 @@ function CalendarPageContent() {
             <div className="flex flex-col h-full">
               <CalendarDate>
                 <CalendarDatePicker>
-                  <CalendarMonthPicker className="bg-neutral-800 border-neutral-700 text-neutral-100 hover:bg-neutral-700" />
+                  <CalendarMonthPicker className="bg-background border-border text-foreground hover:bg-muted hover:text-foreground" />
                   <CalendarYearPicker 
                     start={2020} 
                     end={2030}
-                    className="bg-neutral-800 border-neutral-700 text-neutral-100 hover:bg-neutral-700" 
+                    className="bg-background border-border text-foreground hover:bg-muted hover:text-foreground" 
                   />
                 </CalendarDatePicker>
                 <CalendarDatePagination />
@@ -782,7 +789,7 @@ function CalendarPageContent() {
                         key={feature.id}
                         className={`text-xs p-1 rounded ${
                           feature.status.id === 'synced' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'
-                          } text-white truncate cursor-pointer group`}
+                          } text-foreground truncate cursor-pointer group`}
                       >
                         {feature.name}
                           <div className="absolute right-0 top-0 flex opacity-0 group-hover:opacity-100 transition-opacity">
@@ -793,7 +800,7 @@ function CalendarPageContent() {
                               }}
                               className="p-0.5 bg-blue-500 hover:bg-blue-600 rounded mr-1"
                             >
-                              <Edit2 className="h-3 w-3 text-white" />
+                              <Edit2 className="h-3 w-3 text-foreground" />
                             </button>
                             <button 
                               onClick={(e) => {
@@ -802,7 +809,7 @@ function CalendarPageContent() {
                               }}
                               className="p-0.5 bg-red-500 hover:bg-red-600 rounded"
                             >
-                              <Trash2 className="h-3 w-3 text-white" />
+                              <Trash2 className="h-3 w-3 text-foreground" />
                             </button>
                           </div>
                         </div>

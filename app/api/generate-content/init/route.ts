@@ -17,6 +17,27 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
+// Create authenticated Supabase client
+function getAuthenticatedSupabaseClient(accessToken: string) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Missing required environment variables for authenticated client');
+    return null;
+  }
+  
+  const client = createClient(supabaseUrl, supabaseAnonKey);
+  
+  // Set the auth token
+  client.auth.setSession({
+    access_token: accessToken,
+    refresh_token: '' // Not needed for server-side operations
+  });
+  
+  return client;
+}
+
 export async function POST(req: Request) {
   try {
     // Get the user session
@@ -38,8 +59,9 @@ export async function POST(req: Request) {
     }
 
     console.log(`Initializing content generation batch ${batchId} for workspace ${workspaceId}`);
+    console.log(`User ID: ${session.user.id}`);
     
-    // Use admin client to bypass RLS
+    // First try with admin client
     const supabaseAdmin = getSupabaseAdmin();
     if (!supabaseAdmin) {
       console.error('Failed to initialize Supabase admin client');
@@ -67,7 +89,8 @@ export async function POST(req: Request) {
       });
     }
 
-    // Create a complete record with appropriate status and title
+    // Try to create record with admin client first
+    console.log('Attempting to create record with admin client...');
     const { data: initialRecord, error: insertError } = await supabaseAdmin
       .from('generated_content')
       .insert({
@@ -85,19 +108,50 @@ export async function POST(req: Request) {
       .single();
 
     if (insertError) {
-      console.error('Error creating initial record:', insertError);
+      console.error('Error creating initial record with admin client:', insertError);
+      
+      // If admin client fails, try with regular client
+      console.log('Trying with regular client...');
+      const { data: regularRecord, error: regularError } = await supabase
+        .from('generated_content')
+        .insert({
+          workspace_id: workspaceId,
+          user_id: session.user.id,
+          title: title,
+          content: '',
+          status: 'generating',
+          generation_progress: 0,
+          batch_id: batchId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+        
+      if (regularError) {
+        console.error('Error creating initial record with regular client:', regularError);
+        return NextResponse.json({ 
+          error: 'Failed to initialize content generation',
+          details: regularError.message,
+          adminError: insertError.message
+        }, { status: 500 });
+      }
+      
+      console.log('Created initial record with regular client, ID:', regularRecord.id);
       return NextResponse.json({ 
-        error: 'Failed to initialize content generation',
-        details: insertError.message
-      }, { status: 500 });
+        success: true, 
+        recordId: regularRecord.id,
+        batchId,
+        message: 'Record created successfully with regular client'
+      });
     }
 
-    console.log('Created initial record with ID:', initialRecord.id);
+    console.log('Created initial record with admin client, ID:', initialRecord.id);
     return NextResponse.json({ 
       success: true, 
       recordId: initialRecord.id,
       batchId,
-      message: 'Record created successfully'
+      message: 'Record created successfully with admin client'
     });
 
   } catch (error) {

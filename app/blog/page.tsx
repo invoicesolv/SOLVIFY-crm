@@ -8,7 +8,7 @@ import { BlogSignupSection } from "@/components/ui/blog-signup-section";
 
 export default function BlogPage() {
   return (
-    <main className="bg-neutral-950 min-h-screen text-white">
+    <main className="bg-background min-h-screen text-foreground">
       <NavBarDemo lang="en" />
       <BlogHeader 
         title="Solvify CRM Blog"

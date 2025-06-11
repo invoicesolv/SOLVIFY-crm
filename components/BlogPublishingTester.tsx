@@ -100,10 +100,10 @@ export default function BlogPublishingTester() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-4 border rounded-lg shadow-sm bg-white">
+    <div className="max-w-2xl mx-auto p-4 border rounded-lg shadow-sm bg-background">
       <div className="mb-4">
         <h2 className="text-xl font-bold mb-2">Blog Publishing Test Tool</h2>
-        <p className="text-gray-500">
+        <p className="text-foreground0">
           Test the connection to your blog platform's API
         </p>
       </div>
@@ -194,11 +194,11 @@ export default function BlogPublishingTester() {
 
             {results.steps && results.steps.map((step: any, index: number) => (
               <div key={index} className="border rounded overflow-hidden">
-                <div className="bg-gray-100 p-3 flex items-center">
+                <div className="bg-muted p-3 flex items-center">
                   {step.success ? (
-                    <Check className="h-4 w-4 mr-2 text-green-500" />
+                    <Check className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
                   ) : (
-                    <X className="h-4 w-4 mr-2 text-red-500" />
+                    <X className="h-4 w-4 mr-2 text-red-600 dark:text-red-400" />
                   )}
                   <h3 className="text-sm font-medium">{step.step}</h3>
                 </div>
@@ -217,7 +217,7 @@ export default function BlogPublishingTester() {
                 </div>
                 <div>
                   <p className="mt-2">
-                    You need to implement an API endpoint at <code className="bg-gray-100 px-1 py-0.5 rounded">{results.blogUrl}/api/create-post</code> that accepts POST requests with the following JSON structure:
+                    You need to implement an API endpoint at <code className="bg-muted px-1 py-0.5 rounded">{results.blogUrl}/api/create-post</code> that accepts POST requests with the following JSON structure:
                   </p>
                   <Textarea 
                     className="mt-2 font-mono text-xs h-40"

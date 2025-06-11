@@ -573,16 +573,16 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
   // Get status display for invoices
   const getStatusDisplay = (status: string) => {
     const statusMap: Record<string, { text: string, className: string }> = {
-      "ongoing": { text: "Pågående", className: "bg-blue-900/20 text-blue-400" },
-      "draft": { text: "Utkast", className: "bg-neutral-800 text-neutral-400" },
-      "completed": { text: "Färdig", className: "bg-green-900/20 text-green-400" },
-      "paid": { text: "Betald", className: "bg-green-900/20 text-green-400" },
-      "pending": { text: "Pågående", className: "bg-yellow-900/20 text-yellow-400" },
-      "unpaid": { text: "Obetald", className: "bg-yellow-900/20 text-yellow-400" },
-      "overdue": { text: "Försenad", className: "bg-red-900/20 text-red-400" }
+      "ongoing": { text: "Pågående", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "draft": { text: "Utkast", className: "bg-background text-muted-foreground" },
+      "completed": { text: "Färdig", className: "bg-green-100 dark:bg-green-900/20 text-green-400" },
+      "paid": { text: "Betald", className: "bg-green-100 dark:bg-green-900/20 text-green-400" },
+      "pending": { text: "Pågående", className: "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400" },
+      "unpaid": { text: "Obetald", className: "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400" },
+      "overdue": { text: "Försenad", className: "bg-red-100 dark:bg-red-900/20 text-red-400" }
     };
 
-    const defaultStatus = { text: "Pågående", className: "bg-blue-900/20 text-blue-400" };
+    const defaultStatus = { text: "Pågående", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" };
     return statusMap[status?.toLowerCase()] || defaultStatus;
   };
 
@@ -592,7 +592,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
         <div className="flex items-center gap-4">
           <Link
             href="/projects"
-            className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Projects
@@ -604,22 +604,22 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-400"></div>
           </div>
         ) : error ? (
-          <div className="text-center py-8 text-neutral-400">
+          <div className="text-center py-8 text-muted-foreground">
             Failed to load project details. Please try again later.
           </div>
         ) : project ? (
           <>
-            <Card className="bg-neutral-800 border-neutral-700 p-6">
+            <Card className="bg-background border-border dark:border-border p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h1 className="text-2xl font-semibold text-white mb-4">{project.name}</h1>
+                  <h1 className="text-2xl font-semibold text-foreground mb-4">{project.name}</h1>
                   <div className="space-y-2 text-sm">
-                    <p className="text-neutral-400">Customer: <Link href={`/customers/${project.customerId}`} className="text-white hover:underline">{project.customerName}</Link></p>
-                    <p className="text-neutral-400">Status: 
+                    <p className="text-muted-foreground">Customer: <Link href={`/customers/${project.customerId}`} className="text-foreground hover:underline">{project.customerName}</Link></p>
+                    <p className="text-muted-foreground">Status: 
                       <span className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
-                        project.status === "active" ? "bg-green-900/20 text-green-400" :
-                        project.status === "completed" ? "bg-neutral-900/20 text-neutral-400" :
-                        "bg-yellow-900/20 text-yellow-400"
+                        project.status === "active" ? "bg-green-100 dark:bg-green-900/20 text-green-400" :
+                        project.status === "completed" ? "bg-background/20 text-muted-foreground" :
+                        "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400"
                       }`}>
                         {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
                       </span>
@@ -628,7 +628,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                     {/* Assigned User Section */}
                     <div className="mt-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-neutral-400 font-medium flex items-center">
+                        <h3 className="text-muted-foreground font-medium flex items-center">
                           <Users className="h-4 w-4 mr-2" />
                           Assigned To
                         </h3>
@@ -637,7 +637,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                             <Button 
                               variant="default" 
                               size="sm"
-                              className="text-xs bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                              className="text-xs bg-blue-600 hover:bg-blue-700 text-foreground flex items-center gap-2"
                               disabled={assigningUser}
                             >
                               {assigningUser ? (
@@ -648,9 +648,9 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                               {project.assigned_to ? 'Reassign' : 'Assign User'}
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent className="w-56 bg-neutral-800 border-neutral-700 text-white">
+                          <DropdownMenuContent className="w-56 bg-background border-border dark:border-border text-foreground">
                             {members.length === 0 ? (
-                              <div className="px-2 py-1.5 text-sm text-neutral-400">
+                              <div className="px-2 py-1.5 text-sm text-muted-foreground">
                                 No team members found
                               </div>
                             ) : (
@@ -661,10 +661,10 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                                     className="cursor-pointer flex items-center gap-2 text-sm"
                                     onClick={() => handleAssignProject(member.user_id)}
                                   >
-                                    <User className="h-4 w-4 text-neutral-400" />
+                                    <User className="h-4 w-4 text-muted-foreground" />
                                     <span>{member.name}</span>
                                     {project.assigned_to === member.user_id && (
-                                      <span className="ml-auto text-xs bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
+                                      <span className="ml-auto text-xs bg-blue-200 dark:bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded">
                                         Current
                                       </span>
                                     )}
@@ -687,11 +687,11 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                       
                       <div className="mt-2">
                         {project.assigned_to ? (
-                          <p className="text-neutral-400 text-sm">
-                            Assigned to: <span className="text-white">{getAssignedMemberName(project.assigned_to) || 'Unknown User'}</span>
+                          <p className="text-muted-foreground text-sm">
+                            Assigned to: <span className="text-foreground">{getAssignedMemberName(project.assigned_to) || 'Unknown User'}</span>
                           </p>
                         ) : (
-                          <p className="text-neutral-400 text-sm italic">Not assigned to any team member</p>
+                          <p className="text-muted-foreground text-sm italic">Not assigned to any team member</p>
                         )}
                       </div>
                     </div>
@@ -699,7 +699,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                     {/* Date display and edit section */}
                     <div className="mt-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-neutral-400 font-medium flex items-center">
+                        <h3 className="text-muted-foreground font-medium flex items-center">
                           <CalendarIcon className="h-4 w-4 mr-2" />
                           Dates
                         </h3>
@@ -708,7 +708,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                             onClick={() => setIsEditing(true)} 
                             variant="outline" 
                             size="sm"
-                            className="text-xs bg-neutral-900/60 hover:bg-neutral-700"
+                            className="text-xs bg-background/60 hover:bg-gray-200 dark:bg-muted"
                           >
                             Edit Dates
                           </Button>
@@ -717,7 +717,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                             onClick={handleSaveDates}
                             variant="outline"
                             size="sm"
-                            className="text-xs bg-blue-900/60 hover:bg-blue-800 text-blue-200"
+                            className="text-xs bg-blue-200 dark:bg-blue-900/60 hover:bg-blue-300 dark:hover:bg-blue-800 text-blue-200"
                             disabled={savingDates}
                           >
                             {savingDates ? (
@@ -738,7 +738,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                       {isEditing ? (
                         <div className="space-y-2 mt-2">
                           <div className="space-y-1">
-                            <label htmlFor="start_date" className="block text-xs text-neutral-400">
+                            <label htmlFor="start_date" className="block text-xs text-muted-foreground">
                               Start Date
                             </label>
                             <input
@@ -747,11 +747,11 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                               name="start_date"
                               value={startDate}
                               onChange={(e) => setStartDate(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-neutral-900 border border-neutral-700 rounded-md text-white text-sm placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                              className="w-full px-3 py-1.5 bg-background border border-border dark:border-border rounded-md text-foreground text-sm placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                             />
                           </div>
                           <div className="space-y-1">
-                            <label htmlFor="end_date" className="block text-xs text-neutral-400">
+                            <label htmlFor="end_date" className="block text-xs text-muted-foreground">
                               End Date
                             </label>
                             <input
@@ -760,15 +760,15 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                               name="end_date"
                               value={endDate}
                               onChange={(e) => setEndDate(e.target.value)}
-                              className="w-full px-3 py-1.5 bg-neutral-900 border border-neutral-700 rounded-md text-white text-sm placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                              className="w-full px-3 py-1.5 bg-background border border-border dark:border-border rounded-md text-foreground text-sm placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                             />
                           </div>
                         </div>
                       ) : (
                         <div className="mt-2">
-                          <p className="text-neutral-400 text-sm">Start Date: <span className="text-white">{new Date(project.startDate).toLocaleDateString()}</span></p>
+                          <p className="text-muted-foreground text-sm">Start Date: <span className="text-foreground">{new Date(project.startDate).toLocaleDateString()}</span></p>
                           {project.endDate && (
-                            <p className="text-neutral-400 text-sm">End Date: <span className="text-white">{new Date(project.endDate).toLocaleDateString()}</span></p>
+                            <p className="text-muted-foreground text-sm">End Date: <span className="text-foreground">{new Date(project.endDate).toLocaleDateString()}</span></p>
                           )}
                         </div>
                       )}
@@ -778,14 +778,14 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
               </div>
             </Card>
 
-            <Card className="bg-neutral-800 border-neutral-700 p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Description</h2>
-              <p className="text-neutral-400 whitespace-pre-wrap">{project.description || "No description provided."}</p>
+            <Card className="bg-background border-border dark:border-border p-6">
+              <h2 className="text-lg font-semibold text-foreground mb-4">Description</h2>
+              <p className="text-muted-foreground whitespace-pre-wrap">{project.description || "No description provided."}</p>
             </Card>
 
-            <Card className="bg-neutral-800 border-neutral-700 p-6">
+            <Card className="bg-background border-border dark:border-border p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center">
+                <h2 className="text-lg font-semibold text-foreground flex items-center">
                   <FileText className="h-5 w-5 mr-2 text-blue-400" />
                   Linked Invoices
                 </h2>
@@ -795,7 +795,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                     <Button 
                       variant="default" 
                       size="sm"
-                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white" 
+                      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-foreground" 
                       onClick={() => {
                         console.log("Opening invoice linking dialog");
                         fetchAvailableInvoices();
@@ -806,10 +806,10 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                       Link Invoice
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-neutral-800 border-neutral-700 text-white">
+                  <DialogContent className="bg-background border-border dark:border-border text-foreground">
                     <DialogHeader>
                       <DialogTitle>Link Invoice to Project</DialogTitle>
-                      <DialogDescription className="text-neutral-400">
+                      <DialogDescription className="text-muted-foreground">
                         Select an invoice to link to this project.
                       </DialogDescription>
                     </DialogHeader>
@@ -819,16 +819,16 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                         placeholder="Search invoices..."
                         value={invoiceSearch}
                         onChange={(e) => setInvoiceSearch(e.target.value)}
-                        className="bg-neutral-900 border-neutral-700 mb-4"
+                        className="bg-background border-border dark:border-border mb-4"
                       />
                       
                       {loadingInvoices ? (
                         <div className="flex justify-center py-8">
-                          <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+                          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                         </div>
                       ) : availableInvoices.length === 0 ? (
-                        <div className="text-center py-8 text-neutral-400">
-                          <AlertCircle className="h-8 w-8 mx-auto mb-2 text-neutral-500" />
+                        <div className="text-center py-8 text-muted-foreground">
+                          <AlertCircle className="h-8 w-8 mx-auto mb-2 text-foreground0" />
                           <p>No unlinked invoices found for this project's customer.</p>
                         </div>
                       ) : (
@@ -839,12 +839,12 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                               invoice.customer_name?.toLowerCase().includes(invoiceSearch.toLowerCase())
                             )
                             .map(invoice => (
-                              <div key={invoice.id} className="bg-neutral-700 p-3 rounded-md">
+                              <div key={invoice.id} className="bg-gray-200 dark:bg-muted p-3 rounded-md">
                                 <div className="flex justify-between">
                                   <div>
                                     <div className="font-medium">{invoice.invoice_number}</div>
-                                    <div className="text-sm text-neutral-400">{invoice.customer_name}</div>
-                                    <div className="text-xs text-neutral-500 mt-1">
+                                    <div className="text-sm text-muted-foreground">{invoice.customer_name}</div>
+                                    <div className="text-xs text-foreground0 mt-1">
                                       Date: {new Date(invoice.invoice_date).toLocaleDateString()}
                                     </div>
                                   </div>
@@ -858,7 +858,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                                     <Button
                                       size="sm"
                                       variant="outline"
-                                      className="mt-2 bg-blue-900/20 border-blue-800 text-blue-400 hover:bg-blue-800/30"
+                                      className="mt-2 bg-blue-100 dark:bg-blue-900/20 border-blue-800 text-blue-400 hover:bg-blue-300 dark:hover:bg-blue-300 dark:hover:bg-blue-800/30"
                                       onClick={() => handleLinkInvoice(invoice.id)}
                                     >
                                       Link
@@ -883,34 +883,34 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
               
               {loadingInvoices ? (
                 <div className="flex justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : linkedInvoices.length === 0 ? (
-                <div className="text-center py-8 text-neutral-400">
-                  <AlertCircle className="h-8 w-8 mx-auto mb-2 text-neutral-500" />
+                <div className="text-center py-8 text-muted-foreground">
+                  <AlertCircle className="h-8 w-8 mx-auto mb-2 text-foreground0" />
                   <p>No invoices are linked to this project yet.</p>
-                  <p className="text-sm text-neutral-500 mt-1">Click "Link Invoice" to connect an invoice.</p>
+                  <p className="text-sm text-foreground0 mt-1">Click "Link Invoice" to connect an invoice.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {linkedInvoices.map(invoice => (
-                    <div key={invoice.id} className="bg-neutral-900 p-4 rounded-md">
+                    <div key={invoice.id} className="bg-background p-4 rounded-md">
                       <div className="flex justify-between">
                         <div>
-                          <div className="font-medium text-white">{invoice.invoice_number}</div>
-                          <div className="text-sm text-neutral-400">{invoice.customer_name}</div>
-                          <div className="flex gap-4 text-xs text-neutral-500 mt-1">
+                          <div className="font-medium text-foreground">{invoice.invoice_number}</div>
+                          <div className="text-sm text-muted-foreground">{invoice.customer_name}</div>
+                          <div className="flex gap-4 text-xs text-foreground0 mt-1">
                             <div>Date: {new Date(invoice.invoice_date).toLocaleDateString()}</div>
                             <div>Due: {new Date(invoice.due_date).toLocaleDateString()}</div>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="font-medium text-white">{formatCurrency(invoice.total)}</div>
+                          <div className="font-medium text-foreground">{formatCurrency(invoice.total)}</div>
                           <div className="flex items-center gap-2 mt-2">
                             <Button
                               size="sm"
                               variant="outline"
-                              className="bg-neutral-800 hover:bg-neutral-700 border-neutral-700"
+                              className="bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border"
                               onClick={() => handleUnlinkInvoice(invoice.id)}
                             >
                               Unlink
@@ -918,7 +918,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="bg-neutral-800 hover:bg-neutral-700 border-neutral-700"
+                              className="bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border"
                               asChild
                             >
                               <Link href={`/invoices?id=${invoice.id}`} target="_blank">
@@ -942,7 +942,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
               )}
             </Card>
 
-            <Card className="bg-neutral-800 border-neutral-700 p-6">
+            <Card className="bg-background border-border dark:border-border p-6">
               <TaskManager
                 tasks={project.tasks}
                 onTasksChange={handleTasksChange}

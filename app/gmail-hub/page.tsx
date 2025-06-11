@@ -8,12 +8,14 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Loader2, Inbox, MoveRight, AlertCircle, Save, Trash2, Search, RefreshCw, SaveAll, Mail } from 'lucide-react';
+import { Loader2, Inbox, MoveRight, AlertCircle, Save, Trash2, Search, RefreshCw, SaveAll, Mail, Upload, Database } from 'lucide-react';
 import { LeadDialog } from '@/components/leads/LeadDialog';
 import { GmailFolderSidebar } from '@/components/gmail/GmailFolderSidebar';
 import { EmailPopup } from '@/components/gmail/EmailPopup';
 import { supabase } from "@/lib/supabase";
 import { Input } from '@/components/ui/input';
+import { LeadImportDialog } from '@/components/leads/LeadImportDialog';
+import { ExistingLeadImportDialog } from '@/components/leads/ExistingLeadImportDialog';
 import { 
   Dialog,
   DialogContent,
@@ -402,7 +404,7 @@ export default function GmailHubPage() {
 
   return (
     <SidebarDemo>
-      <div className="flex h-[calc(100vh-2rem)] bg-neutral-950">
+      <div className="flex h-[calc(100vh-2rem)] bg-background">
         {session?.user?.id && activeWorkspace && (
           <GmailFolderSidebar
             workspaceId={activeWorkspace}
@@ -415,8 +417,8 @@ export default function GmailHubPage() {
         <div className="flex-1 p-8 space-y-6 overflow-y-auto">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-neutral-100">Gmail Inbox</h1>
-              <p className="text-neutral-400">View and respond to all emails from your connected Gmail account.</p>
+              <h1 className="text-3xl font-bold text-foreground">Gmail Inbox</h1>
+              <p className="text-muted-foreground">View and respond to all emails from your connected Gmail account.</p>
             </div>
             <div className="flex gap-2">
               <Button
@@ -447,32 +449,66 @@ export default function GmailHubPage() {
                 )}
                 Save All Emails
               </Button>
+              
+              {activeWorkspace && session?.user?.id && (
+                <>
+                  <LeadImportDialog
+                    workspaceId={activeWorkspace}
+                    userId={session.user.id}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 bg-green-100 hover:bg-green-200 dark:bg-green-600 dark:hover:bg-green-700 border-green-300 dark:border-green-600 text-green-800 dark:text-foreground"
+                      >
+                        <Upload className="h-4 w-4" />
+                        Import from Gmail
+                      </Button>
+                    }
+                  />
+                  
+                  <ExistingLeadImportDialog
+                    workspaceId={activeWorkspace}
+                    userId={session.user.id}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center gap-2 bg-blue-100 hover:bg-blue-200 dark:bg-blue-600 dark:hover:bg-blue-700 border-blue-300 dark:border-blue-600 text-blue-800 dark:text-foreground"
+                      >
+                        <Database className="h-4 w-4" />
+                        Import Leads
+                      </Button>
+                    }
+                  />
+                </>
+              )}
             </div>
           </div>
 
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-500" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search emails by sender, subject, or content..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-neutral-900 border-neutral-800"
+              className="pl-10 bg-background border-border"
             />
           </div>
 
-          <Card className="bg-neutral-900/50 backdrop-blur-sm border-neutral-800">
+          <Card className="bg-background/50 backdrop-blur-sm border-border">
             <div className="p-4">
               {loading && (
                 <div className="flex justify-center items-center py-10">
-                  <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
-                  <span className="ml-2 text-neutral-400">Loading emails...</span>
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Loading emails...</span>
                 </div>
               )}
               {error && (
                 <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <AlertCircle className="h-8 w-8 text-red-500 mb-2" />
+                  <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400 mb-2" />
                   <p className="text-red-400">Error loading emails:</p>
-                  <p className="text-sm text-neutral-500 max-w-md">{error}</p>
+                  <p className="text-sm text-muted-foreground max-w-md">{error}</p>
                   <Button 
                     variant="outline" 
                     size="sm"
@@ -485,31 +521,31 @@ export default function GmailHubPage() {
               )}
               {!loading && !error && filteredEmails.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <Inbox className="h-8 w-8 text-neutral-500 mb-2" />
-                  <p className="text-neutral-400">No emails found matching your criteria.</p>
-                  <p className="text-sm text-neutral-500">Try labeling potential leads in Gmail or adjust fetch criteria.</p>
+                  <Inbox className="h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-muted-foreground">No emails found matching your criteria.</p>
+                  <p className="text-sm text-muted-foreground">Try labeling potential leads in Gmail or adjust fetch criteria.</p>
                 </div>
               )}
               {!loading && !error && filteredEmails.length > 0 && (
                 <ul className="divide-y divide-neutral-800">
                   {filteredEmails.map((email) => (
-                    <li key={email.id} className="py-4 px-2 flex items-center justify-between gap-4 hover:bg-neutral-800/50 rounded-md">
+                    <li key={email.id} className="py-4 px-2 flex items-center justify-between gap-4 hover:bg-muted rounded-md">
                       <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleOpenEmail(email)}>
                         <div className="flex items-center gap-2">
                           {email.unread && <div className="w-2 h-2 rounded-full bg-blue-500" />}
-                          <p className={`text-sm font-medium ${email.unread ? 'text-white' : 'text-neutral-200'} truncate font-sans`}>
+                          <p className={`text-sm font-medium ${email.unread ? 'text-foreground' : 'text-foreground'} truncate font-sans`}>
                             {email.from}
                           </p>
                         </div>
-                        <p className={`text-sm ${email.unread ? 'font-medium text-neutral-200' : 'text-neutral-400'} truncate font-sans`}>
+                        <p className={`text-sm ${email.unread ? 'font-medium text-foreground' : 'text-muted-foreground'} truncate font-sans`}>
                           {email.subject}
                         </p>
-                        <p className="text-xs text-neutral-500 mt-1 truncate font-sans leading-relaxed">
+                        <p className="text-xs text-muted-foreground mt-1 truncate font-sans leading-relaxed">
                           {email.snippet}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-xs text-neutral-500 font-mono">
+                        <span className="text-xs text-muted-foreground font-mono">
                           {new Date(email.date).toLocaleDateString()} {new Date(email.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         <Button 
@@ -545,7 +581,7 @@ export default function GmailHubPage() {
                           size="sm"
                           onClick={() => deleteEmail(email.id)}
                           disabled={deletingEmail === email.id}
-                          className="flex items-center gap-1 text-red-500 hover:text-red-400 hover:bg-red-950/20"
+                          className="flex items-center gap-1 text-red-600 dark:text-red-400 hover:text-red-400 hover:bg-red-950/20"
                         >
                           {deletingEmail === email.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                         </Button>
@@ -583,10 +619,10 @@ export default function GmailHubPage() {
         )}
 
         <Dialog open={connectionDialogOpen} onOpenChange={setConnectionDialogOpen}>
-          <DialogContent className="bg-neutral-900 border-neutral-800 text-neutral-100">
+          <DialogContent className="bg-background border-border text-foreground">
             <DialogHeader>
               <DialogTitle>Gmail Connection Issue</DialogTitle>
-              <DialogDescription className="text-neutral-400">
+              <DialogDescription className="text-muted-foreground">
                 {errorCode === 'NO_INTEGRATION' && "Your Gmail account isn't connected to this workspace."}
                 {errorCode === 'INVALID_TOKEN' && "Your Gmail connection has expired or is invalid."}
                 {errorCode === 'PERMISSION_DENIED' && "You don't have permission to access Gmail with the current connection."}
@@ -595,14 +631,14 @@ export default function GmailHubPage() {
                 {!errorCode && "There's an issue with your Gmail connection."}
               </DialogDescription>
             </DialogHeader>
-            <p className="text-sm text-neutral-300">
+            <p className="text-sm text-muted-foreground">
               You need to reconnect your Gmail account to fix this issue. This will redirect you to Google's authentication page.
             </p>
             <DialogFooter>
               <Button variant="outline" onClick={() => setConnectionDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={handleReconnectGmail} className="bg-blue-600 hover:bg-blue-700">
+              <Button onClick={handleReconnectGmail} className="bg-primary hover:bg-primary/90">
                 {reconnecting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 Reconnect Gmail
               </Button>

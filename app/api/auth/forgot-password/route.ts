@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Check if the user exists
-    const { data: user, error: userError } = await supabase
+    const { data: user, error: userError } = await supabaseAdmin
       .from('profiles')
       .select('id')
       .eq('email', email)
@@ -35,8 +35,22 @@ export async function POST(request: NextRequest) {
     }
     
     // Send password reset email using Supabase Auth
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password`,
+    const baseUrl = process.env.NODE_ENV === 'development' 
+      ? 'http://localhost:3000' 
+      : (process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se');
+      
+    const { error: resetError } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
+      redirectTo: `${baseUrl}/auth/reset-password`,
+    });
+    
+    const redirectUrl = `${baseUrl}/auth/reset-password`;
+    console.log('Password reset attempt:', {
+      email,
+      redirectTo: redirectUrl,
+      NODE_ENV: process.env.NODE_ENV,
+      NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+      baseUrl,
+      error: resetError
     });
     
     if (resetError) {

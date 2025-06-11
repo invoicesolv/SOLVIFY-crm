@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { supabase, supabaseAdmin, getConsistentUserId } from '@/lib/supabase';
 
 /**
  * Safely creates a workspace and adds the user as an admin, bypassing RLS issues
@@ -77,13 +77,24 @@ export async function getOrCreateWorkspace(
   userName?: string
 ): Promise<string | null> {
   try {
-    console.log('Getting workspace for user:', userId);
+    console.log('Getting workspace for user ID:', userId);
+    
+    // First, ensure we have a valid UUID
+    const validUserId = await getConsistentUserId(userId, userEmail);
+    
+    if (!validUserId) {
+      console.error('Failed to get valid UUID for user ID:', userId);
+      // Fallback to email-based query if UUID conversion fails
+      return getWorkspaceByEmail(userEmail);
+    }
+    
+    console.log('Using validated UUID:', validUserId);
     
     // Try to get existing workspace from memberships
     const { data: memberships, error: memberError } = await supabase
       .from('team_members')
       .select('workspace_id')
-      .eq('user_id', userId);
+      .eq('user_id', validUserId);
       
     if (memberError) {
       console.error('Error fetching memberships:', memberError);
@@ -96,7 +107,7 @@ export async function getOrCreateWorkspace(
     const { data: workspaces, error: workspaceError } = await supabase
       .from('workspaces')
       .select('id')
-      .eq('owner_id', userId);
+      .eq('owner_id', validUserId);
       
     if (workspaceError) {
       console.error('Error fetching workspaces:', workspaceError);
@@ -110,6 +121,69 @@ export async function getOrCreateWorkspace(
     return null;
   } catch (error) {
     console.error('Error in getOrCreateWorkspace:', error);
+    return null;
+  }
+}
+
+/**
+ * Fallback function to get workspace by email when UUID conversion fails
+ */
+async function getWorkspaceByEmail(email: string): Promise<string | null> {
+  try {
+    console.log('[getWorkspaceByEmail] Looking up workspace for email:', email);
+    
+    // Try to find team membership by email
+    const { data: emailMemberships, error: emailError } = await supabase
+      .from('team_members')
+      .select('workspace_id')
+      .eq('email', email)
+      .limit(1);
+      
+    if (emailError) {
+      console.error('[getWorkspaceByEmail] Error finding team membership by email:', emailError);
+      return null;
+    }
+    
+    if (emailMemberships && emailMemberships.length > 0) {
+      console.log('[getWorkspaceByEmail] Found workspace by team membership:', emailMemberships[0].workspace_id);
+      return emailMemberships[0].workspace_id;
+    }
+    
+    // Try to get profile by email
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .single();
+      
+    if (profileError) {
+      console.error('[getWorkspaceByEmail] Error finding profile by email:', profileError);
+      return null;
+    }
+    
+    if (profile) {
+      // Try to find workspace where this profile ID is the owner
+      const { data: ownedWorkspaces, error: workspaceError } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('owner_id', profile.id)
+        .limit(1);
+        
+      if (workspaceError) {
+        console.error('[getWorkspaceByEmail] Error finding workspaces by profile ID:', workspaceError);
+        return null;
+      }
+      
+      if (ownedWorkspaces && ownedWorkspaces.length > 0) {
+        console.log('[getWorkspaceByEmail] Found workspace by ownership:', ownedWorkspaces[0].id);
+        return ownedWorkspaces[0].id;
+      }
+    }
+    
+    console.log('[getWorkspaceByEmail] No workspace found for email:', email);
+    return null;
+  } catch (error) {
+    console.error('[getWorkspaceByEmail] Unexpected error:', error);
     return null;
   }
 }

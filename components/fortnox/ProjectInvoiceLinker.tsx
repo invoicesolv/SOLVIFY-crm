@@ -500,38 +500,38 @@ export default function ProjectInvoiceLinker() {
   const getStatusDisplay = (status: string) => {
     const statusMap: Record<string, { text: string, className: string }> = {
       // Basic statuses
-      "ongoing": { text: "Pågående", className: "bg-blue-900/20 text-blue-400" },
-      "draft": { text: "Utkast", className: "bg-neutral-800 text-neutral-400" },
-      "completed": { text: "Färdig", className: "bg-green-900/20 text-green-400" },
-      "paid": { text: "Betald", className: "bg-green-900/20 text-green-400" },
-      "pending": { text: "Pågående", className: "bg-yellow-900/20 text-yellow-400" },
-      "unpaid": { text: "Obetald", className: "bg-yellow-900/20 text-yellow-400" },
-      "overdue": { text: "Försenad", className: "bg-red-900/20 text-red-400" },
+      "ongoing": { text: "Pågående", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "draft": { text: "Utkast", className: "bg-background text-muted-foreground" },
+      "completed": { text: "Färdig", className: "bg-green-100 dark:bg-green-900/20 text-green-400" },
+      "paid": { text: "Betald", className: "bg-green-100 dark:bg-green-900/20 text-green-400" },
+      "pending": { text: "Pågående", className: "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400" },
+      "unpaid": { text: "Obetald", className: "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400" },
+      "overdue": { text: "Försenad", className: "bg-red-100 dark:bg-red-900/20 text-red-400" },
       
       // Fortnox specific statuses
-      "not invoiced": { text: "Ej fakturerad", className: "bg-neutral-800 text-neutral-400" },
-      "invoiced": { text: "Fakturerad", className: "bg-blue-900/20 text-blue-400" },
-      "cancelled": { text: "Avbruten", className: "bg-red-900/20 text-red-400" },
-      "partially paid": { text: "Delvis betald", className: "bg-yellow-900/20 text-yellow-400" },
-      "reminder": { text: "Påminnelse", className: "bg-red-900/20 text-red-400" },
-      "authorised": { text: "Godkänd", className: "bg-blue-900/20 text-blue-400" },
-      "expired": { text: "Utgången", className: "bg-red-900/20 text-red-400" },
+      "not invoiced": { text: "Ej fakturerad", className: "bg-background text-muted-foreground" },
+      "invoiced": { text: "Fakturerad", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "cancelled": { text: "Avbruten", className: "bg-red-100 dark:bg-red-900/20 text-red-400" },
+      "partially paid": { text: "Delvis betald", className: "bg-yellow-100 dark:bg-yellow-900/20 text-yellow-400" },
+      "reminder": { text: "Påminnelse", className: "bg-red-100 dark:bg-red-900/20 text-red-400" },
+      "authorised": { text: "Godkänd", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "expired": { text: "Utgången", className: "bg-red-100 dark:bg-red-900/20 text-red-400" },
       "full credit": { text: "Krediterad", className: "bg-purple-900/20 text-purple-400" },
       "partial credit": { text: "Delvis krediterad", className: "bg-purple-900/20 text-purple-400" },
-      "customer has paid": { text: "Kunden har betalat", className: "bg-green-900/20 text-green-400" },
+      "customer has paid": { text: "Kunden har betalat", className: "bg-green-100 dark:bg-green-900/20 text-green-400" },
       
       // Mapping English status to Swedish
-      "created": { text: "Skapad", className: "bg-blue-900/20 text-blue-400" },
-      "approved": { text: "Godkänd", className: "bg-blue-900/20 text-blue-400" },
-      "sent": { text: "Skickad", className: "bg-blue-900/20 text-blue-400" },
-      "open": { text: "Öppen", className: "bg-blue-900/20 text-blue-400" },
-      "written off": { text: "Avskriven", className: "bg-red-900/20 text-red-400" },
-      "finished": { text: "Avslutad", className: "bg-green-900/20 text-green-400" }
+      "created": { text: "Skapad", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "approved": { text: "Godkänd", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "sent": { text: "Skickad", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "open": { text: "Öppen", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" },
+      "written off": { text: "Avskriven", className: "bg-red-100 dark:bg-red-900/20 text-red-400" },
+      "finished": { text: "Avslutad", className: "bg-green-100 dark:bg-green-900/20 text-green-400" }
     };
 
     // Make case-insensitive lookup
     const normalizedStatus = status?.toLowerCase() || 'ongoing';
-    const defaultStatus = { text: "Pågående", className: "bg-blue-900/20 text-blue-400" };
+    const defaultStatus = { text: "Pågående", className: "bg-blue-100 dark:bg-blue-900/20 text-blue-400" };
     return statusMap[normalizedStatus] || defaultStatus;
   };
   
@@ -618,7 +618,7 @@ export default function ProjectInvoiceLinker() {
                   placeholder="Enter custom task details"
                   disabled={loading}
                 />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-foreground0">
                   Use this for custom task details if no tasks are selected above.
                 </p>
               </div>
@@ -711,7 +711,7 @@ export default function ProjectInvoiceLinker() {
                         <SelectItem value="OFFER">Create Draft (Offer)</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-foreground0">
                       {invoiceType === "OFFER" ? 
                         "Creates a draft invoice (offer) - won't be sent to customer" : 
                         "Creates a normal invoice that will be processed"
@@ -817,7 +817,7 @@ export default function ProjectInvoiceLinker() {
                         <tr key={invoice.DocumentNumber} className="border-b hover:bg-gray-50">
                           <td className="py-2 px-4">
                             <div className="flex items-center">
-                              <Link className="h-4 w-4 mr-2 text-blue-500" />
+                              <Link className="h-4 w-4 mr-2 text-blue-600 dark:text-blue-400" />
                               {invoice.DocumentNumber}
                             </div>
                           </td>
@@ -837,7 +837,7 @@ export default function ProjectInvoiceLinker() {
                 </table>
               </div>
             ) : (
-              <p className="text-center py-6 text-gray-500">No invoices linked to this project yet.</p>
+              <p className="text-center py-6 text-foreground0">No invoices linked to this project yet.</p>
             )}
           </CardContent>
         </Card>

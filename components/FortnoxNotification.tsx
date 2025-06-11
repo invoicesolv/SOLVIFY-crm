@@ -62,22 +62,22 @@ export default function FortnoxNotification() {
   
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-md">
-      <div className="bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg p-4">
+      <div className="bg-background border border-border dark:border-border rounded-lg shadow-lg p-4">
         <div className="flex justify-between items-start mb-2">
           <div className="flex items-center">
-            <AlertCircle className="h-5 w-5 text-yellow-500 mr-2" />
-            <span className="font-medium text-white">New Fortnox Customers Available</span>
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mr-2" />
+            <span className="font-medium text-foreground">New Fortnox Customers Available</span>
           </div>
           <Button 
             variant="ghost" 
             size="sm" 
-            className="h-6 w-6 p-0 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-700"
+            className="h-6 w-6 p-0 rounded-full text-muted-foreground hover:text-foreground hover:bg-gray-200 dark:bg-muted"
             onClick={() => setShowNotification(false)}
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-neutral-300 mb-3">
+        <p className="text-foreground dark:text-neutral-300 mb-3">
           We found {customerCount} new customer(s) in Fortnox that are not in your local database.
           Would you like to sync them now?
         </p>
@@ -86,7 +86,7 @@ export default function FortnoxNotification() {
             variant="ghost"
             size="sm"
             onClick={() => setShowNotification(false)}
-            className="text-neutral-400 hover:text-white"
+            className="text-muted-foreground hover:text-foreground"
           >
             Dismiss
           </Button>

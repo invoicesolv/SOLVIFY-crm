@@ -74,7 +74,7 @@ function CheckoutForm({ plan, amount }: PaymentFormProps) {
     <form onSubmit={handleSubmit} className="w-full max-w-md space-y-4">
       <PaymentElement />
       {error && (
-        <div className="text-red-500 text-sm">{error}</div>
+        <div className="text-red-600 dark:text-red-400 text-sm">{error}</div>
       )}
       <Button
         type="submit"

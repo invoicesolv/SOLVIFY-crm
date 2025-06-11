@@ -117,17 +117,17 @@ export function BulkTaskImport({
   };
 
   return (
-    <Card className="p-6 bg-neutral-900 border-neutral-800 max-w-2xl mx-auto">
+    <Card className="p-6 bg-background border-border max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 text-neutral-400" />
-          <h2 className="text-lg font-medium text-white">Bulk Import Tasks</h2>
+          <FileText className="h-5 w-5 text-muted-foreground" />
+          <h2 className="text-lg font-medium text-foreground">Bulk Import Tasks</h2>
         </div>
         <Button
           variant="ghost"
           size="icon"
           onClick={onClose}
-          className="text-neutral-400 hover:text-white"
+          className="text-muted-foreground hover:text-foreground"
         >
           <X className="h-5 w-5" />
         </Button>
@@ -136,17 +136,17 @@ export function BulkTaskImport({
       {importSummary ? (
         <div className="space-y-4">
           <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 flex items-start gap-3">
-            <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+            <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-green-500 font-medium">Import Successful</h3>
-              <p className="text-neutral-300">
+              <h3 className="text-green-600 dark:text-green-400 font-medium">Import Successful</h3>
+              <p className="text-foreground dark:text-neutral-300">
                 Added {importSummary.tasksAdded} tasks with {importSummary.subtasksAdded} subtasks to your project.
               </p>
             </div>
           </div>
           
           <div className="flex justify-end gap-2">
-            <Button onClick={onClose} className="bg-neutral-800 hover:bg-neutral-700 text-white">
+            <Button onClick={onClose} className="bg-background hover:bg-gray-200 dark:bg-muted text-foreground">
               Close
             </Button>
           </div>
@@ -154,13 +154,13 @@ export function BulkTaskImport({
       ) : (
         <div className="space-y-4">
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-blue-500 font-medium">Format Instructions</h3>
-              <p className="text-neutral-300">
+              <h3 className="text-blue-600 dark:text-blue-400 font-medium">Format Instructions</h3>
+              <p className="text-foreground dark:text-neutral-300">
                 Enter one task per line. For subtasks, indent with spaces or a tab at the beginning of the line.
               </p>
-              <div className="mt-2 p-2 bg-neutral-800 rounded text-sm text-neutral-300 font-mono">
+              <div className="mt-2 p-2 bg-background rounded text-sm text-foreground dark:text-neutral-300 font-mono">
                 <div>Task 1</div>
                 <div className="pl-4">Subtask 1.1</div>
                 <div className="pl-4">Subtask 1.2</div>
@@ -172,7 +172,7 @@ export function BulkTaskImport({
 
           <Textarea
             placeholder="Enter your tasks here..."
-            className="min-h-[200px] bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500 focus:border-neutral-600"
+            className="min-h-[200px] bg-background border-border dark:border-border text-foreground placeholder:text-foreground0 focus:border-gray-400 dark:border-border"
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
           />
@@ -181,14 +181,14 @@ export function BulkTaskImport({
             <Button
               variant="outline"
               onClick={onClose}
-              className="text-neutral-400 hover:text-white border-neutral-700 hover:bg-neutral-800"
+              className="text-muted-foreground hover:text-foreground border-border dark:border-border hover:bg-background"
             >
               Cancel
             </Button>
             <Button
               onClick={processImport}
               disabled={isProcessing || !bulkText.trim()}
-              className="bg-neutral-700 hover:bg-neutral-600 text-white"
+              className="bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 text-foreground"
             >
               {isProcessing ? "Processing..." : "Import Tasks"}
             </Button>

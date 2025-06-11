@@ -129,8 +129,8 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-neutral-900 p-8 rounded-lg w-full max-w-md border border-neutral-800 relative overflow-hidden">
+    <div className="fixed inset-0 bg-gray-900/50 dark:bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-background p-8 rounded-lg w-full max-w-md border border-border relative overflow-hidden">
         <div className="relative">
           <GlowingEffect 
             spread={30} 
@@ -143,10 +143,10 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
             variant="default"
           />
           <div className="relative z-10">
-        <h2 className="text-xl font-semibold text-white mb-6">Email Report Settings</h2>
+        <h2 className="text-xl font-semibold text-foreground mb-6">Email Report Settings</h2>
         
         <div className="space-y-6">
-          <div className="p-4 bg-neutral-800 rounded-md border border-neutral-700">
+          <div className="p-4 bg-background rounded-md border border-border dark:border-border">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <Switch
@@ -155,8 +155,8 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
                   className="data-[state=checked]:bg-blue-600"
                 />
                 <div>
-                  <label className="text-white text-sm font-medium">Enable Weekly Reports</label>
-                  <p className="text-xs text-neutral-400">Turn on to schedule automated weekly reports</p>
+                  <label className="text-foreground text-sm font-medium">Enable Weekly Reports</label>
+                  <p className="text-xs text-muted-foreground">Turn on to schedule automated weekly reports</p>
                 </div>
               </div>
             </div>
@@ -165,24 +165,24 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
           {emailSettings.enabled && (
             <>
               <div>
-                <label className="block mb-2 text-sm font-medium text-neutral-200">Recipients</label>
+                <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Recipients</label>
                 <textarea
                   value={emailSettings.recipients.join('\n')}
                   onChange={(e) => setEmailSettings(prev => ({ 
                     ...prev, 
                     recipients: e.target.value.split('\n').map(email => email.trim()).filter(Boolean)
                   }))}
-                  className="w-full h-32 p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm"
+                  className="w-full h-32 p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm"
                   placeholder="Enter email addresses (one per line)"
                 />
               </div>
 
               <div>
-                <label className="block mb-2 text-sm font-medium text-neutral-200">Send Day</label>
+                <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Send Day</label>
                 <select
                   value={emailSettings.sendDay}
                   onChange={(e) => setEmailSettings(prev => ({ ...prev, sendDay: e.target.value }))}
-                  className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm"
+                  className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm"
                 >
                   <option value="monday">Monday</option>
                   <option value="tuesday">Tuesday</option>
@@ -195,32 +195,32 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
               </div>
 
               <div>
-                <label className="block mb-2 text-sm font-medium text-neutral-200">Send Time</label>
+                <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Send Time</label>
                 <input
                   type="time"
                   value={emailSettings.sendTime}
                   onChange={(e) => setEmailSettings(prev => ({ ...prev, sendTime: e.target.value }))}
-                  className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm"
+                  className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm"
                 />
               </div>
             </>
           )}
 
           {cronJobs.length > 0 && (
-            <div className="pt-4 border-t border-neutral-800">
-              <h3 className="text-sm font-medium text-neutral-200 mb-3">Current Schedule</h3>
+            <div className="pt-4 border-t border-border">
+              <h3 className="text-sm font-medium text-gray-800 dark:text-foreground mb-3">Current Schedule</h3>
               {cronJobs.map((job) => (
-                <div key={job.id} className="p-3 rounded-md bg-neutral-800 border border-neutral-700">
+                <div key={job.id} className="p-3 rounded-md bg-background border border-border dark:border-border">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-white">Weekly Report</span>
+                    <span className="text-sm font-medium text-foreground">Weekly Report</span>
                     <span className={cn(
                       "text-xs px-2 py-1 rounded-full",
-                      job.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-neutral-700 text-neutral-400'
+                      job.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-200 dark:bg-muted text-muted-foreground'
                     )}>
                       {job.status}
                     </span>
                   </div>
-                  <div className="text-xs space-y-1 text-neutral-400">
+                  <div className="text-xs space-y-1 text-muted-foreground">
                     <p>Every {job.settings.send_day} at {job.settings.send_time}</p>
                     <p>Next run: {new Date(job.next_run).toLocaleString()}</p>
                     <p>Recipients: {job.settings.recipients.join(', ')}</p>
@@ -230,14 +230,14 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-neutral-800">
+          <div className="flex justify-end gap-3 pt-4 border-t border-border">
                 <div className="group relative overflow-hidden rounded-lg">
                   <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-neutral-700 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                   
-                  <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                  <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
                     <button
               onClick={onClose}
-                      className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                      className="px-4 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
             >
               Cancel
                     </button>
@@ -247,10 +247,10 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
                 <div className="group relative overflow-hidden rounded-lg">
                   <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-30 transition-opacity duration-300 bg-gradient-to-r from-neutral-800 via-blue-900/30 to-neutral-800 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                   
-                  <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+                  <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-neutral-750 transition-colors duration-300">
                     <button
               onClick={handleSaveSettings}
-                      className="px-4 py-2 border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                      className="px-4 py-2 border-0 bg-transparent text-gray-800 dark:text-foreground hover:bg-transparent hover:text-foreground"
             >
               Save Settings
                     </button>

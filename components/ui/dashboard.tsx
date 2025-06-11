@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Card } from '@/components/ui/card'
-import { BarChart, Users, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, AlertCircle, Settings, X, Eye, EyeOff, Globe, Grid, TrendingUp, Inbox, LineChart, RefreshCw, CheckCircle, Square, CheckSquare, CreditCard, PieChart, Crown, HelpCircle } from 'lucide-react'
+import { BarChart, Users, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, AlertCircle, Settings, X, Eye, EyeOff, Globe, Grid, TrendingUp, Inbox, LineChart, RefreshCw, CheckCircle, Square, CheckSquare, CreditCard, PieChart, Crown, HelpCircle, Search, Move } from 'lucide-react'
+import { MessageLoading } from '@/components/ui/message-loading'
 import { supabase } from '@/lib/supabase'
 import { useSession } from 'next-auth/react'
 import { useSearchParams, useRouter } from "next/navigation";
@@ -16,11 +17,134 @@ import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { RecentLeads } from "@/components/leads/RecentLeads";
 import { format, addDays, isToday, parseISO, differenceInDays } from 'date-fns';
 import { motion } from 'framer-motion';
+import { useConsistentUserId } from '@/hooks/useConsistentUserId';
+import { Responsive, WidthProvider } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
+
+// Add custom CSS for grid layouts
+const gridLayoutStyles = `
+.react-grid-item.react-grid-placeholder {
+  background: rgba(59, 130, 246, 0.3);
+  border: 2px dashed rgba(59, 130, 246, 0.5);
+  border-radius: 0.5rem;
+}
+
+.react-grid-item {
+  transition: all 200ms ease;
+}
+
+.react-resizable-handle {
+  position: absolute !important;
+  width: 24px !important;
+  height: 24px !important;
+  bottom: 0 !important;
+  right: 0 !important;
+  background-image: none !important;
+  cursor: se-resize !important;
+  z-index: 10 !important;
+}
+
+.react-resizable-handle:hover::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  width: 12px;
+  height: 12px;
+  border-right: 3px solid #60a5fa;
+  border-bottom: 3px solid #60a5fa;
+  opacity: 0.8;
+}
+
+.react-grid-item:hover .react-resizable-handle {
+  opacity: 1;
+}
+
+.grid-item {
+  position: relative;
+}
+
+.drag-handle {
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.grid-item:hover .drag-handle {
+  opacity: 1;
+}
+
+.react-resizable {
+  position: relative;
+}
+
+.react-resizable-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background-repeat: no-repeat;
+  background-origin: content-box;
+  box-sizing: border-box;
+  background-position: bottom right;
+  padding: 0 3px 3px 0;
+}
+
+.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+`;
+
+// Create the responsive grid layout component
+const ResponsiveGridLayout = WidthProvider(Responsive);
+
+// Add custom styles for grid items
+const GridItemHandle = ({ isCustomizing }: { isCustomizing: boolean }) => {
+  if (!isCustomizing) return null;
+  
+  return (
+    <div className="absolute top-1 right-1 bg-blue-500/20 hover:bg-blue-500/40 w-6 h-6 flex items-center justify-center rounded cursor-move z-10 text-blue-400 transition-opacity opacity-50 hover:opacity-100 drag-handle">
+      <Move className="h-4 w-4" />
+    </div>
+  );
+};
+
+// Add resize handle component
+const ResizeHandle = ({ isCustomizing }: { isCustomizing: boolean }) => {
+  if (!isCustomizing) return null;
+  
+  return (
+    <div className="react-resizable-handle react-resizable-handle-se absolute bottom-0 right-0 w-10 h-10 cursor-se-resize z-20">
+      <div className="absolute bottom-2 right-2 w-4 h-4 border-r-[3px] border-b-[3px] border-blue-400 transform rotate-[-45deg]"></div>
+    </div>
+  );
+};
+
+// Add resize help component
+const ResizeHelp = ({ isCustomizing }: { isCustomizing: boolean }) => {
+  if (!isCustomizing) return null;
+  
+  return (
+    <div className="fixed bottom-4 right-4 bg-blue-600/90 text-foreground p-3 rounded-lg shadow-lg z-50 max-w-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <Move className="h-4 w-4" />
+        <span className="font-medium">Drag widgets</span> 
+        <span className="text-xs bg-blue-500/40 px-2 py-1 rounded">from top-right handle</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="w-4 h-4 bg-blue-500/50 rounded-sm"></div>
+        <span className="font-medium">Resize widgets</span>
+        <span className="text-xs bg-blue-500/40 px-2 py-1 rounded">from bottom-right corner</span>
+      </div>
+    </div>
+  );
+};
 
 interface Invoice {
   document_number: string
   invoice_date: string
-  total: number
+  total: string | number
   balance: number
   due_date: string
   customers: {
@@ -69,7 +193,8 @@ interface Domain {
 
 interface Lead {
   id: string
-  name: string
+  name?: string
+  lead_name?: string // Support both field names
   company: string
   email: string
   status: string
@@ -128,12 +253,96 @@ interface CronJob {
   property_id?: string;
 }
 
+// Dashboard configuration constants - move to environment variables or config in production
+const REFRESH_INTERVALS = {
+  URGENT_TASKS: 60 * 1000,        // 1 minute
+  GENERAL_DATA: 5 * 60 * 1000,    // 5 minutes
+  SEARCH_CONSOLE: 15 * 60 * 1000, // 15 minutes
+  INITIAL_DELAY: 1000,            // 1 second before setting up refresh
+  FETCH_DELAY: 500                // 500ms delay for workspace change
+};
+
+const API_LIMITS = {
+  TASKS: 15,
+  INVOICES: 10,
+  CALENDAR_EVENTS: 10,
+  DEFAULT: 5
+};
+
+const API_TIMEOUTS = {
+  DEFAULT: 10000 // 10 seconds
+};
+
+// Add after the existing constants 
+// Cache mechanism to prevent data loss during workspace transitions
+const CACHE_KEYS = {
+  INVOICES: 'dashboard_invoices_cache',
+  TASKS: 'dashboard_tasks_cache',
+  STATS: 'dashboard_stats_cache'
+};
+
 export function Dashboard() {
   const { data: session } = useSession()
+  const { consistentId: hookConsistentId, isLoading: isLoadingUserId } = useConsistentUserId();
+  const [consistentId, setConsistentId] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
+  
+  // Helper to store data in sessionStorage with proper expiration
+  const cacheData = (key, data, ttlMinutes = 15) => {
+    try {
+      const cacheItem = {
+        data,
+        expiry: Date.now() + (ttlMinutes * 60 * 1000)
+      };
+      sessionStorage.setItem(key, JSON.stringify(cacheItem));
+    } catch (err) {
+      console.warn('Failed to cache data:', err);
+    }
+  };
+
+  // Helper to retrieve cached data if still valid
+  const getCachedData = (key) => {
+    try {
+      const cachedItem = sessionStorage.getItem(key);
+      if (!cachedItem) return null;
+      
+      const { data, expiry } = JSON.parse(cachedItem);
+      if (Date.now() > expiry) {
+        // Cache expired
+        sessionStorage.removeItem(key);
+        return null;
+      }
+      
+      return data;
+    } catch (err) {
+      console.warn('Failed to retrieve cached data:', err);
+      return null;
+    }
+  };
+
+  // Modify setInvoices to update cache when data changes
+  const updateInvoices = (invoicesData) => {
+    if (invoicesData && invoicesData.length > 0) {
+      console.log('Updating invoice data in state with', invoicesData.length, 'invoices');
+      setInvoices(invoicesData);
+      calculateStats(invoicesData);
+      // Cache the invoice data
+      cacheData(CACHE_KEYS.INVOICES, invoicesData);
+    } else {
+      console.log('No invoice data to update');
+      // SECURITY: Don't fetch invoices without workspace filter
+      setInvoices([]);
+      setStats({
+        totalRevenue: 0,
+        invoiceCount: 0,
+        averageInvoiceValue: 0,
+        revenueGrowth: 0
+        });
+    }
+  };
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
   const [leads, setLeads] = useState<Lead[]>([])
@@ -142,12 +351,18 @@ export function Dashboard() {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
   const [searchConsoleData, setSearchConsoleData] = useState<SearchConsoleData | null>(null)
   const [cronJobs, setCronJobs] = useState<CronJob[]>([])
+  const [searchConsoleRendered, setSearchConsoleRendered] = useState(false) // Track if Search Console has been rendered
   const [stats, setStats] = useState<DashboardStats>({
     totalRevenue: 0,
     invoiceCount: 0,
     averageInvoiceValue: 0,
     revenueGrowth: 0
   })
+  
+  // Add this state for layouts
+  const [layouts, setLayouts] = useState<any>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const gridRef = useRef(null);
   
   // We will initialize the hook after activeWorkspace is defined
   const [loading, setLoading] = useState(true)
@@ -183,6 +398,24 @@ export function Dashboard() {
     recentMeetings: true
   })
   
+  // Ensure we have a consistent user ID even if the hook fails
+  useEffect(() => {
+    console.log('[Dashboard] Session status:', session ? 'active' : 'none');
+    console.log('[Dashboard] Hook consistentId:', hookConsistentId);
+    
+    if (hookConsistentId) {
+      setConsistentId(hookConsistentId);
+    } else if (session?.user?.id) {
+      // Fallback to using session ID directly
+      console.log('[Dashboard] Falling back to session user ID:', session.user.id);
+      setConsistentId(session.user.id);
+    } else if (!isLoadingUserId) {
+      // If we're not still loading but have no ID, don't use any workspace
+      console.log('[Dashboard] No user ID available, not using any workspace');
+      setActiveWorkspace(null); 
+    }
+  }, [hookConsistentId, session, isLoadingUserId]);
+  
   // Use our dashboard stats hook after activeWorkspace is set
   const { 
     stats: apiStats, 
@@ -190,6 +423,144 @@ export function Dashboard() {
     error: statsError, 
     refreshStats 
   } = useDashboardStats(activeWorkspace || undefined);
+  
+  // Add CSS styles for grid layout
+  useEffect(() => {
+    // Add custom CSS for grid layouts
+    const styleId = 'react-grid-styles';
+    
+    if (!document.getElementById(styleId)) {
+      const styleEl = document.createElement('style');
+      styleEl.id = styleId;
+      styleEl.innerHTML = gridLayoutStyles;
+      document.head.appendChild(styleEl);
+      
+      return () => {
+        const existingStyle = document.getElementById(styleId);
+        if (existingStyle) {
+          document.head.removeChild(existingStyle);
+        }
+      };
+    }
+  }, []);
+  
+  // Load dashboard layouts - modified to use localStorage only
+  useEffect(() => {
+    const loadDashboardLayouts = async () => {
+      try {
+        console.log('[Dashboard] Loading layouts from localStorage');
+        // Try localStorage first
+        try {
+          const localLayouts = localStorage.getItem('dashboard_layouts');
+          if (localLayouts) {
+            const layoutData = JSON.parse(localLayouts);
+            console.log('[Dashboard] Loaded dashboard layouts from localStorage:', layoutData);
+            
+            // Validate that the layout data has the expected structure
+            if (layoutData && typeof layoutData === 'object' && (layoutData.lg || layoutData.md || layoutData.sm || layoutData.xs)) {
+              setLayouts(layoutData);
+              return; // Exit early if we successfully loaded a valid layout
+            } else {
+              console.warn('[Dashboard] Invalid layout data structure, creating defaults');
+            }
+          } else {
+            console.log('[Dashboard] No saved layouts found in localStorage');
+          }
+        } catch (localStorageError) {
+          console.error('[Dashboard] Error parsing layouts from localStorage:', localStorageError);
+        }
+        
+        // Only create default layouts if no valid saved layout was found
+        const defaultLayouts = generateDefaultLayout();
+        console.log('[Dashboard] Using default layouts:', defaultLayouts);
+        setLayouts(defaultLayouts);
+        
+      } catch (error) {
+        console.error('[Dashboard] Error in loadDashboardLayouts:', error);
+        // Fallback to default layouts
+        const defaultLayouts = generateDefaultLayout();
+        setLayouts(defaultLayouts);
+      }
+    };
+
+    loadDashboardLayouts();
+  }, []);
+
+  // Generate default layout function
+  const generateDefaultLayout = () => {
+    // Make sure all widget types have default positions
+    const allWidgetTypes = [
+      'revenueStats', 'invoiceStats', 'averageInvoice', 'recentInvoices',
+      'invoiceTypes', 'upcomingEvents', 'upcomingDeadlines', 'urgentTasks',
+      'domains', 'leads', 'sales', 'gmailHub', 'analyticsData', 'searchConsole',
+      'cronJobs', 'taskOverview', 'recentMeetings', 'salesMetrics', 'invoiceSummary'
+    ];
+    
+    // Create layout for large screens
+    const lg = [
+        { i: 'revenueStats', x: 0, y: 0, w: 1, h: 1 },
+        { i: 'invoiceStats', x: 1, y: 0, w: 1, h: 1 },
+        { i: 'averageInvoice', x: 2, y: 0, w: 1, h: 1 },
+        { i: 'recentInvoices', x: 0, y: 1, w: 2, h: 2 },
+        { i: 'invoiceTypes', x: 2, y: 1, w: 1, h: 2 },
+        { i: 'upcomingEvents', x: 0, y: 3, w: 1, h: 2 },
+        { i: 'upcomingDeadlines', x: 1, y: 3, w: 1, h: 2 },
+        { i: 'urgentTasks', x: 2, y: 3, w: 1, h: 2 },
+        { i: 'domains', x: 0, y: 5, w: 1, h: 2 },
+        { i: 'leads', x: 1, y: 5, w: 1, h: 2 },
+        { i: 'sales', x: 2, y: 5, w: 1, h: 2 },
+        { i: 'gmailHub', x: 0, y: 7, w: 1, h: 2 },
+        { i: 'analyticsData', x: 1, y: 7, w: 1, h: 2 },
+      { i: 'searchConsole', x: 2, y: 7, w: 1, h: 2 },
+        { i: 'cronJobs', x: 0, y: 9, w: 2, h: 2 },
+        { i: 'taskOverview', x: 0, y: 11, w: 3, h: 2 },
+      { i: 'recentMeetings', x: 0, y: 13, w: 3, h: 1 },
+      { i: 'salesMetrics', x: 2, y: 9, w: 1, h: 2 },
+      { i: 'invoiceSummary', x: 0, y: 14, w: 3, h: 1 }
+    ];
+    
+    // Create layout for medium screens
+    const md = lg.map(item => {
+      const { i, w, h } = item;
+      // For medium screens, we stack them in 2 columns instead of 3
+      return { i, w: Math.min(w, 2), h, x: item.x % 2, y: Math.floor(item.x / 2) + item.y };
+    });
+    
+    // Create layout for small screens
+    const sm = md.map(item => {
+      // For small screens, we keep the same layout as medium
+      return { ...item };
+    });
+    
+    // Create layout for extra small screens (mobile)
+    const xs = allWidgetTypes.map((type, index) => {
+      // For mobile, we stack everything in one column
+      return { i: type, x: 0, y: index * 2, w: 1, h: type.includes('Invoice') ? 3 : 2 };
+    });
+    
+    // Final layouts object for all breakpoints
+    return { lg, md, sm, xs };
+  };
+
+  // Add handler for layout change
+  const handleLayoutChange = (currentLayout: any, allLayouts: any) => {
+    console.log('Layout changed:', allLayouts);
+    
+    // Only save if we're in customization mode to prevent unwanted saves
+    if (isCustomizing) {
+      setLayouts(allLayouts);
+      
+      // Store immediately in localStorage for better persistence between sessions
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('dashboard_layouts', JSON.stringify(allLayouts));
+          console.log('Layout saved to localStorage:', allLayouts);
+        } catch (error) {
+          console.error('Error saving layouts to localStorage:', error);
+        }
+      }
+    }
+  };
   
   // Update our local stats state when API stats change
   useEffect(() => {
@@ -207,24 +578,22 @@ export function Dashboard() {
   // Load available workspaces
   useEffect(() => {
     async function loadWorkspaces() {
-      if (!session?.user?.id) return;
-
       try {
-        // First try to get active workspace from localStorage
-        if (typeof window !== 'undefined') {
-          const storedWorkspace = localStorage.getItem(`workspace_${session.user.id}`);
-          if (storedWorkspace) {
-            setActiveWorkspace(storedWorkspace);
-            console.log('Loaded active workspace from localStorage:', storedWorkspace);
-          }
-        }
-
+        console.log('[Dashboard] Loading workspaces...');
+        
+        // If we have a consistent user ID, try to load workspaces normally
+        if (consistentId) {
+          try {
+            console.log('[Dashboard] Loading workspaces for user ID:', consistentId);
         const { data: memberships, error: membershipError } = await supabase
           .from("team_members")
           .select("workspace_id, workspaces(id, name)")
-          .eq("user_id", session.user.id);
+          .eq("user_id", consistentId);
 
-        if (membershipError) throw membershipError;
+        if (membershipError) {
+              console.error('[Dashboard] Membership query error:', membershipError);
+          throw membershipError;
+        }
 
         const workspaceData = (memberships as any[] | null)
           ?.filter(m => m.workspaces) // Filter out any null workspaces
@@ -233,32 +602,63 @@ export function Dashboard() {
             name: m.workspaces.name,
           })) || [];
 
+            if (workspaceData.length > 0) {
         setWorkspaces(workspaceData);
+              console.log('[Dashboard] Loaded workspaces:', workspaceData);
         
-        // If we have workspaces but no active workspace set yet, use the first one
-        if (workspaceData?.length > 0 && !activeWorkspace) {
+              // Set active workspace if none is selected
+              if (!activeWorkspace) {
           setActiveWorkspace(workspaceData[0].id);
+                console.log('[Dashboard] Set active workspace to:', workspaceData[0].id);
           
-          // Store this selection
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(`workspace_${session.user.id}`, workspaceData[0].id);
+                // Store selection in localStorage
+            localStorage.setItem(`workspace_${consistentId}`, workspaceData[0].id);
+          }
+              
+              return; // Exit if we loaded workspaces successfully
+            }
+          } catch (err) {
+            console.error("[Dashboard] Error loading user workspaces:", err);
           }
         }
+        
+        // SECURITY: Do not load other users' workspaces as fallback
+        console.log('[Dashboard] User has no workspace access - creating default workspace');
+            
+        // If user has no workspaces, they need to create one or be invited
+        // Do not show other users' data
+        
+        // Last resort - skip workspace filtering entirely
+        console.log('[Dashboard] No workspaces found, disabling workspace filtering');
+        // Set null activeWorkspace to indicate we should skip workspace filtering
+        setActiveWorkspace(null);
+        // Create empty workspaces array so UI knows there's no workspaces
+        setWorkspaces([]);
+        
       } catch (error) {
-        console.error("Error loading workspaces:", error);
+        console.error("[Dashboard] Error in loadWorkspaces:", error);
+        // Ensure we don't use workspace filtering if there's an error
+        setActiveWorkspace(null);
+        setWorkspaces([]);
       }
     }
 
+    // Only load workspaces if we're not still loading the user ID
+    if (!isLoadingUserId) {
     loadWorkspaces();
-  }, [session?.user?.id, activeWorkspace]);
+    }
+  }, [consistentId, isLoadingUserId, activeWorkspace]);
 
   // Handle workspace selection
   const handleWorkspaceChange = (workspaceId: string) => {
     setActiveWorkspace(workspaceId);
     
     // Store the selection in localStorage
-    if (session?.user?.id && typeof window !== 'undefined') {
-      localStorage.setItem(`workspace_${session.user.id}`, workspaceId);
+    if (consistentId && typeof window !== 'undefined') {
+      localStorage.setItem(`workspace_${consistentId}`, workspaceId);
+    } else {
+      // Fallback when no user ID
+      localStorage.setItem('active_workspace', workspaceId);
     }
     
     // Refresh data with the new workspace
@@ -270,192 +670,130 @@ export function Dashboard() {
     router.refresh();
   };
 
-  // Save dashboard preferences - completely rewritten
+  // Save layout with dashboard preferences
   const saveDashboardPreferences = useCallback(async () => {
-      if (!session?.user?.id) {
-      console.error('Cannot save preferences: No user ID');
-        return;
-      }
-      
     try {
-      console.log('Saving dashboard preferences for user:', session.user.id);
-      console.log('Preferences data to save:', visibleWidgets);
+      console.log('[Dashboard] Saving dashboard preferences to localStorage');
       
-      let savedSuccessfully = false;
-      
-      // First check if we can access the user_preferences table
-      try {
-        const { error: accessError } = await supabase
-          .from('user_preferences')
-          .select('id')
-          .limit(1);
-          
-        if (accessError) {
-          console.error('Cannot access user_preferences table:', accessError);
-          throw new Error('Database access issue');
-        }
-        
-        // Stringify settings to ensure consistent format
-        const jsonSettings = JSON.stringify(visibleWidgets);
-        console.log('Stringified settings:', jsonSettings);
-        
-        // Try to update existing record first
-        const { data: existingPrefs, error: fetchError } = await supabase
-          .from('user_preferences')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-          
-        if (fetchError && fetchError.code !== 'PGRST116') {
-          console.error('Error fetching existing preferences:', fetchError);
-        } else {
-          // Either update or insert based on whether we found an existing record
-          if (existingPrefs) {
-            console.log('Updating existing preferences with ID:', existingPrefs.id);
-            const { error: updateError } = await supabase
-              .from('user_preferences')
-              .update({
-                dashboard_settings: jsonSettings,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', existingPrefs.id);
-              
-            if (updateError) {
-              console.error('Error updating preferences:', updateError);
-            } else {
-              savedSuccessfully = true;
-            }
-          } else {
-            console.log('Creating new preference record');
-            const { error: insertError } = await supabase
-              .from('user_preferences')
-              .insert({
-                user_id: session.user.id,
-                dashboard_settings: jsonSettings,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              });
-              
-            if (insertError) {
-              console.error('Error inserting preferences:', insertError);
-            } else {
-              savedSuccessfully = true;
-            }
-          }
-        }
-      } catch (dbError) {
-        console.error('Database error when saving preferences:', dbError);
-      }
-      
-      // Fall back to localStorage if database save failed
-      if (!savedSuccessfully) {
-        console.log('Falling back to localStorage for preferences');
-        try {
+      // Store in localStorage
           localStorage.setItem('dashboard_preferences', JSON.stringify(visibleWidgets));
-          savedSuccessfully = true;
-        } catch (storageError) {
-          console.error('Failed to save to localStorage:', storageError);
-        }
-      }
+          localStorage.setItem('dashboard_layouts', JSON.stringify(layouts));
       
-      // Show success message if we saved somewhere
-      if (savedSuccessfully) {
         toast({
           title: "Dashboard updated",
           description: "Your dashboard settings have been saved.",
           variant: "default"
         });
-      } else {
-        toast({
-          title: "Settings applied",
-          description: "Your settings are applied for this session only.",
-          variant: "default"
-        });
-      }
     } catch (error) {
-      console.error('Error in saveDashboardPreferences:', error);
+      console.error('[Dashboard] Error in saveDashboardPreferences:', error);
       toast({
         title: "Settings applied temporarily",
         description: "Settings could not be saved permanently.",
         variant: "destructive"
       });
     }
-  }, [session?.user?.id, visibleWidgets, toast]);
+  }, [visibleWidgets, layouts, toast]);
+
+  // Reset layout to defaults
+  const resetLayoutToDefaults = () => {
+    const defaultLayouts = generateDefaultLayout();
+    setLayouts(defaultLayouts);
+    
+    // Save the default layout
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dashboard_layouts', JSON.stringify(defaultLayouts));
+    }
+    
+    toast({
+      title: "Layout reset",
+      description: "Dashboard layout has been reset to defaults.",
+      variant: "default"
+    });
+  };
 
   // Apply changes and exit customization mode
   const applyChanges = async () => {
     try {
+      // Ensure we save the current layout state
+      if (layouts && typeof window !== 'undefined') {
+        localStorage.setItem('dashboard_layouts', JSON.stringify(layouts));
+        console.log('[Dashboard] Layout saved on apply changes:', layouts);
+      }
+      
+      // Save dashboard preferences
       await saveDashboardPreferences();
+      
+      // Exit customization mode
       setIsCustomizing(false);
+      
+      toast({
+        title: "Dashboard updated",
+        description: "Your layout changes have been saved and will persist between sessions.",
+        variant: "default"
+      });
     } catch (error) {
-      console.error('Error applying changes:', error);
+      console.error('[Dashboard] Error applying changes:', error);
+      toast({
+        title: "Error saving layout",
+        description: "Your changes may not persist between sessions.",
+        variant: "destructive"
+      });
     }
   };
 
-  // Load dashboard preferences
+  // Load dashboard preferences - modified to use localStorage only
   useEffect(() => {
     const loadDashboardPreferences = async () => {
-      if (!session?.user?.id) return;
-      
       try {
-        console.log('Loading dashboard preferences for user:', session.user.id);
+        console.log('[Dashboard] Loading dashboard preferences from localStorage');
         
-        // First try to get preferences from database
-        try {
-          const { data: prefsData, error: prefsError } = await supabase
-            .from('user_preferences')
-            .select('dashboard_settings')
-            .eq('user_id', session.user.id) // Add this line to properly filter by user_id
-            .maybeSingle();
-            
-          if (prefsError) {
-            console.error('Error loading preferences from DB:', prefsError);
-          } else if (prefsData?.dashboard_settings) {
-            try {
-              const settings = typeof prefsData.dashboard_settings === 'string' 
-                ? JSON.parse(prefsData.dashboard_settings)
-                : prefsData.dashboard_settings;
-              
-              console.log('Loaded dashboard preferences from DB:', settings);
-              setVisibleWidgets(prev => ({ ...prev, ...settings }));
-              return; // Exit early since we loaded from DB
-            } catch (parseError) {
-              console.error('Error parsing dashboard settings from DB:', parseError);
-            }
-          } else {
-            console.log('No dashboard preferences found in DB for user:', session.user.id);
-          }
-        } catch (dbError) {
-          console.error('Failed to access user_preferences table:', dbError);
-        }
-        
-        // If database failed, try localStorage as fallback
-        try {
+          // Load widget visibility preferences
           const localPrefs = localStorage.getItem('dashboard_preferences');
           if (localPrefs) {
             const settings = JSON.parse(localPrefs);
-            console.log('Loaded dashboard preferences from localStorage:', settings);
+          console.log('[Dashboard] Loaded dashboard preferences from localStorage:', settings);
             setVisibleWidgets(prev => ({ ...prev, ...settings }));
           }
+          
+          // Load layout configuration
+          const localLayouts = localStorage.getItem('dashboard_layouts');
+          if (localLayouts) {
+            const layoutData = JSON.parse(localLayouts);
+          console.log('[Dashboard] Loaded dashboard layouts from localStorage:', layoutData);
+            setLayouts(layoutData);
+          } else {
+            // If no layouts found, create default layouts
+          console.log('[Dashboard] No saved layouts found, creating default layout');
+            const defaultLayouts = generateDefaultLayout();
+            setLayouts(defaultLayouts);
+          }
         } catch (localStorageError) {
-          console.error('Error loading preferences from localStorage:', localStorageError);
-        }
-      } catch (error) {
-        console.error('Error in loadDashboardPreferences:', error);
+        console.error('[Dashboard] Error loading preferences from localStorage:', localStorageError);
+          // Set default layouts if nothing else works
+          const defaultLayouts = generateDefaultLayout();
+          setLayouts(defaultLayouts);
       }
     };
 
     // Main function to load data
     const initializeDashboard = async () => {
+      if (!consistentId || !activeWorkspace) {
+        console.log('Cannot initialize dashboard - missing user ID or workspace');
+        return;
+      }
+
+      console.log('Initializing dashboard for user:', consistentId);
+      console.log('Loading dashboard data for workspace:', activeWorkspace);
       setLoading(true);
-      setError(null);
 
       try {
         // Load preferences
         await loadDashboardPreferences();
         
-        // Fetch actual dashboard data
-        await fetchData();
+        // Set a flag to indicate we need to do the data fetching after fetchData is defined
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(`dashboard_needs_data_${consistentId}_${activeWorkspace}`, 'true');
+        }
       } catch (error) {
         console.error('Error initializing dashboard:', error);
         setError('Failed to initialize dashboard. Please reload the page.');
@@ -463,185 +801,253 @@ export function Dashboard() {
       }
     };
     
-    // Initialize dashboard if we have a session
-    if (session?.user?.id) {
+    // Only initialize when we have both a user ID and workspace
+    if (consistentId && activeWorkspace) {
+      // Use a flag to prevent duplicate initialization
+      const alreadyInitialized = sessionStorage.getItem(`dashboard_initialized_${consistentId}_${activeWorkspace}`);
+      if (!alreadyInitialized) {
+        console.log('First initialization for this session');
       initializeDashboard();
+        // Mark as initialized
+        sessionStorage.setItem(`dashboard_initialized_${consistentId}_${activeWorkspace}`, 'true');
     } else {
+        console.log('Dashboard already initialized in this session');
       setLoading(false);
     }
-  }, [session?.user?.id]);
+    } else if (!isLoadingUserId) {
+      setLoading(false);
+    }
+  }, [consistentId, activeWorkspace, isLoadingUserId]);
 
   // Function to fetch data from various sources
   const fetchData = useCallback(async () => {
-    if (!session?.user?.id) {
-      console.error('No user session found');
+    if (!consistentId) {
+      console.error('No consistent user ID found');
       setLoading(false);
       setDebugInfo({
-        message: 'No user session found. Please log in again.',
+        message: 'No valid user ID found. Please log in again or visit /debug/user-id.',
         type: 'error'
       });
       return;
     }
     
-    if (!activeWorkspace) {
-      console.log('No active workspace selected, skipping data fetch');
-      setLoading(false);
+    console.log('[Dashboard] Fetching data with activeWorkspace:', activeWorkspace);
+    
+    // Add debouncing mechanism to prevent duplicate fetches
+    const debounceKey = `last_fetch_${consistentId}_${activeWorkspace || 'no-workspace'}`;
+    const lastFetch = sessionStorage.getItem(debounceKey);
+    const now = Date.now();
+    
+    // Force a refresh if there's no data currently displayed
+    const forceRefresh = invoices.length === 0 || domains.length === 0 || leads.length === 0 || sales.length === 0;
+    
+    if (lastFetch && (now - parseInt(lastFetch)) < 2000 && !forceRefresh) {
+      console.log('Skipping duplicate fetch - last fetch was less than 2 seconds ago');
       return;
     }
     
+    // Record this fetch time
+    sessionStorage.setItem(debounceKey, now.toString());
+    
     try {
       setRefreshing(true);
-      console.log('Fetching dashboard data for user:', session.user.id, 'workspace:', activeWorkspace);
+      console.log('Fetching dashboard data for user:', consistentId, 'workspace:', activeWorkspace || 'ALL DATA (no workspace filter)');
       
-      // DEBUG SECTION - Test basic Supabase connection
-      console.log('DEBUG: Starting fetchData with session:', !!session?.user?.id, 'workspace:', activeWorkspace);
+      // PRIORITY FETCH: INVOICES - with workspace filtering for security
       try {
-        const { data: testData, error: testError } = await supabase.from('profiles').select('*').limit(1);
-        console.log('DEBUG: Basic query test result:', testData?.length > 0 ? 'SUCCESS' : 'EMPTY', testError ? 'ERROR' : '');
-        if (testError) {
-          console.error('DEBUG: Basic query test error:', testError);
-          setDebugInfo({
-            message: `Database connection issue: ${testError.message}`,
-            type: 'error'
+        console.log('DEBUG: Fetching invoices with workspace filtering');
+        
+        let invoicesQuery = supabase
+          .from('invoices')
+          .select('*, customers(*), currencies(*)')
+          .order('invoice_date', { ascending: false });
+          
+        // SECURITY: Always apply workspace filter if available
+        if (activeWorkspace) {
+          invoicesQuery = invoicesQuery.eq('workspace_id', activeWorkspace);
+        } else {
+          // If no workspace, don't fetch any invoices for security
+          console.log('DEBUG: No workspace - skipping invoices fetch for security');
+          setInvoices([]);
+          setStats({
+            totalRevenue: 0,
+            invoiceCount: 0,
+            averageInvoiceValue: 0,
+            revenueGrowth: 0
           });
+          return;
+        }
+        
+        const { data: invoicesData, error: invoicesError } = await invoicesQuery;
+
+        if (invoicesError) {
+          console.error('DEBUG: Invoices fetch error:', invoicesError);
+          setInvoices([]);
+        } else {
+          console.log('DEBUG: Invoices fetched successfully:', invoicesData?.length || 0);
+          
+          if (invoicesData && invoicesData.length > 0) {
+            // Log the raw invoice data for debugging
+            console.log('First invoice sample:', invoicesData[0]);
+            console.log('Raw invoice total:', invoicesData[0].total, 'Type:', typeof invoicesData[0].total);
+            
+            // Use the data directly without transformations
+            setInvoices(invoicesData);
+            calculateStats(invoicesData);
+            
+            // Cache the invoice data
+            cacheData(CACHE_KEYS.INVOICES, invoicesData);
+          } else {
+            console.log('DEBUG: No invoices found in database');
+            setInvoices([]);
+            setStats({
+              totalRevenue: 0,
+              invoiceCount: 0,
+              averageInvoiceValue: 0,
+              revenueGrowth: 0
+            });
+          }
         }
       } catch (err) {
-        console.error('DEBUG: Critical Supabase error:', err);
-        setDebugInfo({
-          message: `Critical database error: ${err instanceof Error ? err.message : 'Unknown error'}`,
-          type: 'error'
-        });
+        console.error('Failed to query invoices table:', err);
+        setInvoices([]);
       }
       
-      // CALENDAR EVENTS - filtering by workspace_id
+      // CALENDAR EVENTS - directly from Supabase calendar_events table
       try {
-        console.log('DEBUG: Attempting to fetch calendar events for workspace:', activeWorkspace);
+        console.log('DEBUG: Fetching calendar events', activeWorkspace ? `for workspace: ${activeWorkspace}` : 'without workspace filtering');
         
-        // First try to get recent events directly from the calendar_events table
-        const { data: calendarEventsData, error: calendarError } = await supabase
+        // Create initial query with broader date range (3 months instead of 1)
+        let calendarQuery = supabase
           .from('calendar_events')
           .select('*')
-          .eq('workspace_id', activeWorkspace)
-          .gte('start_time', new Date(new Date().setDate(new Date().getDate() - 1)).toISOString()) // From yesterday
-          .lte('start_time', new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString()) // To one month ahead
+          .gte('start_time', new Date(new Date().setDate(new Date().getDate() - 7)).toISOString()) // From a week ago
+          .lte('start_time', new Date(new Date().setMonth(new Date().getMonth() + 3)).toISOString()); // To three months ahead
+          
+        // Only apply workspace filter if we have an activeWorkspace
+        if (activeWorkspace) {
+          calendarQuery = calendarQuery.eq('workspace_id', activeWorkspace);
+        }
+        
+        const { data: calendarEventsData, error: calendarError } = await calendarQuery
           .order('start_time', { ascending: true })
-          .limit(10);
+          .limit(API_LIMITS.CALENDAR_EVENTS);
 
         if (calendarError) {
           console.error('DEBUG: Calendar fetch error:', calendarError);
+          // SECURITY: Don't fetch calendar events without workspace filter
+          setMeetings([]);
         } else {
-          console.log('DEBUG: Calendar events fetched from database:', calendarEventsData?.length || 0);
-          console.log('DEBUG: Sample calendar event:', calendarEventsData?.[0] || 'No events found');
+          console.log('DEBUG: Calendar events fetched successfully:', calendarEventsData?.length || 0);
           
           if (calendarEventsData && calendarEventsData.length > 0) {
             const transformedMeetings = calendarEventsData.map(event => ({
               id: event.id,
               title: event.title,
               start_time: event.start_time,
-              end_time: event.end_time,
+              end_time: event.end_time || event.start_time, // Ensure end_time has a value
               description: event.description || ''
             }));
             setMeetings(transformedMeetings);
-            console.log('DEBUG: Set calendar events to meetings state:', transformedMeetings.length);
-          } else {
-            // If no events found in the database, try fetching from the API
-            console.log('DEBUG: No calendar events found in database, trying API endpoint');
+            // Cache the calendar data
             try {
-              const apiResponse = await fetch(`/api/calendar/workspace-events?workspaceId=${activeWorkspace}`, {
-                headers: {
-                  'Cache-Control': 'no-cache',
-                  'Pragma': 'no-cache'
-                }
-              });
-              
-              if (apiResponse.ok) {
-                const eventsData = await apiResponse.json();
-                console.log('DEBUG: Calendar events fetched from API:', eventsData?.length || 0);
-                
-                if (eventsData && eventsData.length > 0) {
-                  const transformedMeetings = eventsData.map(event => ({
-                    id: event.id,
-                    title: event.title,
-                    start_time: event.start_time,
-                    end_time: event.end_time,
-                    description: event.description || ''
-                  }));
-                  setMeetings(transformedMeetings);
-                  console.log('DEBUG: Set calendar events from API to meetings state:', transformedMeetings.length);
-                } else {
-                  console.log('DEBUG: No calendar events found in API response');
-                  setMeetings([]);
-                }
-              } else {
-                console.error('DEBUG: API response error:', apiResponse.status);
-                setMeetings([]);
-              }
-            } catch (apiError) {
-              console.error('DEBUG: Error fetching from calendar API:', apiError);
-              setMeetings([]);
+              sessionStorage.setItem('dashboard_calendar_cache', JSON.stringify({
+                data: transformedMeetings,
+                timestamp: Date.now(),
+                expires: Date.now() + (30 * 60 * 1000) // 30 minute cache
+              }));
+            } catch (cacheErr) {
+              console.warn('Failed to cache calendar data:', cacheErr);
             }
+            } else {
+            console.log('DEBUG: No calendar events found for workspace - this is expected for new workspaces');
+              setMeetings([]);
           }
         }
       } catch (err) {
         console.error('Failed to query calendar_events table:', err);
-        setMeetings([]);
-      }
-
-      // TASKS - filter by workspace_id
-      try {
-        console.log('DEBUG: Attempting to fetch tasks');
-        
-        // Use the new /api/tasks endpoint
-        const taskResponse = await fetch(`/api/tasks?workspaceId=${activeWorkspace}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
+        // Try to load from cache if available
+        try {
+          const cachedCalendar = sessionStorage.getItem('dashboard_calendar_cache');
+          if (cachedCalendar) {
+            const { data, expires } = JSON.parse(cachedCalendar);
+            if (Date.now() < expires && data.length > 0) {
+              console.log('Using cached calendar data:', data.length, 'events');
+              setMeetings(data);
+            }
           }
-        });
-        
-        if (taskResponse.ok) {
-          const tasksData = await taskResponse.json();
-          console.log('DEBUG: Tasks fetched from API:', tasksData.length || 0);
-          
-          if (tasksData && tasksData.length > 0) {
-            console.log('DEBUG: Sample task:', tasksData[0]);
-            setTasks(tasksData);
-          } else {
-            console.log('DEBUG: No tasks returned from API');
-            setTasks([]);
-          }
-        } else {
-          console.error('DEBUG: Error fetching tasks from API:', taskResponse.status);
-          setTasks([]);
+        } catch (cacheErr) {
+          console.warn('Error accessing cache:', cacheErr);
+          setMeetings([]);
         }
-      } catch (err) {
-        console.error('Failed to fetch tasks:', err);
-        setTasks([]);
       }
 
-      // DOMAIN LOGIC - filter by workspace_id
+      // TASKS - Skip fetching tasks as part of the main refresh to prevent twitching
+      // We have a separate fetchUrgentTasks function that's called only once on initial load
+      console.log('DEBUG: Skipping tasks fetch in main refresh to prevent UI twitching');
+
+      // DOMAIN LOGIC - fetch domains with workspace filtering for security
       try {
-        console.log('DEBUG: Attempting to fetch domains for workspace:', activeWorkspace);
-        const { data: domainsData, error: domainsError } = await supabase
+        console.log('DEBUG: Fetching domains with workspace filtering');
+        
+        let domainsQuery = supabase
           .from('domains')
           .select('*')
-          .eq('workspace_id', activeWorkspace)
           .order('expiry_date', { ascending: true })
           .limit(5);
+          
+        // SECURITY: Always apply workspace filter if available
+        if (activeWorkspace) {
+          domainsQuery = domainsQuery.eq('workspace_id', activeWorkspace);
+        } else {
+          // If no workspace, don't fetch any domains for security
+          console.log('DEBUG: No workspace - skipping domains fetch for security');
+          setDomains([]);
+          return;
+        }
+        
+        const { data: domainsData, error: domainsError } = await domainsQuery;
 
         if (domainsError) {
           console.error('DEBUG: Domains fetch error:', domainsError);
         } else {
           console.log('DEBUG: Domains fetched successfully:', domainsData?.length || 0);
+          console.log('DEBUG: Sample domain data:', domainsData?.[0] || 'No domains found');
           
-          // Make sure domain data is formatted correctly
-          const formattedDomains = domainsData?.map(domain => ({
-            id: domain.id,
-            name: domain.display_domain || domain.domain || '',
-            expiry_date: domain.expiry_date,
-            status: domain.status
-          })) || [];
+          // Make sure domain data is formatted correctly and status is preserved
+          const formattedDomains = domainsData?.map(domain => {
+            // Calculate domain status based on expiry date if not set
+            let status = domain.status;
+            
+            // If no status is set but we have an expiry date, determine status
+            if (!status && domain.expiry_date) {
+              const expiryDate = new Date(domain.expiry_date);
+              const now = new Date();
+              const daysToExpiry = Math.floor((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+              
+              if (expiryDate < now) {
+                status = 'expired';
+              } else if (daysToExpiry < 30) {
+                status = 'expiring';
+              } else {
+                status = 'active';
+              }
+            }
+            
+            return {
+              id: domain.id,
+              name: domain.display_domain || domain.domain || '',
+              expiry_date: domain.expiry_date,
+              status: status || 'pending'
+            };
+          }) || [];
+          
+          // Show warning if we received empty domains
+          if (!domainsData || domainsData.length === 0) {
+            console.warn('No domains found in database', activeWorkspace ? `for workspace: ${activeWorkspace}` : '');
+          } else {
+            console.log('First domain sample:', domainsData[0]); 
+          }
           
           setDomains(formattedDomains);
         }
@@ -650,95 +1056,57 @@ export function Dashboard() {
         setDomains([]);
       }
 
-      // LEADS - filter by workspace_id
+      // LEADS - fetch with workspace filtering for security
       try {
-        const { data: leadsData, error: leadsError } = await supabase
+        console.log('DEBUG: Fetching leads with workspace filtering');
+        
+        let leadsQuery = supabase
           .from('leads')
           .select('*')
-          .eq('workspace_id', activeWorkspace)
           .order('created_at', { ascending: false })
           .limit(5);
+          
+        // SECURITY: Always apply workspace filter if available
+        if (activeWorkspace) {
+          leadsQuery = leadsQuery.eq('workspace_id', activeWorkspace);
+        } else {
+          // If no workspace, don't fetch any leads for security
+          console.log('DEBUG: No workspace - skipping leads fetch for security');
+          setLeads([]);
+          return;
+        }
+        
+        const { data: leadsData, error: leadsError } = await leadsQuery;
 
         if (leadsError) {
           console.error('Error fetching leads:', leadsError);
         } else {
           console.log('Leads fetched:', leadsData?.length || 0);
-          setLeads(leadsData || []);
+          
+          // Show warning if we received empty leads
+          if (!leadsData || leadsData.length === 0) {
+            console.warn('No leads found in database', activeWorkspace ? `for workspace: ${activeWorkspace}` : '');
+          } else {
+            console.log('First lead sample:', leadsData[0]);
+          }
+          
+          // Map lead data to correctly match our interface
+          const formattedLeads = (leadsData || []).map(lead => ({
+            id: lead.id,
+            name: lead.lead_name || lead.name || 'Unnamed Lead', // Support both field names
+            company: lead.company || 'No company',
+            email: lead.email || '',
+            status: lead.status || 'new',
+            created_at: lead.created_at,
+            title: lead.title,
+            value: lead.value
+          }));
+          
+          setLeads(formattedLeads);
         }
       } catch (err) {
         console.error('Failed to query leads table:', err);
         setLeads([]);
-      }
-
-      // SALES/DEALS - filter by workspace_id
-      try {
-        console.log('Attempting to fetch deals data for workspace:', activeWorkspace);
-        
-        const { data: dealsData, error: dealsError } = await supabase
-          .from('deals')
-          .select('*')
-          .eq('workspace_id', activeWorkspace)
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (dealsError) {
-          console.error('Error fetching deals:', dealsError);
-          } else {
-          console.log('Deals fetched successfully:', dealsData?.length || 0);
-          if (dealsData && dealsData.length > 0) {
-            console.log('Sample deals data:', dealsData[0]); // Log first item for debugging
-            setSales(dealsData);
-          } else {
-            console.log('No deals data found during fetch');
-            setSales([]);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to query deals table:', err);
-        setSales([]);
-      }
-
-      // We will use the useDashboardStats hook instead of fetching stats directly
-      // The stats fetching is now handled by the hook
-      
-      // INVOICES - filter by workspace_id (still need this for the invoice list)
-      try {
-        console.log('DEBUG: Attempting to fetch invoices for workspace:', activeWorkspace);
-        const { data: invoicesData, error: invoicesError } = await supabase
-          .from('invoices')
-          .select(`
-            id,
-            document_number,
-            invoice_date,
-            due_date,
-            total,
-            balance,
-            workspace_id,
-            customers (
-              name
-            ),
-            currencies (
-              code
-            )
-          `)
-          .eq('workspace_id', activeWorkspace)
-          .order('invoice_date', { ascending: false });
-
-        if (invoicesError) {
-          console.error('DEBUG: Invoices fetch error:', invoicesError);
-        } else {
-          console.log('DEBUG: Invoices fetched successfully:', invoicesData?.length || 0);
-          if (invoicesData && invoicesData.length > 0) {
-            console.log('DEBUG: First invoice sample:', invoicesData[0]);
-            setInvoices(invoicesData || []);
-          } else {
-            console.warn('No invoices found in database');
-            setInvoices([]);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to query invoices table:', err);
-        setInvoices([]);
       }
 
       // Try API endpoints omitted for brevity...
@@ -833,14 +1201,24 @@ export function Dashboard() {
         setCronJobs([]);
       }
 
-      // Also try to fetch analytics data (optional)
+      // ANALYTICS - fetch with workspace filtering for security
       try {
-        console.log('DEBUG: Attempting to fetch analytics data');
+        console.log('DEBUG: Attempting to fetch analytics data with workspace filtering');
+        
+        if (!activeWorkspace) {
+          console.log('DEBUG: No workspace - skipping analytics fetch for security');
+          setAnalyticsData(null);
+          return;
+        }
+        
         const response = await fetch('/api/analytics/overview', {
-          method: 'GET',
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            workspaceId: activeWorkspace
+          })
         });
         if (response.ok) {
           const data = await response.json();
@@ -848,9 +1226,13 @@ export function Dashboard() {
           if (data.analytics) {
             setAnalyticsData(data.analytics);
           }
+        } else {
+          console.log('Analytics API returned error, skipping analytics data');
+          setAnalyticsData(null);
         }
       } catch (error) {
         console.error('Error fetching analytics data:', error);
+        setAnalyticsData(null);
       }
 
     } catch (error) {
@@ -859,7 +1241,10 @@ export function Dashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [session?.user?.id, activeWorkspace]);
+
+    // SECURITY: Removed fallback mechanism that bypassed workspace filtering
+    // Users should only see data from their own workspaces
+  }, [consistentId, activeWorkspace]);
 
   // Function to refresh all dashboard data - improved version
   const refreshDashboard = useCallback(async () => {
@@ -885,11 +1270,14 @@ export function Dashboard() {
           console.error('Error during stats recalculation:', recalcError);
           // Continue with the refresh even if recalculation fails
         }
+      } else {
+        console.log('No active workspace - skipping workspace-specific stats recalculation');
       }
       
       // Step 2: Now fetch the freshly calculated stats
       const timestamp = new Date().getTime();
-      const refreshUrl = `/api/dashboard/stats?workspaceId=${activeWorkspace}&nocache=${timestamp}`;
+      const workspaceParam = activeWorkspace ? `workspaceId=${activeWorkspace}` : '';
+      const refreshUrl = `/api/dashboard/stats?${workspaceParam}&nocache=${timestamp}`;
       
       console.log(`Making direct API call to: ${refreshUrl}`);
       const response = await fetch(refreshUrl);
@@ -931,6 +1319,88 @@ export function Dashboard() {
     }
   }, [refreshing, activeWorkspace, fetchData, setStats, toast]);
 
+  // Function to force a manual refresh of dashboard data
+  const forceRefresh = useCallback(async () => {
+    if (refreshing) return;
+    
+    setRefreshing(true);
+    try {
+      console.log('Forcing complete manual dashboard refresh...');
+      
+      // PRIORITY: Directly fetch invoices first to ensure they're visible
+      try {
+        console.log('Directly fetching invoice data as top priority');
+        const { data: invoicesData, error: invoicesError } = await supabase
+          .from('invoices')
+          .select('*, customers(*), currencies(*)')
+          .order('invoice_date', { ascending: false })
+          // Remove limit to get all invoices
+          // .limit(API_LIMITS.INVOICES);
+        
+        if (!invoicesError && invoicesData && invoicesData.length > 0) {
+          console.log('Successfully fetched', invoicesData.length, 'invoices directly');
+          updateInvoices(invoicesData);
+        } else if (invoicesError) {
+          console.error('Error fetching invoices directly:', invoicesError);
+        } else {
+          // SECURITY: Don't fetch invoices without workspace filter
+          console.log('No invoices found for workspace - this is expected for new workspaces');
+        }
+      } catch (invoiceError) {
+        console.error('Error in direct invoice fetch:', invoiceError);
+      }
+      
+      // Add timestamp to prevent caching in API call
+      const timestamp = new Date().getTime();
+      const workspaceParam = activeWorkspace ? `workspaceId=${activeWorkspace}` : '';
+      const refreshUrl = `/api/dashboard/stats?${workspaceParam}&nocache=${timestamp}`;
+      
+      console.log(`Making direct API call to: ${refreshUrl}`);
+      
+      try {
+        const response = await fetch(refreshUrl);
+        
+        if (!response.ok) {
+          console.warn('Stats API refresh failed. Falling back to direct data fetch.');
+        } else {
+          const freshData = await response.json();
+          console.log('Received fresh dashboard data:', freshData);
+          
+          // Update our local state with the fresh data
+          if (freshData?.invoices) {
+            setStats({
+              totalRevenue: freshData.invoices.totalAmount || 0,
+              invoiceCount: freshData.invoices.totalCount || 0,
+              averageInvoiceValue: freshData.invoices.averageAmount || 0,
+              revenueGrowth: 0 // Calculate this separately if needed
+            });
+          }
+        }
+      } catch (apiError) {
+        console.error('API-based refresh failed:', apiError);
+      }
+      
+      // Also do a complete data fetch for all dashboard data
+      console.log('Performing complete data fetch for all dashboard data');
+      await fetchData();
+      
+      toast({
+        title: "Dashboard refreshed",
+        description: "Latest data loaded from database",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('Error refreshing dashboard:', error);
+      toast({
+        title: "Refresh failed",
+        description: "Could not completely refresh dashboard. Some data may be stale.",
+        variant: "destructive"
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, activeWorkspace, fetchData, supabase, updateInvoices, toast]);
+
   // Use effect for auto-refresh
   useEffect(() => {
     // Set up a refresh interval (every 5 minutes)
@@ -941,62 +1411,68 @@ export function Dashboard() {
     return () => clearInterval(refreshInterval);
   }, [fetchData]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
   const calculateStats = (invoices: Invoice[]) => {
     console.log('Calculating stats from invoices, count:', invoices.length);
     
-    // Validate each invoice has the required data
-    const validInvoices = invoices.filter(inv => {
-      if (inv.total === undefined || inv.total === null) {
-        console.warn('Invoice missing total:', inv.document_number);
-        return false;
-      }
-      return true;
-    });
+    // Skip invalid invoices
+    const validInvoices = invoices.filter(inv => inv && typeof inv.total !== 'undefined');
     
     console.log('Valid invoices for calculation:', validInvoices.length);
     
-    // Calculate total revenue
-    const total = validInvoices.reduce((sum, inv) => {
-      // Handle both string and number formats
-      const amount = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total;
-      // Only add if it's a valid number
-      const validAmount = !isNaN(amount) ? amount : 0;
-      return sum + validAmount;
-    }, 0);
+    if (validInvoices.length === 0) {
+      console.log('No valid invoices to calculate stats from');
+      const emptyStats = {
+        totalRevenue: 0,
+        invoiceCount: 0,
+        averageInvoiceValue: 0,
+        revenueGrowth: 0
+      };
+      setStats(emptyStats);
+      return;
+    }
     
-    const count = validInvoices.length;
-    const average = count > 0 ? total / count : 0;
+          // Log invoice values for debugging
+      validInvoices.forEach(inv => {
+        console.log(`Invoice #${inv.document_number}: raw total: ${inv.total}`);
+      });
+      
+      // Get total directly from invoice data
+      const total = validInvoices.reduce((sum, inv) => {
+        // Convert string totals to numbers if needed
+        const amount = typeof inv.total === 'number' ? inv.total : 
+          (typeof inv.total === 'string' ? parseFloat(inv.total.replace(/[^0-9.,]/g, '').replace(',', '.')) : 0);
+        return sum + amount;
+      }, 0);
+      
+      const count = validInvoices.length;
+      const average = count > 0 ? total / count : 0;
 
-    // Calculate growth by comparing last month to previous month
-    const now = new Date();
-    const lastMonthInvoices = validInvoices.filter(inv => {
-      if (!inv.invoice_date) return false;
-      const date = new Date(inv.invoice_date);
-      return date.getMonth() === now.getMonth() - 1 && date.getFullYear() === now.getFullYear();
-    });
-    
-    const previousMonthInvoices = validInvoices.filter(inv => {
-      if (!inv.invoice_date) return false;
-      const date = new Date(inv.invoice_date);
-      return date.getMonth() === now.getMonth() - 2 && date.getFullYear() === now.getFullYear();
-    });
+      // Calculate growth by comparing last month to previous month
+      const now = new Date();
+      const lastMonthInvoices = validInvoices.filter(inv => {
+        if (!inv.invoice_date) return false;
+        const date = new Date(inv.invoice_date);
+        return date.getMonth() === now.getMonth() - 1 && date.getFullYear() === now.getFullYear();
+      });
+      
+      const previousMonthInvoices = validInvoices.filter(inv => {
+        if (!inv.invoice_date) return false;
+        const date = new Date(inv.invoice_date);
+        return date.getMonth() === now.getMonth() - 2 && date.getFullYear() === now.getFullYear();
+      });
 
-    console.log('Last month invoices:', lastMonthInvoices.length);
-    console.log('Previous month invoices:', previousMonthInvoices.length);
-
-    const lastMonthTotal = lastMonthInvoices.reduce((sum, inv) => {
-      const amount = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total;
-      return sum + (!isNaN(amount) ? amount : 0);
-    }, 0);
-    
-    const previousMonthTotal = previousMonthInvoices.reduce((sum, inv) => {
-      const amount = typeof inv.total === 'string' ? parseFloat(inv.total) : inv.total;
-      return sum + (!isNaN(amount) ? amount : 0);
-    }, 0);
+      // Calculate month totals using the same direct approach
+      const lastMonthTotal = lastMonthInvoices.reduce((sum, inv) => {
+        const amount = typeof inv.total === 'number' ? inv.total : 
+          (typeof inv.total === 'string' ? parseFloat(inv.total.replace(/[^0-9.,]/g, '').replace(',', '.')) : 0);
+        return sum + amount;
+      }, 0);
+      
+      const previousMonthTotal = previousMonthInvoices.reduce((sum, inv) => {
+        const amount = typeof inv.total === 'number' ? inv.total : 
+          (typeof inv.total === 'string' ? parseFloat(inv.total.replace(/[^0-9.,]/g, '').replace(',', '.')) : 0);
+        return sum + amount;
+      }, 0);
 
     const growth = previousMonthTotal > 0 
       ? ((lastMonthTotal - previousMonthTotal) / previousMonthTotal) * 100 
@@ -1011,12 +1487,16 @@ export function Dashboard() {
       previousMonthTotal
     });
 
-    setStats({
+    const newStats = {
       totalRevenue: total,
       invoiceCount: count,
       averageInvoiceValue: average,
       revenueGrowth: growth
-    });
+    };
+    
+    setStats(newStats);
+    // Cache the calculated stats
+    cacheData(CACHE_KEYS.STATS, newStats);
   }
 
   const getGreeting = () => {
@@ -1048,23 +1528,52 @@ export function Dashboard() {
       .slice(0, 5)
   }
 
+  // Better function to get only truly urgent tasks
   const getUrgentTasks = () => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
+    // Get current date for deadline comparison
+    const now = new Date();
     
     return tasks
       .filter(task => {
+        // Task must exist and not be complete
+        if (!task || task.progress >= 100) return false;
+        
+        // Take any task explicitly flagged as urgent
+        if (task.status && task.status.toLowerCase().includes('urgent')) 
+          return true;
+        
+        // Take any task with "urgent" in the title
+        if (task.title && task.title.toLowerCase().includes('urgent'))
+          return true;
+        
+        // Check deadline - only consider tasks that have a deadline
         if (!task.deadline) return false;
-        const deadline = new Date(task.deadline);
-        // Consider tasks urgent if deadline is today or in the past, or if status is explicitly set to urgent
-        return (deadline <= today && task.progress < 100) || task.status === 'urgent';
+        
+        try {
+          const deadline = new Date(task.deadline);
+          // Only consider tasks due within 7 days or overdue
+          const daysUntilDeadline = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          return daysUntilDeadline <= 7;
+        } catch (err) {
+          // If date parsing fails, don't include it
+          return false;
+        }
       })
       .sort((a, b) => {
-        // If no deadline, put at the end
-        if (!a.deadline) return 1;
-        if (!b.deadline) return -1;
-        // Sort by deadline (oldest first)
-        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+        // Sort first by status (urgent first)
+        if (a.status?.toLowerCase().includes('urgent') && !b.status?.toLowerCase().includes('urgent')) 
+          return -1;
+        if (!a.status?.toLowerCase().includes('urgent') && b.status?.toLowerCase().includes('urgent')) 
+          return 1;
+          
+        // Then by deadline
+        try {
+          if (!a.deadline) return 1;
+          if (!b.deadline) return -1;
+          return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+        } catch (err) {
+          return 0;
+        }
       });
   }
 
@@ -1185,11 +1694,11 @@ export function Dashboard() {
       // Get workspace_id if available
       let workspaceId = null;
       
-      if (session?.user?.id) {
+      if (consistentId) {
         const { data: profileData } = await supabase
           .from('profiles')
           .select('workspace_id')
-          .eq('user_id', session.user.id)
+          .eq('user_id', consistentId)
           .single();
           
         if (profileData?.workspace_id) {
@@ -1198,12 +1707,15 @@ export function Dashboard() {
         }
       }
       
-      // Query based on workspace if available, otherwise fetch all
-      let dealsQuery = supabase.from('deals').select('*');
-      
-      if (workspaceId) {
-        dealsQuery = dealsQuery.eq('workspace_id', workspaceId);
+      // SECURITY: Only query with workspace filter for security
+      if (!workspaceId && !activeWorkspace) {
+        console.log('No workspace available - skipping deals fetch for security');
+        setSales([]);
+        return;
       }
+      
+      const finalWorkspaceId = workspaceId || activeWorkspace;
+      let dealsQuery = supabase.from('deals').select('*').eq('workspace_id', finalWorkspaceId);
       
       const { data: dealsData, error: dealsError } = await dealsQuery
         .order('created_at', { ascending: false })
@@ -1243,60 +1755,19 @@ export function Dashboard() {
     }
   };
 
-  // Function to force a manual refresh of dashboard data
-  const forceRefresh = useCallback(async () => {
-    if (refreshing) return;
-    
-    setRefreshing(true);
-    try {
-      console.log('Forcing complete manual dashboard refresh...');
-      
-      // Add timestamp to prevent caching
-      const timestamp = new Date().getTime();
-      const workspaceParam = activeWorkspace ? `workspaceId=${activeWorkspace}` : '';
-      const refreshUrl = `/api/dashboard/stats?${workspaceParam}&nocache=${timestamp}`;
-      
-      console.log(`Making direct API call to: ${refreshUrl}`);
-      const response = await fetch(refreshUrl);
-      
-      if (!response.ok) {
-        throw new Error('Failed to refresh dashboard stats');
-      }
-      
-      const freshData = await response.json();
-      console.log('Received fresh dashboard data:', freshData);
-      
-      // Update our local state with the fresh data
-      if (freshData?.invoices) {
-        setStats({
-          totalRevenue: freshData.invoices.totalAmount || 0,
-          invoiceCount: freshData.invoices.totalCount || 0,
-          averageInvoiceValue: freshData.invoices.averageAmount || 0,
-          revenueGrowth: 0 // Calculate this separately if needed
-        });
-      }
-      
-      // Also update other data sources if needed
-      setRefreshing(false);
-    } catch (error) {
-      console.error('Error refreshing dashboard:', error);
-      setRefreshing(false);
-    }
-  }, [refreshing, activeWorkspace]);
-
   // Add a state to track if the user has a Google Calendar integration
   const [hasGoogleCalendarIntegration, setHasGoogleCalendarIntegration] = useState<boolean | null>(null);
 
   // Check for Google Calendar integration when component mounts
   useEffect(() => {
     const checkForGoogleCalendarIntegration = async () => {
-      if (!session?.user?.id) return;
+      if (!consistentId) return;
       
       try {
         const { data, error } = await supabase
           .from('integrations')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', consistentId)
           .eq('service_name', 'google-calendar')
           .maybeSingle();
           
@@ -1314,12 +1785,12 @@ export function Dashboard() {
     };
     
     checkForGoogleCalendarIntegration();
-  }, [session?.user?.id]);
+  }, [consistentId]);
 
   // Update the calendar sync function to handle the case where integration is not set up
   const syncGoogleCalendarToWorkspace = async () => {
-    if (!session?.user?.id || !activeWorkspace) {
-      console.log('No user session or active workspace found, cannot sync calendar');
+    if (!consistentId || !activeWorkspace) {
+      console.log('No valid user ID or active workspace found, cannot sync calendar');
       toast({
         title: "Cannot sync calendar",
         description: "Please ensure you are logged in and have an active workspace",
@@ -1378,8 +1849,8 @@ export function Dashboard() {
 
   // Add a function to save calendar events directly to the database for workspace users
   const saveCalendarEventsToDatabase = async () => {
-    if (!session?.user?.id || !activeWorkspace) {
-      console.log('No user session or active workspace found, cannot save calendar events');
+    if (!consistentId || !activeWorkspace) {
+      console.log('No valid user ID or active workspace found, cannot save calendar events');
       toast({
         title: "Cannot save events",
         description: "Please ensure you are logged in and have an active workspace",
@@ -1538,25 +2009,1465 @@ export function Dashboard() {
     }
   };
 
+  // Search Console data fetching with workspace filtering
+  const fetchSearchConsoleData = async () => {
+    console.log('[Dashboard] Starting Search Console data fetch...');
+    
+    if (!session?.user?.id || !activeWorkspace) {
+      console.log('[Dashboard] No user session or workspace for Search Console data');
+        return;
+      }
+      
+    try {
+      // Check for cached data first
+      const cacheKey = `search_console_dashboard_cache_${session.user.id}`;
+      const now = Date.now();
+      const cacheExpiry = 4 * 60 * 60 * 1000; // 4 hours cache
+      
+      try {
+        const cachedData = localStorage.getItem(cacheKey);
+        if (cachedData) {
+          const parsed = JSON.parse(cachedData);
+          
+          // Only use cache if not expired and from same user
+          if (parsed.expiresAt > now && parsed.user_id === session.user.id) {
+            console.log('[Dashboard] Using cached Search Console data');
+            setSearchConsoleData(parsed.searchData?.overview || null);
+        return;
+          } else {
+            console.log('[Dashboard] Cache expired, fetching fresh data');
+            localStorage.removeItem(cacheKey);
+          }
+        }
+      } catch (cacheError) {
+        console.warn('[Dashboard] Cache error:', cacheError);
+      }
+      
+      // Get user's default site from settings
+      const { data: userSettings } = await supabase
+        .from('user_settings')
+        .select('default_search_console_site')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+      
+      // Default to a site if none found in settings
+      const siteUrl = userSettings?.default_search_console_site || 'sc-domain:code.demo';
+      
+      // Make the request directly to the API with workspace filtering
+      const response = await fetch('/api/search-console', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startDate: '28days', // Using relative date format
+          siteUrl,
+          workspaceId: activeWorkspace // SECURITY: Include workspace filter
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.searchConsole) {
+        // Cache the successful response
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({
+            searchData: data.searchConsole,
+            timestamp: now,
+            expiresAt: now + cacheExpiry,
+            user_id: session.user.id
+          }));
+        } catch (setCacheError) {
+          console.warn('[Dashboard] Error setting cache:', setCacheError);
+        }
+        
+        // Update state with the data
+        setSearchConsoleData(data.searchConsole.overview);
+      }
+    } catch (error) {
+      console.error('[Dashboard] Error fetching Search Console data:', error);
+      // Don't show error toast to avoid disrupting the dashboard UX
+    }
+  };
+
+  // Add an effect to fetch Search Console data separately on component mount
+  useEffect(() => {
+    if (session?.user?.id && activeWorkspace) {
+      console.log('[Dashboard] Auto-loading Search Console data on mount');
+      fetchSearchConsoleData();
+      
+      // Set up a refresh interval for Search Console data (every 15 minutes)
+      const searchConsoleInterval = setInterval(() => {
+        console.log('[Dashboard] Auto-refreshing Search Console data');
+        fetchSearchConsoleData();
+      }, 15 * 60 * 1000);
+      
+      return () => {
+        clearInterval(searchConsoleInterval);
+      };
+    }
+  }, [session?.user?.id, activeWorkspace]);
+
+  // Add effect to track Search Console rendering
+  useEffect(() => {
+    if (visibleWidgets.searchConsole) {
+      setSearchConsoleRendered(true);
+    }
+  }, [visibleWidgets.searchConsole]);
+
+  // Initialize with cached data if available
+  useEffect(() => {
+    // Try to load cached data first for immediate display
+    const cachedInvoices = getCachedData(CACHE_KEYS.INVOICES);
+    if (cachedInvoices && cachedInvoices.length > 0) {
+      console.log('Using cached invoice data while fetching fresh data');
+      setInvoices(cachedInvoices);
+      calculateStats(cachedInvoices);
+    }
+    
+    const cachedStats = getCachedData(CACHE_KEYS.STATS);
+    if (cachedStats) {
+      console.log('Using cached stats while fetching fresh data');
+      setStats(cachedStats);
+    }
+  }, []);
+
+  // Complete initialization after all functions are defined
+  useEffect(() => {
+    const completeInitialization = async () => {
+      // Always fetch data regardless of workspace ID to ensure we get all data
+      try {
+        console.log('Forcing initial data fetch to ensure data is loaded');
+        // Fetch the actual data immediately
+        await fetchData();
+        
+        // Load Search Console data
+        console.log('[Dashboard] Initializing Search Console data load');
+        await fetchSearchConsoleData();
+        console.log('[Dashboard] Search Console data initialization complete');
+      } catch (error) {
+        console.error('Error during initial data fetch:', error);
+      }
+    };
+    
+    // Execute data loading immediately when component mounts
+    if (!loading) {
+      completeInitialization();
+    }
+  }, [fetchData, loading]);
+
+  // Also add this effect to ensure data is always refreshed when activeWorkspace changes
+  useEffect(() => {
+    // Refetch data when workspace changes, but with a small delay to avoid race conditions with urgent tasks
+    console.log('Workspace changed, scheduling data fetch with delay');
+    
+    // Use a delay to ensure urgent tasks have time to load first
+    const fetchTimer = setTimeout(() => {
+      console.log('Executing delayed data fetch after workspace change');
+      fetchData();
+    }, REFRESH_INTERVALS.FETCH_DELAY);
+    
+    return () => clearTimeout(fetchTimer);
+  }, [activeWorkspace, fetchData]);
+
+  // Add debugging tools for user ID
+  useEffect(() => {
+    console.log('[DEBUG] Session data:', session);
+    console.log('[DEBUG] Hook consistentId:', hookConsistentId);
+    
+    if (hookConsistentId) {
+      setConsistentId(hookConsistentId);
+    } else if (session?.user?.id) {
+      // Fallback to using session ID directly
+      console.log('[DEBUG] Falling back to session user ID:', session.user.id);
+      setConsistentId(session.user.id);
+    } else if (!isLoadingUserId) {
+      // Don't set a hardcoded ID - notify console this is an error condition
+      console.error('[DEBUG] Could not determine user ID - data may be limited');
+      setConsistentId(null);
+    }
+  }, [hookConsistentId, session, isLoadingUserId]);
+
+  // Fetch tasks with workspace filtering for security
+  const fetchUrgentTasks = useCallback(async () => {
+    console.log('Fetching tasks with workspace filtering');
+    try {
+      let tasksQuery = supabase
+        .from('project_tasks')
+        .select('*')
+        .lt('progress', 100)
+        .order('deadline', { ascending: true })
+        .limit(API_LIMITS.TASKS);
+        
+      // SECURITY: Always apply workspace filter if available
+      if (activeWorkspace) {
+        tasksQuery = tasksQuery.eq('workspace_id', activeWorkspace);
+      } else {
+        // If no workspace, don't fetch any tasks for security
+        console.log('DEBUG: No workspace - skipping tasks fetch for security');
+        setTasks([]);
+        return;
+      }
+      
+      const { data: tasksData, error: tasksError } = await tasksQuery;
+
+      if (tasksError) {
+        console.error('Error fetching tasks:', tasksError);
+      } else {
+        console.log('Tasks fetched:', tasksData?.length || 0);
+        if (tasksData && tasksData.length > 0) {
+          // Just set the tasks directly without merging to prevent flickering
+          setTasks(tasksData);
+        } else {
+          console.log('No tasks found for workspace - this is expected for new workspaces');
+          setTasks([]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch tasks:', err);
+    }
+  }, [supabase, activeWorkspace]);
+
+  // Call this function when the component mounts and ONLY then - no auto-refreshing
+  useEffect(() => {
+    console.log('Fetching urgent tasks on initial load - one time only');
+    fetchUrgentTasks();
+    // No refresh interval to prevent twitching - use manual refresh only
+  }, [fetchUrgentTasks]);
+  
+  // Add a function to refresh only urgent tasks when manually requested
+  const refreshUrgentTasks = useCallback(async () => {
+    if (refreshing) return;
+    
+    console.log('Manually refreshing urgent tasks');
+    await fetchUrgentTasks();
+    
+    // Don't show a toast to avoid UI clutter
+  }, [fetchUrgentTasks, refreshing]);
+
+  // Use effect for auto-refresh of all data - WITH DELAYED START
+  useEffect(() => {
+    // Set up a refresh interval
+    // Delay the first execution to prevent it from overwriting urgent tasks
+    const initialDelay = setTimeout(() => {
+      // Set up auto-refresh for general data
+      const refreshInterval = setInterval(() => {
+        fetchData();
+      }, REFRESH_INTERVALS.GENERAL_DATA);
+      
+      return () => clearInterval(refreshInterval);
+    }, REFRESH_INTERVALS.INITIAL_DELAY); 
+    
+    return () => clearTimeout(initialDelay);
+  }, [fetchData]);
+  
+  // Function to force reload calendar events specifically with workspace filtering
+  const refreshCalendarEvents = useCallback(async () => {
+    if (refreshing) return;
+    
+    setRefreshing(true);
+    try {
+      console.log('Refreshing calendar events specifically with workspace filtering');
+      
+      if (!activeWorkspace) {
+        console.log('No workspace - skipping calendar refresh for security');
+        setMeetings([]);
+        setRefreshing(false);
+        return;
+      }
+      
+      // Direct fetch from calendar_events table with workspace filtering
+      const { data: calendarData, error: calendarError } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('workspace_id', activeWorkspace)
+        .gte('start_time', new Date(new Date().setDate(new Date().getDate() - 7)).toISOString())
+        .order('start_time', { ascending: true })
+        .limit(API_LIMITS.CALENDAR_EVENTS);
+        
+      if (calendarError) {
+        console.error('Error fetching calendar events:', calendarError);
+        toast({
+          title: "Error",
+          description: "Failed to refresh calendar events",
+          variant: "destructive",
+        });
+      } else if (calendarData && calendarData.length > 0) {
+        console.log('Calendar events refreshed successfully:', calendarData.length);
+        const transformedMeetings = calendarData.map(event => ({
+          id: event.id,
+          title: event.title,
+          start_time: event.start_time,
+          end_time: event.end_time || event.start_time,
+          description: event.description || ''
+        }));
+        setMeetings(transformedMeetings);
+        
+        toast({
+          title: "Calendar refreshed",
+          description: `Found ${calendarData.length} upcoming events`,
+          variant: "default",
+        });
+      } else {
+        console.log('No calendar events found');
+        toast({
+          title: "No events found",
+          description: "No upcoming calendar events were found",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing calendar events:', error);
+      toast({
+        title: "Refresh failed",
+        description: "Could not refresh calendar events",
+        variant: "destructive",
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, supabase, toast]);
+  
+  // Function to refresh domains specifically
+  const refreshDomains = useCallback(async () => {
+    if (refreshing) return;
+    
+    setRefreshing(true);
+    try {
+      console.log('Refreshing domains specifically');
+      
+      // Direct fetch from domains table with minimal filtering
+      let domainsQuery = supabase
+        .from('domains')
+        .select('*');
+        
+      // Only apply workspace filter if we have an activeWorkspace
+      if (activeWorkspace) {
+        domainsQuery = domainsQuery.eq('workspace_id', activeWorkspace);
+      }
+      
+      // Sort by expiry date if available, otherwise by domain
+      const { data: domainsData, error: domainsError } = await domainsQuery
+        .order('expiry_date', { ascending: true, nullsLast: true })
+        .limit(10);
+        
+      if (domainsError) {
+        console.error('Error fetching domains:', domainsError);
+        toast({
+          title: "Error",
+          description: "Failed to refresh domains",
+          variant: "destructive",
+        });
+      } else if (domainsData && domainsData.length > 0) {
+        console.log('Domains refreshed successfully:', domainsData.length);
+        
+        // Format domain data for display
+        const formattedDomains = domainsData.map(domain => {
+          // Calculate domain status based on expiry date if not set
+          let status = domain.status;
+          
+          // If no status is set but we have an expiry date, determine status
+          if (!status && domain.expiry_date) {
+            const expiryDate = new Date(domain.expiry_date);
+            const now = new Date();
+            const daysToExpiry = Math.floor((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (expiryDate < now) {
+              status = 'expired';
+            } else if (daysToExpiry < 30) {
+              status = 'expiring';
+            } else {
+              status = 'active';
+            }
+          }
+          
+          return {
+            id: domain.id,
+            name: domain.display_domain || domain.domain || '',
+            expiry_date: domain.expiry_date,
+            status: status || 'pending'
+          };
+        });
+        
+        setDomains(formattedDomains);
+        
+        toast({
+          title: "Domains refreshed",
+          description: `Found ${domainsData.length} domains`,
+          variant: "default",
+        });
+      } else {
+        console.log('No domains found');
+        setDomains([]);
+        toast({
+          title: "No domains found",
+          description: "No domains were found in the database",
+          variant: "default",
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing domains:', error);
+      toast({
+        title: "Refresh failed",
+        description: "Could not refresh domains",
+        variant: "destructive",
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, supabase, activeWorkspace, toast]);
+
+  // Locale and currency settings - could be moved to user preferences
+  const LOCALE_SETTINGS = {
+    LOCALE: 'sv-SE',
+    CURRENCY: 'SEK',
+    DEFAULT_FORMAT: '0.00 kr'
+  };
+  
+  // Simple function to format a number as krona without any complex transformations
+  const formatKrona = (value: any): string => {
+    // Handle null or undefined
+    if (value === null || value === undefined) return "0 kr";
+    
+    // If it's already a number, format it
+    if (typeof value === 'number') {
+      return `${Math.round(value).toLocaleString()} kr`;
+    }
+    
+    // If it's a string, try to parse it
+    if (typeof value === 'string') {
+      // If already includes currency symbol, return as is
+      if (value.includes('kr')) return value;
+      
+      // Try to parse it
+      try {
+        const num = parseFloat(value.replace(/[^0-9.,]/g, '').replace(',', '.'));
+        return isNaN(num) ? "0 kr" : `${Math.round(num).toLocaleString()} kr`;
+      } catch (e) {
+        return "0 kr";
+      }
+    }
+    
+    return "0 kr";
+  };
+
+  // These helper functions were moved to the component scope
+
   if (view === 'agenda') {
-    return <div className="text-neutral-400">Agenda view removed.</div>;
+    return <div className="text-muted-foreground">Agenda view removed.</div>;
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-400"></div>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <MessageLoading />
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground">Loading your dashboard...</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {activeWorkspace && workspaces.length > 0 
+              ? `Preparing ${workspaces.find(w => w.id === activeWorkspace)?.name || 'workspace'} data`
+              : 'Setting up workspace...'
+            }
+          </p>
+        </div>
       </div>
     )
   }
 
+  // Render dashboard content based on the mode
+  const renderDashboardContent = () => {
+    // Only use grid layout in customize mode
+    if (!isCustomizing) {
+      // Regular stacked layout - ensure this renders widgets properly when not customizing
+      return (
+        <div className="space-y-6">
+          {/* Stats row */}
+          {(visibleWidgets.revenueStats || visibleWidgets.invoiceStats || visibleWidgets.averageInvoice) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {visibleWidgets.revenueStats && (
+                <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
+                  <h3 className="text-2xl font-bold mt-2 text-foreground">
+                    {`${Math.round(stats.totalRevenue).toLocaleString()} kr`}
+                  </h3>
+                  <div className="mt-4 flex items-center gap-2">
+                    <div className={`flex items-center gap-1 ${stats.revenueGrowth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {stats.revenueGrowth >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                      <span>{Math.abs(stats.revenueGrowth).toFixed(1)}%</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">vs last month</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-emerald-500/10 rounded-full">
+                  <DollarSign className="w-6 h-6 text-emerald-400" />
+                </div>
+              </div>
+                </Card>
+              )}
+
+              {visibleWidgets.invoiceStats && (
+                <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Invoices</p>
+                  <h3 className="text-2xl font-bold mt-2 text-foreground">{stats.invoiceCount}</h3>
+                </div>
+                <div className="p-3 bg-blue-500/10 rounded-full">
+                  <Users className="w-6 h-6 text-blue-400" />
+                </div>
+              </div>
+                </Card>
+              )}
+
+              {visibleWidgets.averageInvoice && (
+                <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Average Invoice</p>
+                  <h3 className="text-2xl font-bold mt-2 text-foreground">
+                    {`${Math.round(stats.averageInvoiceValue).toLocaleString()} kr`}
+                  </h3>
+                </div>
+                <div className="p-3 bg-purple-500/10 rounded-full">
+                  <BarChart className="w-6 h-6 text-purple-400" />
+                </div>
+              </div>
+                </Card>
+              )}
+            </div>
+          )}
+          
+          {/* Second row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Invoice-related content */}
+            {visibleWidgets.recentInvoices && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Recent Invoices</h3>
+                  <span className="text-xs text-muted-foreground">from invoices table</span>
+                </div>
+                <div className="space-y-3">
+                  {invoices.length > 0 ? (
+                    invoices.slice(0, 5).map((invoice) => (
+                      <div key={invoice.document_number} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{invoice.customers?.name || 'Unknown Customer'}</p>
+                          <p className="text-xs text-muted-foreground">#{invoice.document_number}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-foreground">
+                            {formatKrona(invoice.total)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{invoice.invoice_date ? format(new Date(invoice.invoice_date), 'PP') : 'No date'}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No recent invoices</p>
+                  )}
+                </div>
+              </Card>
+            )}
+            
+            {/* Events and deadlines */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {visibleWidgets.upcomingEvents && (
+                <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-foreground">Upcoming Events</h3>
+                    <span className="text-xs text-muted-foreground">from calendar_events table</span>
+                  </div>
+                  <div className="space-y-3">
+                    {meetings.length > 0 ? (
+                      meetings.filter(meeting => new Date(meeting.start_time) > new Date())
+                        .slice(0, 3)
+                        .map((meeting) => (
+                          <div key={meeting.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                            <div className="flex items-center gap-3">
+                              <div className="bg-blue-500/20 p-2 rounded-md">
+                                <Calendar className="h-4 w-4 text-blue-400" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-foreground">{meeting.title}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {meeting.start_time 
+                                    ? format(new Date(meeting.start_time), 'PP • p') 
+                                    : 'No time set'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No upcoming events</p>
+                    )}
+                  </div>
+                </Card>
+              )}
+              
+              {visibleWidgets.urgentTasks && (
+                <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-foreground">Urgent Tasks</h3>
+                    <div className="flex items-center">
+                      <span className="text-xs text-muted-foreground mr-2">from project_tasks table</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 opacity-0 hover:opacity-100 transition-opacity"
+                        onClick={refreshUrgentTasks}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {getUrgentTasks().length > 0 ? (
+                      getUrgentTasks().slice(0, 3).map((task) => (
+                        <div key={task.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-red-500/20 p-2 rounded-md">
+                              <AlertCircle className="h-4 w-4 text-red-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{task.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {task.deadline 
+                                  ? isToday(new Date(task.deadline))
+                                    ? 'Due today'
+                                    : `Due ${format(new Date(task.deadline), 'PP')}` 
+                                  : 'No deadline'}
+                              </p>
+                            </div>
+                          </div>
+                          <Button 
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => handleTaskComplete(task.id)}
+                          >
+                            <CheckCircle className="h-4 w-4 text-green-400" />
+                          </Button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No urgent tasks</p>
+                    )}
+                  </div>
+                </Card>
+              )}
+            </div>
+          </div>
+          
+          {/* Third row - Domains, Leads, Sales, and More */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+            {visibleWidgets.domains && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Domains</h3>
+                  <span className="text-xs text-muted-foreground">from domains table</span>
+                </div>
+                <div className="space-y-3">
+                  {domains.length > 0 ? (
+                    domains.map((domain) => (
+                      <div key={domain.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-blue-500/20 p-2 rounded-md">
+                            <Globe className="h-4 w-4 text-blue-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{domain.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {domain.expiry_date 
+                                ? `Expires ${format(new Date(domain.expiry_date), 'PP')}` 
+                                : 'No expiry date'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          domain.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                          domain.status === 'expiring' ? 'bg-yellow-500/20 text-yellow-400' :
+                          domain.status === 'expired' ? 'bg-red-500/20 text-red-400' :
+                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                        }`}>
+                          {domain.status || 'pending'}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No domains found</p>
+                  )}
+                </div>
+              </Card>
+            )}
+            
+            {visibleWidgets.leads && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Leads</h3>
+                  <span className="text-xs text-muted-foreground">from leads table</span>
+                </div>
+                <div className="space-y-3">
+                  {leads.length > 0 ? (
+                    leads.map((lead) => (
+                      <div key={lead.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{lead.name}</p>
+                          <p className="text-xs text-muted-foreground">{lead.company || 'No company'}</p>
+                        </div>
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          lead.status === 'new' ? 'bg-blue-500/20 text-blue-400' :
+                          lead.status === 'contacted' ? 'bg-yellow-500/20 text-yellow-400' :
+                          lead.status === 'qualified' ? 'bg-green-500/20 text-green-400' :
+                          lead.status === 'lost' ? 'bg-red-500/20 text-red-400' :
+                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                        }`}>
+                          {lead.status || 'new'}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No leads found</p>
+                  )}
+                </div>
+              </Card>
+            )}
+            
+            {visibleWidgets.sales && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Sales Pipeline</h3>
+                  <span className="text-xs text-muted-foreground">from deals table</span>
+                </div>
+                <div className="mb-3">
+                  <p className="text-sm text-muted-foreground">Total Pipeline Value</p>
+                  <p className="text-xl font-bold text-foreground">
+                    {formatKrona(calculateTotalPipeline(sales))}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {sales.length > 0 ? (
+                    sales.slice(0, 3).map((sale) => (
+                      <div key={sale.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{sale.lead_name || 'Unknown'}</p>
+                          <p className="text-xs text-muted-foreground">{sale.company || 'No company'}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-foreground">
+                            {formatKrona(sale.value)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{sale.stage || 'No stage'}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No sales data</p>
+                  )}
+                </div>
+              </Card>
+            )}
+          </div>
+          
+          {/* Fourth row - Analytics, Gmail, etc. */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+            {visibleWidgets.gmailHub && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Gmail Hub</h3>
+                  <span className="text-xs text-muted-foreground">from Gmail API</span>
+                </div>
+                <div className="space-y-3">
+                  {emails.length > 0 ? (
+                    emails.map((email) => (
+                      <div key={email.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex-1 overflow-hidden">
+                          <p className={`text-sm font-medium ${email.unread ? 'text-foreground' : 'text-foreground text-muted-foreground'}`}>
+                            {email.subject.length > 30 ? email.subject.substring(0, 30) + '...' : email.subject}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">{email.from}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground ml-2">
+                          {email.date ? format(new Date(email.date), 'PP') : 'No date'}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No emails found</p>
+                  )}
+                </div>
+              </Card>
+            )}
+            
+            {visibleWidgets.analyticsData && analyticsData && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Analytics Overview</h3>
+                  <span className="text-xs text-muted-foreground">from Analytics API</span>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Pageviews</p>
+                    <p className="text-lg font-bold text-foreground">{analyticsData.pageviews.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Unique Visitors</p>
+                    <p className="text-lg font-bold text-foreground">{analyticsData.visitors.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Bounce Rate</p>
+                    <p className="text-lg font-bold text-foreground">{analyticsData.bounce_rate.toFixed(1)}%</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+            
+            {visibleWidgets.searchConsole && searchConsoleData && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Search Console</h3>
+                  <span className="text-xs text-muted-foreground">from Search Console API</span>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Clicks (28 days)</p>
+                    <p className="text-lg font-bold text-foreground">{searchConsoleData.clicks.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Impressions</p>
+                    <p className="text-lg font-bold text-foreground">{searchConsoleData.impressions.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">CTR</p>
+                    <p className="text-lg font-bold text-foreground">{(searchConsoleData.ctr * 100).toFixed(1)}%</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+          </div>
+          
+          {/* Fifth row - Other widgets */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            {visibleWidgets.cronJobs && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Scheduled Tasks</h3>
+                  <span className="text-xs text-muted-foreground">from cron_jobs table</span>
+                </div>
+                <div className="space-y-3">
+                  {cronJobs.length > 0 ? (
+                    cronJobs.map((job) => (
+                      <div key={job.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-md ${
+                            job.execution_status === 'success' ? 'bg-green-500/20' :
+                            job.execution_status === 'pending' ? 'bg-blue-500/20' :
+                            job.execution_status === 'running' ? 'bg-yellow-500/20' :
+                            'bg-red-500/20'
+                          }`}>
+                            <Clock className={`h-4 w-4 ${
+                              job.execution_status === 'success' ? 'text-green-400' :
+                              job.execution_status === 'pending' ? 'text-blue-400' :
+                              job.execution_status === 'running' ? 'text-yellow-400' :
+                              'text-red-400'
+                            }`} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{job.name}</p>
+                            <p className="text-xs text-muted-foreground">{job.schedule}</p>
+                          </div>
+                        </div>
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          job.execution_status === 'success' ? 'bg-green-500/20 text-green-400' :
+                          job.execution_status === 'pending' ? 'bg-blue-500/20 text-blue-400' :
+                          job.execution_status === 'running' ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          {job.execution_status}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No scheduled tasks</p>
+                  )}
+                </div>
+              </Card>
+            )}
+            
+            {visibleWidgets.invoiceTypes && (
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
+                <h3 className="text-lg font-semibold text-foreground mb-4">Invoice Types</h3>
+                <div className="text-sm text-muted-foreground">
+                  <p>Invoice type data visualization would go here</p>
+                </div>
+              </Card>
+            )}
+          </div>
+          
+          {/* Additional rows can be added here following the same pattern */}
+        </div>
+      );
+    }
+    
+    // Return draggable grid layout in customize mode
+    return (
+      <div className="relative">
+        {isDragging && (
+          <div className="fixed inset-0 z-50 bg-gray-900 dark:bg-black bg-opacity-30 flex items-center justify-center pointer-events-none">
+            <div className="bg-background p-3 rounded-md shadow-lg text-foreground">
+              <Move className="h-5 w-5 mr-2 inline-block" /> Drag to reposition
+            </div>
+          </div>
+        )}
+        
+        {/* Show resize help when in customization mode */}
+        <ResizeHelp isCustomizing={isCustomizing} />
+        
+        <ResponsiveGridLayout
+          className="layout"
+          layouts={layouts}
+          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+          cols={{ lg: 3, md: 2, sm: 2, xs: 1, xxs: 1 }}
+          rowHeight={180}
+          width={1200}
+          isDraggable={isCustomizing}
+          isResizable={isCustomizing}
+          onLayoutChange={handleLayoutChange}
+          onDragStart={() => setIsDragging(true)}
+          onDragStop={() => setIsDragging(false)}
+          onResizeStart={() => setIsDragging(false)}
+          ref={gridRef}
+          resizeHandles={['se']}
+          compactType={null}
+          margin={[16, 16]}
+          containerPadding={[0, 0]}
+          draggableHandle=".drag-handle"
+          useCSSTransforms={true}
+          transformScale={1}
+          preventCollision={true}
+          autoSize={true}
+          verticalCompact={false}
+          isBounded={false}
+          allowOverlap={false}
+        >
+          {visibleWidgets.revenueStats && (
+            <div key="revenueStats" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
+                    <h3 className="text-2xl font-bold mt-2 text-foreground">
+                      {formatKrona(stats.totalRevenue)}
+                    </h3>
+                    <div className="mt-4 flex items-center gap-2">
+                      <div className={`flex items-center gap-1 ${stats.revenueGrowth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {stats.revenueGrowth >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                        <span>{Math.abs(stats.revenueGrowth).toFixed(1)}%</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">vs last month</p>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-emerald-500/10 rounded-full">
+                    <DollarSign className="w-6 h-6 text-emerald-400" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.invoiceStats && (
+            <div key="invoiceStats" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Total Invoices</p>
+                    <h3 className="text-2xl font-bold mt-2 text-foreground">{stats.invoiceCount}</h3>
+                  </div>
+                  <div className="p-3 bg-blue-500/10 rounded-full">
+                    <Users className="w-6 h-6 text-blue-400" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.averageInvoice && (
+            <div key="averageInvoice" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Average Invoice</p>
+                    <h3 className="text-2xl font-bold mt-2 text-foreground">
+                      {formatKrona(stats.averageInvoiceValue)}
+                    </h3>
+                  </div>
+                  <div className="p-3 bg-purple-500/10 rounded-full">
+                    <BarChart className="w-6 h-6 text-purple-400" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.recentInvoices && (
+            <div key="recentInvoices" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Recent Invoices</h3>
+                  <span className="text-xs text-muted-foreground">from invoices table</span>
+                </div>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {invoices.length > 0 ? (
+                    invoices.slice(0, 5).map((invoice) => (
+                      <div key={invoice.document_number} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{invoice.customers?.name || 'Unknown Customer'}</p>
+                          <p className="text-xs text-muted-foreground">#{invoice.document_number}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-foreground">
+                            {formatKrona(invoice.total)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{invoice.invoice_date ? format(new Date(invoice.invoice_date), 'PP') : 'No date'}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No recent invoices</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.invoiceTypes && (
+            <div key="invoiceTypes" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <h3 className="text-lg font-semibold text-foreground mb-4">Invoice Types</h3>
+                <div className="text-sm text-muted-foreground">
+                  <p>Invoice type data visualization would go here</p>
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.upcomingEvents && (
+            <div key="upcomingEvents" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Upcoming Events</h3>
+                  <span className="text-xs text-muted-foreground">from calendar_events table</span>
+                </div>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {meetings.length > 0 ? (
+                    meetings.filter(meeting => new Date(meeting.start_time) > new Date())
+                      .slice(0, 5)
+                      .map((meeting) => (
+                        <div key={meeting.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-blue-500/20 p-2 rounded-md">
+                              <Calendar className="h-4 w-4 text-blue-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{meeting.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {meeting.start_time 
+                                  ? format(new Date(meeting.start_time), 'PP • p') 
+                                  : 'No time set'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No upcoming events</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.upcomingDeadlines && (
+            <div key="upcomingDeadlines" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <h3 className="text-lg font-semibold text-foreground mb-4">Upcoming Deadlines</h3>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {getUpcomingDeadlines().length > 0 ? (
+                    getUpcomingDeadlines().map((task) => (
+                      <div key={task.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-orange-500/20 p-2 rounded-md">
+                            <Clock className="h-4 w-4 text-orange-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{task.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {task.deadline 
+                                ? `Due ${format(new Date(task.deadline), 'PP')}` 
+                                : 'No deadline'}
+                            </p>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => handleTaskComplete(task.id)}
+                        >
+                          <CheckCircle className="h-4 w-4 text-green-400" />
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No upcoming deadlines</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.urgentTasks && (
+            <div key="urgentTasks" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Urgent Tasks</h3>
+                  <div className="flex items-center">
+                    <span className="text-xs text-muted-foreground mr-2">from project_tasks table</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 opacity-0 hover:opacity-100 transition-opacity"
+                      onClick={refreshUrgentTasks}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {getUrgentTasks().length > 0 ? (
+                    getUrgentTasks().map((task) => (
+                      <div key={task.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-red-500/20 p-2 rounded-md">
+                            <AlertCircle className="h-4 w-4 text-red-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{task.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {task.deadline 
+                                ? isToday(new Date(task.deadline))
+                                  ? 'Due today'
+                                  : `Due ${format(new Date(task.deadline), 'PP')}` 
+                                : 'No deadline'}
+                            </p>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => handleTaskComplete(task.id)}
+                        >
+                          <CheckCircle className="h-4 w-4 text-green-400" />
+                        </Button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No urgent tasks</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.domains && (
+            <div key="domains" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Domains</h3>
+                  <span className="text-xs text-muted-foreground">from domains table</span>
+                </div>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {domains.length > 0 ? (
+                    domains.map((domain) => (
+                      <div key={domain.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-blue-500/20 p-2 rounded-md">
+                            <Globe className="h-4 w-4 text-blue-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{domain.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {domain.expiry_date 
+                                ? `Expires ${format(new Date(domain.expiry_date), 'PP')}` 
+                                : 'No expiry date'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          domain.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                          domain.status === 'expiring' ? 'bg-yellow-500/20 text-yellow-400' :
+                          domain.status === 'expired' ? 'bg-red-500/20 text-red-400' :
+                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                        }`}>
+                          {domain.status || 'pending'}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No domains found</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.leads && (
+            <div key="leads" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Leads</h3>
+                  <span className="text-xs text-muted-foreground">from leads table</span>
+                </div>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {leads.length > 0 ? (
+                    leads.map((lead) => (
+                      <div key={lead.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{lead.name}</p>
+                          <p className="text-xs text-muted-foreground">{lead.company || 'No company'}</p>
+                        </div>
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          lead.status === 'new' ? 'bg-blue-500/20 text-blue-400' :
+                          lead.status === 'contacted' ? 'bg-yellow-500/20 text-yellow-400' :
+                          lead.status === 'qualified' ? 'bg-green-500/20 text-green-400' :
+                          lead.status === 'lost' ? 'bg-red-500/20 text-red-400' :
+                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                        }`}>
+                          {lead.status || 'new'}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No leads found</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.sales && (
+            <div key="sales" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Sales Pipeline</h3>
+                  <span className="text-xs text-muted-foreground">from deals table</span>
+                </div>
+                <div className="mb-3">
+                  <p className="text-sm text-muted-foreground">Total Pipeline Value</p>
+                  <p className="text-xl font-bold text-foreground">
+                    {formatKrona(calculateTotalPipeline(sales))}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {sales.length > 0 ? (
+                    sales.slice(0, 3).map((sale) => (
+                      <div key={sale.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{sale.lead_name || 'Unknown'}</p>
+                          <p className="text-xs text-muted-foreground">{sale.company || 'No company'}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-foreground">
+                            {formatKrona(sale.value)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{sale.stage || 'No stage'}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No sales data</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.gmailHub && (
+            <div key="gmailHub" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Gmail Hub</h3>
+                  <span className="text-xs text-muted-foreground">from Gmail API</span>
+                </div>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {emails.length > 0 ? (
+                    emails.map((email) => (
+                      <div key={email.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex-1 overflow-hidden">
+                          <p className={`text-sm font-medium ${email.unread ? 'text-foreground' : 'text-foreground text-muted-foreground'}`}>
+                            {email.subject.length > 30 ? email.subject.substring(0, 30) + '...' : email.subject}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">{email.from}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground ml-2">
+                          {email.date ? format(new Date(email.date), 'PP') : 'No date'}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No emails found</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.analyticsData && analyticsData && (
+            <div key="analyticsData" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Analytics Overview</h3>
+                  <span className="text-xs text-muted-foreground">from Analytics API</span>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Pageviews</p>
+                    <p className="text-lg font-bold text-foreground">{analyticsData.pageviews.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Unique Visitors</p>
+                    <p className="text-lg font-bold text-foreground">{analyticsData.visitors.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Bounce Rate</p>
+                    <p className="text-lg font-bold text-foreground">{analyticsData.bounce_rate.toFixed(1)}%</p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.searchConsole && searchConsoleData && (
+            <div key="searchConsole" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Search Console</h3>
+                  <span className="text-xs text-muted-foreground">from Search Console API</span>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Clicks (28 days)</p>
+                    <p className="text-lg font-bold text-foreground">{searchConsoleData.clicks.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Impressions</p>
+                    <p className="text-lg font-bold text-foreground">{searchConsoleData.impressions.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">CTR</p>
+                    <p className="text-lg font-bold text-foreground">{(searchConsoleData.ctr * 100).toFixed(1)}%</p>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {visibleWidgets.cronJobs && (
+            <div key="cronJobs" className="grid-item relative">
+              <GridItemHandle isCustomizing={isCustomizing} />
+              <ResizeHandle isCustomizing={isCustomizing} />
+              <Card className="p-6 bg-background border-border dark:border-border shadow-lg h-full overflow-hidden">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-foreground">Scheduled Tasks</h3>
+                  <span className="text-xs text-muted-foreground">from cron_jobs table</span>
+                </div>
+                <div className="space-y-3 overflow-auto max-h-[250px]">
+                  {cronJobs.length > 0 ? (
+                    cronJobs.map((job) => (
+                      <div key={job.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-md ${
+                            job.execution_status === 'success' ? 'bg-green-500/20' :
+                            job.execution_status === 'pending' ? 'bg-blue-500/20' :
+                            job.execution_status === 'running' ? 'bg-yellow-500/20' :
+                            'bg-red-500/20'
+                          }`}>
+                            <Clock className={`h-4 w-4 ${
+                              job.execution_status === 'success' ? 'text-green-400' :
+                              job.execution_status === 'pending' ? 'text-blue-400' :
+                              job.execution_status === 'running' ? 'text-yellow-400' :
+                              'text-red-400'
+                            }`} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{job.name}</p>
+                            <p className="text-xs text-muted-foreground">{job.schedule}</p>
+                          </div>
+                        </div>
+                        <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          job.execution_status === 'success' ? 'bg-green-500/20 text-green-400' :
+                          job.execution_status === 'pending' ? 'bg-blue-500/20 text-blue-400' :
+                          job.execution_status === 'running' ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          {job.execution_status}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No scheduled tasks</p>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
+        </ResponsiveGridLayout>
+      </div>
+    );
+  };
+
   // If there's no active workspace, show a workspace selector instead of the dashboard
   if (!activeWorkspace && workspaces.length > 0) {
-  return (
+    return (
       <div className="flex flex-col items-center justify-center h-[80vh]">
-        <div className="w-full max-w-md p-6 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg">
-          <h2 className="text-xl font-bold text-white mb-4 text-center">Select a Workspace</h2>
-          <p className="text-neutral-400 mb-6 text-center">
+        <div className="w-full max-w-md p-6 bg-background border border-border dark:border-border rounded-lg shadow-lg">
+          <h2 className="text-xl font-bold text-foreground mb-4 text-center">Select a Workspace</h2>
+          <p className="text-muted-foreground mb-6 text-center">
             You need to select a workspace to view your dashboard
           </p>
           
@@ -1565,14 +3476,14 @@ export function Dashboard() {
               <button
                 key={workspace.id}
                 onClick={() => handleWorkspaceChange(workspace.id)}
-                className="w-full p-4 bg-neutral-700 hover:bg-neutral-600 rounded-lg flex items-center transition-colors"
+                className="w-full p-4 bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 rounded-lg flex items-center transition-colors"
               >
                 <div className="h-10 w-10 rounded-full bg-blue-500/20 flex items-center justify-center mr-4">
                   <Grid className="h-5 w-5 text-blue-400" />
                 </div>
                 <div className="text-left">
-                  <p className="font-medium text-white">{workspace.name}</p>
-                  <p className="text-xs text-neutral-400">Tap to select this workspace</p>
+                  <p className="font-medium text-foreground">{workspace.name}</p>
+                  <p className="text-xs text-muted-foreground">Tap to select this workspace</p>
                 </div>
               </button>
             ))}
@@ -1582,23 +3493,34 @@ export function Dashboard() {
     );
   }
   
-  // If the user doesn't have any workspaces yet, show a message
-  if (workspaces.length === 0 && !loading) {
+  // If the user doesn't have any workspaces yet, show a message but still display data
+  if (workspaces.length === 0 && !loading && !activeWorkspace) {
+    // Will still display data since we're not filtering by workspace
     return (
-      <div className="flex flex-col items-center justify-center h-[80vh]">
-        <div className="w-full max-w-md p-6 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg text-center">
-          <Grid className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-white mb-2">No Workspaces Found</h2>
-          <p className="text-neutral-400 mb-6">
-            You don't have access to any workspaces yet. Please create a workspace or ask your administrator to invite you.
+      <div className="space-y-6 p-6">
+        <div className="bg-background border border-yellow-500/30 rounded-lg p-4 mb-6">
+          <div className="flex items-center gap-2 text-yellow-400 mb-2">
+            <AlertCircle className="h-5 w-5" />
+            <h3 className="font-medium">Workspace Not Found</h3>
+          </div>
+          <p className="text-foreground text-muted-foreground text-sm">
+            No workspace is selected, so showing all available data. 
+            To filter data by workspace, please create a workspace or ask your administrator to invite you to one.
           </p>
-          <Button
-            onClick={() => router.push('/settings/team')}
-            className="bg-blue-600 hover:bg-blue-500"
-          >
-            Go to Team Settings
-          </Button>
+          <div className="mt-3">
+            <Button
+              onClick={() => router.push('/settings/team')}
+              variant="outline"
+              className="text-xs border-yellow-500/50 text-yellow-400 hover:bg-yellow-500/10"
+              size="sm"
+            >
+              Go to Team Settings
+            </Button>
+          </div>
         </div>
+        
+        {/* Continue to render the dashboard */}
+        {renderDashboardContent()}
       </div>
     );
   }
@@ -1609,7 +3531,7 @@ export function Dashboard() {
     
       <div className="flex justify-between items-center mb-2">
         <div className="group relative flex-1 mr-4 overflow-hidden rounded-lg">
-          <div className="relative z-10 m-[2px] bg-neutral-800 p-6 rounded-lg shadow-lg">
+          <div className="relative z-10 m-[2px] bg-background p-6 rounded-lg shadow-lg">
             <GlowingEffect 
               spread={30} 
               glow={true} 
@@ -1621,62 +3543,50 @@ export function Dashboard() {
               variant="default"
             />
             <div className="relative z-20">
-        <h2 className="text-2xl font-bold text-white">{getGreeting()}</h2>
-        <p className="text-neutral-400 mt-2">Here's what's happening today</p>
+        <h2 className="text-2xl font-bold text-foreground">{getGreeting()}</h2>
+        <p className="text-muted-foreground mt-2">Here's what's happening today</p>
             </div>
           </div>
         </div>
 
         <div className="flex space-x-3">
-          {/* Workspace Selector */}
-          {workspaces.length > 1 && (
-            <div className="group relative overflow-hidden rounded-lg">
-              <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
-              
-              <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
-                <select
-                  className="h-10 px-3 text-sm font-medium bg-transparent border-0 rounded-lg text-neutral-200 focus:outline-none focus:ring-0 appearance-none pr-8"
-                  value={activeWorkspace || ''}
-                  onChange={(e) => handleWorkspaceChange(e.target.value)}
-                >
-                  {workspaces.map(workspace => (
-                    <option key={workspace.id} value={workspace.id}>
-                      {workspace.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-neutral-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+          {/* Show the user's actual workspace name */}
+          <div className="bg-background rounded-lg px-4 py-2 flex items-center">
+            <span className="text-foreground font-medium">
+              {activeWorkspace && workspaces.length > 0 
+                ? workspaces.find(w => w.id === activeWorkspace)?.name || 'Loading...'
+                : 'Loading workspace...'
+              }
+            </span>
                 </div>
-              </div>
-            </div>
-          )}
           
           <div className="group relative overflow-hidden rounded-lg">
-            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-muted/80 transition-colors duration-300">
               <Button 
                 variant="ghost" 
-                className="border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                className="border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
                 onClick={forceRefresh}
                 disabled={refreshing || statsLoading}
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing || statsLoading ? 'animate-spin' : ''}`} />
+                {refreshing || statsLoading ? (
+                  <MessageLoading />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
                 {refreshing || statsLoading ? 'Refreshing...' : 'Refresh'}
               </Button>
             </div>
           </div>
           
           <div className="group relative overflow-hidden rounded-lg">
-            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
+            <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-background rounded-lg hover:bg-muted/80 transition-colors duration-300">
               <Button 
                 variant="ghost" 
-                className="border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white"
+                className="border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground"
                 onClick={() => setIsCustomizing(!isCustomizing)}
               >
                 {isCustomizing ? <X className="h-4 w-4 mr-2" /> : <Settings className="h-4 w-4 mr-2" />}
@@ -1688,14 +3598,24 @@ export function Dashboard() {
       </div>
       
       {isCustomizing && (
-        <Card className="p-6 bg-neutral-800 border-neutral-700 shadow-lg">
+        <Card className="p-6 bg-background border-border dark:border-border shadow-lg">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-white">Customize Your Dashboard</h3>
+            <h3 className="text-lg font-semibold text-foreground">Customize Your Dashboard</h3>
             <div className="flex space-x-2">
               <Button 
                 variant="outline" 
                 size="sm"
-                className="bg-neutral-700 border-neutral-600 text-neutral-200 hover:bg-neutral-600"
+                className="bg-red-600/10 border-red-600/30 text-red-400 hover:bg-red-600/20"
+                onClick={resetLayoutToDefaults}
+                title="Reset layout to default positions"
+              >
+                Reset Layout
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="bg-muted border-gray-400 dark:border-border text-foreground hover:bg-gray-300 dark:hover:bg-neutral-600"
                 onClick={() => setIsCustomizing(false)}
               >
                 Cancel
@@ -1704,7 +3624,7 @@ export function Dashboard() {
               <Button 
                 variant="default" 
                 size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-blue-600 hover:bg-blue-700 text-foreground"
                 onClick={applyChanges}
               >
                 Save Changes
@@ -1712,1249 +3632,219 @@ export function Dashboard() {
             </div>
           </div>
           
+          <div className="mb-4 bg-blue-200 dark:bg-blue-900/30 border border-blue-600/30 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-300 mb-2">Dashboard Customization</h4>
+            <p className="text-sm text-foreground text-muted-foreground mb-2">
+              Make your dashboard your own by customizing it:
+            </p>
+            <ul className="text-sm text-foreground text-muted-foreground list-disc pl-5 space-y-1 mb-2">
+              <li><span className="text-blue-300 font-medium">Drag and drop</span> widgets to rearrange them using the top-right handle</li>
+              <li><span className="text-blue-300 font-medium">Resize widgets</span> by dragging from the bottom-right corner</li>
+              <li><span className="text-blue-300 font-medium">Toggle visibility</span> of widgets using the buttons below</li>
+            </ul>
+            <p className="text-sm text-foreground text-muted-foreground">
+              Once you're happy with your layout, click <span className="text-blue-300 font-medium">Save Changes</span> to apply.
+            </p>
+          </div>
+          
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.revenueStats ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.revenueStats ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.revenueStats ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, revenueStats: !prev.revenueStats }))}
               >
                 {visibleWidgets.revenueStats ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Revenue Stats</span>
+              <span className="text-sm text-foreground text-muted-foreground">Revenue Stats</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.invoiceStats ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.invoiceStats ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.invoiceStats ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, invoiceStats: !prev.invoiceStats }))}
               >
                 {visibleWidgets.invoiceStats ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Invoice Count</span>
+              <span className="text-sm text-foreground text-muted-foreground">Invoice Count</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.averageInvoice ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.averageInvoice ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.averageInvoice ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, averageInvoice: !prev.averageInvoice }))}
               >
                 {visibleWidgets.averageInvoice ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Average Invoice</span>
+              <span className="text-sm text-foreground text-muted-foreground">Average Invoice</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.recentInvoices ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.recentInvoices ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.recentInvoices ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, recentInvoices: !prev.recentInvoices }))}
               >
                 {visibleWidgets.recentInvoices ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Recent Invoices</span>
+              <span className="text-sm text-foreground text-muted-foreground">Recent Invoices</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.invoiceTypes ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.invoiceTypes ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.invoiceTypes ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, invoiceTypes: !prev.invoiceTypes }))}
               >
                 {visibleWidgets.invoiceTypes ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Invoice Types</span>
+              <span className="text-sm text-foreground text-muted-foreground">Invoice Types</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.upcomingEvents ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.upcomingEvents ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.upcomingEvents ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, upcomingEvents: !prev.upcomingEvents }))}
               >
                 {visibleWidgets.upcomingEvents ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Upcoming Events</span>
+              <span className="text-sm text-foreground text-muted-foreground">Upcoming Events</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.upcomingDeadlines ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.upcomingDeadlines ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.upcomingDeadlines ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, upcomingDeadlines: !prev.upcomingDeadlines }))}
               >
                 {visibleWidgets.upcomingDeadlines ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Upcoming Deadlines</span>
+              <span className="text-sm text-foreground text-muted-foreground">Upcoming Deadlines</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.urgentTasks ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.urgentTasks ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.urgentTasks ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, urgentTasks: !prev.urgentTasks }))}
               >
                 {visibleWidgets.urgentTasks ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Urgent Tasks</span>
+              <span className="text-sm text-foreground text-muted-foreground">Urgent Tasks</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.domains ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.domains ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.domains ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, domains: !prev.domains }))}
               >
                 {visibleWidgets.domains ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Domains</span>
+              <span className="text-sm text-foreground text-muted-foreground">Domains</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.leads ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.leads ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.leads ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, leads: !prev.leads }))}
               >
                 {visibleWidgets.leads ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Leads</span>
+              <span className="text-sm text-foreground text-muted-foreground">Leads</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.sales ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.sales ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.sales ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, sales: !prev.sales }))}
               >
                 {visibleWidgets.sales ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Sales</span>
+              <span className="text-sm text-foreground text-muted-foreground">Sales</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.gmailHub ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.gmailHub ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.gmailHub ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, gmailHub: !prev.gmailHub }))}
               >
                 {visibleWidgets.gmailHub ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Gmail Hub</span>
+              <span className="text-sm text-foreground text-muted-foreground">Gmail Hub</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.analyticsData ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.analyticsData ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.analyticsData ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, analyticsData: !prev.analyticsData }))}
               >
                 {visibleWidgets.analyticsData ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Analytics</span>
+              <span className="text-sm text-foreground text-muted-foreground">Analytics</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.searchConsole ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.searchConsole ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.searchConsole ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, searchConsole: !prev.searchConsole }))}
               >
                 {visibleWidgets.searchConsole ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Search Console</span>
+              <span className="text-sm text-foreground text-muted-foreground">Search Console</span>
             </div>
             
-            <div className="flex items-center space-x-2 p-2 border border-neutral-700 rounded-md bg-neutral-850">
+            <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
               <Button 
                 variant={visibleWidgets.cronJobs ? "default" : "outline"}
                 size="sm"
-                className={`${visibleWidgets.cronJobs ? 'bg-green-600 hover:bg-green-700' : 'bg-neutral-700'} w-8 h-8 p-0`}
+                className={`${visibleWidgets.cronJobs ? 'bg-green-600 hover:bg-green-700' : 'bg-muted'} w-8 h-8 p-0`}
                 onClick={() => setVisibleWidgets(prev => ({ ...prev, cronJobs: !prev.cronJobs }))}
               >
                 {visibleWidgets.cronJobs ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-neutral-300">Scheduled Tasks</span>
+              <span className="text-sm text-foreground text-muted-foreground">Scheduled Tasks</span>
             </div>
           </div>
         </Card>
       )}
 
-      {visibleWidgets.revenueStats || visibleWidgets.invoiceStats || visibleWidgets.averageInvoice ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
-          {visibleWidgets.revenueStats && (
-            <Link href="/invoices" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View Details →
-              </span>
-              <AnimatedBorderCard className="p-6 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[180px]" gradient="blue-purple">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-neutral-400">Total Revenue</p>
-              <h3 className="text-2xl font-bold mt-2 text-white">
-                {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
-                  .format(stats.totalRevenue)}
-              </h3>
-              <div className="mt-4 flex items-center gap-2">
-                <div className={`flex items-center gap-1 ${stats.revenueGrowth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {stats.revenueGrowth >= 0 ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
-                  <span>{Math.abs(stats.revenueGrowth).toFixed(1)}%</span>
-                </div>
-                <p className="text-sm text-neutral-400">vs last month</p>
-              </div>
-            </div>
-            <div className="p-3 bg-emerald-500/10 rounded-full">
-              <DollarSign className="w-6 h-6 text-emerald-400" />
+      {/* Render dashboard content */}
+      <div className="relative">
+      {renderDashboardContent()}
+        
+        {/* Refreshing overlay */}
+        {refreshing && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
+            <div className="flex flex-col items-center justify-center space-y-3 min-h-[200px]">
+              <MessageLoading />
+              <p className="text-sm text-muted-foreground">Refreshing data...</p>
             </div>
           </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.invoiceStats && (
-            <Link href="/invoices" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View Details →
-              </span>
-              <AnimatedBorderCard className="p-6 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[180px]" gradient="green-blue">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-neutral-400">Total Invoices</p>
-              <h3 className="text-2xl font-bold mt-2 text-white">{stats.invoiceCount}</h3>
-            </div>
-            <div className="p-3 bg-blue-500/10 rounded-full">
-              <Users className="w-6 h-6 text-blue-400" />
-            </div>
-          </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.averageInvoice && (
-            <Link href="/invoices" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View Details →
-              </span>
-              <AnimatedBorderCard className="p-6 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[180px]" gradient="purple-pink">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-neutral-400">Average Invoice</p>
-              <h3 className="text-2xl font-bold mt-2 text-white">
-                {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
-                  .format(stats.averageInvoiceValue)}
-              </h3>
-            </div>
-            <div className="p-3 bg-purple-500/10 rounded-full">
-              <BarChart className="w-6 h-6 text-purple-400" />
-            </div>
-          </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
+        )}
       </div>
-      ) : null}
-
-      {visibleWidgets.recentInvoices || visibleWidgets.invoiceTypes ? (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {visibleWidgets.recentInvoices && (
-            <Link href="/invoices" className="block lg:col-span-2 relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View All Invoices →
-              </span>
-              <AnimatedBorderCard className="lg:col-span-2 bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="blue-purple">
-          <div className="p-6 h-full flex flex-col">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-white">Recent Invoices</h3>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <div className="h-full overflow-auto">
-              <table className="w-full">
-                  <thead className="sticky top-0 bg-neutral-800 z-10">
-                  <tr>
-                    <th className="text-left text-sm font-medium text-neutral-400 pb-4">Customer</th>
-                    <th className="text-left text-sm font-medium text-neutral-400 pb-4">Date</th>
-                    <th className="text-right text-sm font-medium text-neutral-400 pb-4">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-700">
-                  {invoices.slice(0, 5).map((invoice) => (
-                    <tr key={invoice.document_number}>
-                        <td className="py-4 text-sm text-white">
-                          <div className="truncate max-w-[180px]" title={invoice.customers?.name}>
-                            {invoice.customers?.name}
-                          </div>
-                        </td>
-                      <td className="py-4 text-sm text-neutral-400">
-                        {new Date(invoice.invoice_date).toLocaleDateString('sv-SE')}
-                      </td>
-                      <td className="py-4 text-sm text-right font-medium text-white">
-                        {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: invoice.currencies?.code || 'SEK' })
-                          .format(invoice.total)}
-                      </td>
-                    </tr>
-                  ))}
-                    {invoices.length === 0 && (
-                      <tr>
-                        <td colSpan={3} className="py-4 text-sm text-center text-neutral-400">No invoices found</td>
-                      </tr>
-                    )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.invoiceTypes && (
-            <Link href="/invoices" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View Details →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="green-blue">
-          <div className="p-6">
-            <h3 className="text-lg font-semibold text-white">Invoice Types</h3>
-            <div className="mt-6 space-y-4">
-              {Object.entries(
-                invoices.reduce((acc, inv) => {
-                  const type = inv.balance === 0 ? 'Paid' : inv.balance === inv.total ? 'Unpaid' : 'Partial'
-                  acc[type] = (acc[type] || 0) + 1
-                  return acc
-                }, {} as Record<string, number>)
-              ).map(([type, count]) => (
-                <div key={type} className="flex items-center justify-between">
-                  <span className="text-sm text-neutral-400">{type}</span>
-                  <span className="text-sm font-medium text-white">{count}</span>
-                </div>
-              ))}
-                    {invoices.length === 0 && (
-                      <div className="text-sm text-center text-neutral-400">No invoice data</div>
-                    )}
-            </div>
-          </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-      </div>
-      ) : null}
-
-      {visibleWidgets.upcomingEvents || visibleWidgets.upcomingDeadlines || visibleWidgets.urgentTasks ? (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {visibleWidgets.upcomingEvents && (
-            <Link href="/calendar" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                Go to Calendar →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="blue-purple">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-white">Upcoming Events</h3>
-            <div className="flex space-x-2">
-              <Button 
-                variant="outline" 
-                size="sm"
-                className="text-xs bg-neutral-700 hover:bg-neutral-600"
-                title="Save calendar events to database for workspace users"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  saveCalendarEventsToDatabase();
-                }}
-                disabled={refreshing}
-              >
-                Save to DB
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                className="p-2 h-9 hover:bg-neutral-700/50"
-                title={hasGoogleCalendarIntegration === false ? "Connect Google Calendar" : "Sync Google Calendar to workspace"}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  syncGoogleCalendarToWorkspace();
-                }}
-                disabled={refreshing}
-              >
-                {hasGoogleCalendarIntegration === false ? (
-                  <Globe className="h-4 w-4" />
-                ) : (
-                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                )}
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                className="p-2 h-9 hover:bg-neutral-700/50"
-                title="Calendar diagnostics"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  window.open(`/api/calendar/diagnose?workspaceId=${activeWorkspace}`, '_blank');
-                }}
-              >
-                <HelpCircle className="h-4 w-4 text-neutral-400" />
-              </Button>
-              <Calendar className="w-5 h-5 text-neutral-400" />
-            </div>
-          </div>
-          <div className="space-y-4">
-            {meetings && meetings.length > 0 ? (
-              meetings.slice(0, 5).map(meeting => (
-                <div key={meeting.id} className="flex items-start space-x-4">
-                  <div className="p-2 bg-blue-500/10 rounded-full">
-                    <Clock className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <p className="text-sm font-medium text-white truncate" title={meeting.title}>{meeting.title}</p>
-                    <p className="text-xs text-neutral-400 truncate" title={`${new Date(meeting.start_time).toLocaleDateString()} at ${new Date(meeting.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`}>
-                      {new Date(meeting.start_time).toLocaleDateString()} at {' '}
-                      {new Date(meeting.start_time).toLocaleTimeString('en-US', { 
-                        hour: '2-digit', 
-                        minute: '2-digit',
-                        hour12: true
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="flex flex-col items-center justify-center py-4">
-                <p className="text-sm text-neutral-400 mb-2">No upcoming events</p>
-                <div className="flex space-x-2">
-                  <Button 
-                    variant="outline"
-                    size="sm"
-                    className="text-xs bg-neutral-700 hover:bg-neutral-600"
-                  >
-                    <Link href="/calendar">Add Event</Link>
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    size="sm"
-                    className="text-xs bg-neutral-700 hover:bg-neutral-600"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      saveCalendarEventsToDatabase();
-                    }}
-                  >
-                    Save to Database
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    size="sm"
-                    className="text-xs bg-neutral-700 hover:bg-neutral-600"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      syncGoogleCalendarToWorkspace();
-                    }}
-                  >
-                    {refreshing ? 'Syncing...' : (hasGoogleCalendarIntegration === false ? 'Connect Calendar' : 'Sync Calendar')}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </AnimatedBorderCard>
-    </Link>
-  )}
-
-          {visibleWidgets.upcomingDeadlines && (
-            <Link href="/projects" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View All Deadlines →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="green-blue">
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-white">Upcoming Deadlines</h3>
-              <Clock className="w-5 h-5 text-neutral-400" />
-            </div>
-            <div className="space-y-4">
-                    {getUpcomingDeadlines().length > 0 ? (
-                      getUpcomingDeadlines().map(task => (
-                <div key={task.id} className="flex items-start space-x-4">
-                  <div className="p-2 bg-yellow-500/10 rounded-full">
-                    <Clock className="w-4 h-4 text-yellow-400" />
-                  </div>
-                          <div className="flex-1 overflow-hidden">
-                            <p className="text-sm font-medium text-white truncate" title={task.title}>{task.title}</p>
-                            <div className="flex justify-between items-center mt-1">
-                              <p className="text-xs text-yellow-400">
-                                Due: {new Date(task.deadline as string).toLocaleDateString()}
-                              </p>
-                              <div className="bg-neutral-700 h-2 w-24 rounded-full overflow-hidden">
-                                <div 
-                                  className="bg-green-500 h-full" 
-                                  style={{ width: `${task.progress}%` }} 
-                                />
-                  </div>
-                </div>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <p className="text-sm text-neutral-400 mb-2">No upcoming deadlines</p>
-                        <Button 
-                          variant="outline"
-                          size="sm"
-                          className="text-xs bg-neutral-700 hover:bg-neutral-600"
-                          asChild
-                        >
-                          <Link href="/projects">View Projects</Link>
-                        </Button>
-                      </div>
-              )}
-            </div>
-          </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.urgentTasks && (
-            <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="orange-red">
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-white">Urgent Tasks</h3>
-              <AlertCircle className="w-5 h-5 text-red-400" />
-            </div>
-            <div className="space-y-4">
-                  {getUrgentTasks().length > 0 ? (
-                    getUrgentTasks().slice(0, 5).map(task => (
-                <div key={task.id} className="flex items-start space-x-4">
-                        <button
-                          onClick={() => handleTaskComplete(task.id)}
-                          className={cn(
-                            "p-2 rounded-full transition-colors",
-                            task.progress >= 100 
-                              ? "bg-green-500/20 text-green-400" 
-                              : "bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300"
-                          )}
-                        >
-                          {task.progress >= 100 ? (
-                            <CheckCircle className="w-4 h-4" />
-                          ) : (
-                            <AlertCircle className="w-4 h-4" />
-                          )}
-                        </button>
-                        <div className="flex-1 overflow-hidden">
-                          <p className="text-sm font-medium text-white truncate" title={task.title}>{task.title}</p>
-                          <div className="flex justify-between items-center mt-1">
-                            {task.deadline ? (
-                              <p className="text-xs text-red-400">
-                                Due: {new Date(task.deadline).toLocaleDateString()}
-                              </p>
-                            ) : (
-                              <p className="text-xs text-red-400">Urgent</p>
-                            )}
-                            <div className="bg-neutral-700 h-2 w-24 rounded-full overflow-hidden">
-                              <div 
-                                className="bg-green-500 h-full" 
-                                style={{ width: `${task.progress}%` }} 
-                              />
-                  </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-4">
-                      <p className="text-sm text-neutral-400 mb-2">No urgent tasks</p>
-                      <Button 
-                        variant="outline"
-                        size="sm"
-                        className="text-xs bg-neutral-700 hover:bg-neutral-600"
-                        asChild
-                      >
-                        <Link href="/projects">View Projects</Link>
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </AnimatedBorderCard>
-          )}
-      </div>
-      ) : null}
-
-      {/* Domains, Leads and Sales section */}
-      {visibleWidgets.domains || visibleWidgets.leads || visibleWidgets.sales ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {visibleWidgets.domains && (
-            <Link href="/domains" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View All Domains →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="blue-purple">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-white">Domain Expiry</h3>
-                    <Globe className="w-5 h-5 text-neutral-400" />
-                  </div>
-                  <div className="space-y-4">
-                    {domains.map(domain => (
-                      <div key={domain.id} className="flex items-start space-x-4">
-                        <div className="p-2 bg-blue-500/10 rounded-full">
-                          <Globe className="w-4 h-4 text-blue-400" />
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                          <p className="text-sm font-medium text-white truncate" title={domain.name}>{domain.name}</p>
-                          <p className="text-xs text-neutral-400">
-                            Expires: {new Date(domain.expiry_date).toLocaleDateString('sv-SE')}
-                          </p>
-                  </div>
-                </div>
-              ))}
-                    {domains.length === 0 && (
-                      <p className="text-sm text-neutral-400">No domains found</p>
-              )}
-            </div>
-          </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.leads && <RecentLeads />}
-
-          {visibleWidgets.sales && (
-            <Link href="/sales" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View All Sales →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="purple-pink">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-white">Recent Sales</h3>
-                    <div className="flex space-x-2">
-                      <Button 
-                        variant="ghost" 
-                        className="h-8 w-8 p-0"
-                        onClick={async (e) => {
-                          e.preventDefault(); // Prevent navigation
-                          e.stopPropagation(); // Stop event propagation
-                          refreshSalesData();
-                        }}
-                      >
-                        <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                      </Button>
-                      <TrendingUp className="w-5 h-5 text-neutral-400" />
-                    </div>
-                  </div>
-                  
-                  {sales.length > 0 && (
-                    <div className="mb-4 p-3 bg-neutral-700/20 rounded-md">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-neutral-300">Pipeline Total:</span>
-                        <span className="text-sm font-medium text-green-400">
-                          {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(calculateTotalPipeline(sales))}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="space-y-4">
-                    {sales.map(sale => (
-                      <div key={sale.id} className="flex items-start space-x-4">
-                        <div className="p-2 bg-purple-500/10 rounded-full">
-                          <TrendingUp className={`w-4 h-4 ${sale.stage === 'closed_won' ? 'text-green-400' : 'text-purple-400'}`} />
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                          <p className="text-sm font-medium text-white truncate" title={sale.lead_name}>{sale.lead_name}</p>
-                          <p className="text-xs text-neutral-400">
-                            {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(sale.value)}
-                          </p>
-                          <p className="text-xs text-neutral-400">
-                            <span className={`${
-                              sale.stage === 'closed_won' ? 'text-green-400' : 
-                              sale.stage === 'proposal' ? 'text-yellow-400' : 
-                              'text-blue-400'
-                            }`}>
-                              {sale.stage.charAt(0).toUpperCase() + sale.stage.slice(1).replace('_', ' ')}
-                            </span> - {new Date(sale.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                    {sales.length === 0 && (
-                      <p className="text-sm text-neutral-400">No sales found</p>
-                    )}
-                  </div>
-                </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-        </div>
-      ) : null}
-
-      {visibleWidgets.invoiceSummary || visibleWidgets.salesMetrics ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {visibleWidgets.invoiceSummary && (
-            <Link href="/finances" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                Open Finance Dashboard →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl" gradient="blue-purple">
-                <div className="p-6 relative overflow-hidden">
-                  <Glow variant="top" className="opacity-30 group-hover:opacity-60 transition-opacity duration-700" />
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-semibold text-white">Invoice Summary</h3>
-                      <CreditCard className="w-5 h-5 text-neutral-400" />
-                    </div>
-                    {invoices.length > 0 ? (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-neutral-700/20 rounded-lg p-3">
-                            <p className="text-xs text-neutral-400 mb-1">Outstanding</p>
-                            <p className="text-lg font-semibold text-white">
-                              {
-                                new Intl.NumberFormat('sv-SE', { 
-                                  style: 'currency', 
-                                  currency: 'SEK'
-                                }).format(
-                                  invoices.reduce((total, invoice) => total + invoice.balance, 0)
-                                )
-                              }
-                            </p>
-                          </div>
-                          <div className="bg-neutral-700/20 rounded-lg p-3">
-                            <p className="text-xs text-neutral-400 mb-1">Total Invoiced</p>
-                            <p className="text-lg font-semibold text-white">
-                              {
-                                new Intl.NumberFormat('sv-SE', { 
-                                  style: 'currency', 
-                                  currency: 'SEK'
-                                }).format(
-                                  invoices.reduce((total, invoice) => total + invoice.total, 0)
-                                )
-                              }
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <h4 className="text-sm font-medium text-white pt-2">Recent Invoices</h4>
-                        <div className="space-y-2">
-                          {invoices.slice(0, 3).map(invoice => (
-                            <div key={invoice.document_number} className="flex justify-between items-center p-2 rounded-lg hover:bg-neutral-700/20">
-                  <div>
-                                <p className="text-sm font-medium text-white">{invoice.customers.name}</p>
-                                <p className="text-xs text-neutral-400">
-                                  #{invoice.document_number} · {new Date(invoice.invoice_date).toLocaleDateString()}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-medium text-white">
-                                  {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: invoice.currencies?.code || "SEK" }).format(invoice.total)}
-                                </p>
-                                <p className={`text-xs ${invoice.balance > 0 ? 'text-amber-400' : 'text-green-400'}`}>
-                                  {invoice.balance > 0 ? 'Outstanding' : 'Paid'}
-                                </p>
-                  </div>
-                </div>
-              ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-neutral-400">No invoice data available</p>
-              )}
-            </div>
-                </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.salesMetrics && (
-            <Link href="/sales" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                Open Sales Dashboard →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl" gradient="purple-pink">
-                <div className="p-6 relative overflow-hidden">
-                  <Glow variant="top" className="opacity-30 group-hover:opacity-60 transition-opacity duration-700" />
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-semibold text-white">Sales Pipeline</h3>
-                      <TrendingUp className="w-5 h-5 text-neutral-400" />
-                    </div>
-                    {sales.length > 0 ? (
-                      <div>
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                          <div className="bg-neutral-700/20 rounded-lg p-3">
-                            <p className="text-xs text-neutral-400 mb-1">Active Deals</p>
-                            <p className="text-lg font-semibold text-white">
-                              {sales.filter(sale => sale.stage !== 'closed_won' && sale.stage !== 'closed_lost').length}
-                            </p>
-                          </div>
-                          <div className="bg-neutral-700/20 rounded-lg p-3">
-                            <p className="text-xs text-neutral-400 mb-1">Pipeline Total</p>
-                            <p className="text-lg font-semibold text-white">
-                              {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(calculateTotalPipeline(sales))}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-3 mt-3">
-                          {sales.slice(0, 3).map(sale => (
-                            <div key={sale.id} className="flex items-start space-x-3">
-                              <div className="p-2 bg-purple-500/10 rounded-full">
-                                <TrendingUp className={`w-4 h-4 ${sale.stage === 'closed_won' ? 'text-green-400' : 'text-purple-400'}`} />
-                              </div>
-                              <div className="flex-1 overflow-hidden">
-                                <p className="text-sm font-medium text-white truncate" title={sale.lead_name}>{sale.lead_name}</p>
-                                <p className="text-xs text-neutral-400">
-                                  {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(sale.value)}
-                                </p>
-                                <p className="text-xs text-neutral-400">
-                                  <span className={`${
-                                    sale.stage === 'closed_won' ? 'text-green-400' : 
-                                    sale.stage === 'proposal' ? 'text-yellow-400' : 
-                                    'text-blue-400'
-                                  }`}>
-                                    {sale.stage.charAt(0).toUpperCase() + sale.stage.slice(1).replace('_', ' ')}
-                                  </span> - {new Date(sale.created_at).toLocaleDateString()}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-neutral-400">No sales data available</p>
-                    )}
-                  </div>
-                </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-        </div>
-      ) : null}
-
-      {/* Gmail Hub, Analytics and Search Console */}
-      {visibleWidgets.gmailHub || visibleWidgets.analyticsData || visibleWidgets.searchConsole ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {visibleWidgets.gmailHub && (
-            <Link href="/gmail-hub" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                Open Gmail Hub →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="orange-red">
-                <div className="p-6 relative overflow-hidden">
-                  <Glow variant="right" className="opacity-30 group-hover:opacity-70 transition-opacity duration-700" />
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-semibold text-white">Recent Emails</h3>
-                      <Inbox className="w-5 h-5 text-neutral-400" />
-                    </div>
-                    <div className="space-y-4">
-                      {emails.map(email => (
-                        <div key={email.id} className="flex items-start space-x-4">
-                          <div className={`p-2 ${email.unread ? 'bg-blue-500/20' : 'bg-neutral-700/20'} rounded-full`}>
-                            <Inbox className={`w-4 h-4 ${email.unread ? 'text-blue-400' : 'text-neutral-400'}`} />
-                          </div>
-                          <div className="flex-1 overflow-hidden">
-                            <p className={`text-sm font-medium ${email.unread ? 'text-white' : 'text-neutral-300'} truncate`} title={email.subject}>
-                              {email.subject}
-                            </p>
-                            <p className="text-xs text-neutral-400 truncate" title={`${email.from} - ${new Date(email.date).toLocaleDateString('sv-SE')}`}>
-                              {email.from} - {new Date(email.date).toLocaleDateString('sv-SE')}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                      {emails.length === 0 && (
-                        <p className="text-sm text-neutral-400">No recent emails</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.analyticsData && (
-            <Link href="/analytics" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View Analytics →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="blue-purple">
-                <div className="p-6 relative overflow-hidden">
-                  <Glow variant="center" className="opacity-30 group-hover:opacity-70 transition-opacity duration-700" />
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-semibold text-white">Analytics Overview</h3>
-                      <LineChart className="w-5 h-5 text-neutral-400" />
-                    </div>
-                    {analyticsData ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">Pageviews</span>
-                          <span className="text-sm font-medium text-white">{analyticsData.pageviews.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">Visitors</span>
-                          <span className="text-sm font-medium text-white">{analyticsData.visitors.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">Bounce Rate</span>
-                          <span className="text-sm font-medium text-white">{analyticsData.bounce_rate.toFixed(1)}%</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">Avg. Session</span>
-                          <span className="text-sm font-medium text-white">{analyticsData.avg_session_duration.toFixed(1)}s</span>
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t border-neutral-700">
-                          <h4 className="text-sm font-medium text-white mb-2">Top Pages</h4>
-                          {topWebsites && topWebsites.length > 0 ? (
-                            topWebsites.map((site, index) => (
-                              <div key={index} className="flex justify-between text-xs mb-1">
-                                <span className="text-neutral-400 truncate max-w-[70%]" title={site.url}>{site.url}</span>
-                                <span className="text-neutral-300">{site.pageviews.toLocaleString()}</span>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="text-xs text-neutral-400">No data available</div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-neutral-400">No analytics data available</p>
-                    )}
-                  </div>
-                </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-
-          {visibleWidgets.searchConsole && (
-            <Link href="/marketing" className="block relative group">
-              <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                View Search Console →
-              </span>
-              <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="green-blue">
-                <div className="p-6 relative overflow-hidden">
-                  <Glow variant="left" className="opacity-30 group-hover:opacity-70 transition-opacity duration-700" />
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-lg font-semibold text-white">Search Performance</h3>
-                      <LineChart className="w-5 h-5 text-neutral-400" />
-                    </div>
-                    {searchConsoleData ? (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">Clicks</span>
-                          <span className="text-sm font-medium text-white">{searchConsoleData.clicks.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">Impressions</span>
-                          <span className="text-sm font-medium text-white">{searchConsoleData.impressions.toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">CTR</span>
-                          <span className="text-sm font-medium text-white">{searchConsoleData.ctr.toFixed(1)}%</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-neutral-400">Avg. Position</span>
-                          <span className="text-sm font-medium text-white">{searchConsoleData.position.toFixed(1)}</span>
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t border-neutral-700">
-                          <h4 className="text-sm font-medium text-white mb-2">Top Search Terms</h4>
-                          {topSearchTerms && topSearchTerms.length > 0 ? (
-                            topSearchTerms.map((term, index) => (
-                              <div key={index} className="flex justify-between text-xs mb-1">
-                                <span className="text-neutral-400 truncate max-w-[70%]" title={term.term}>{term.term}</span>
-                                <span className="text-neutral-300">{term.clicks} clicks</span>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="text-xs text-neutral-400">No data available</div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-neutral-400">No search data available</p>
-                    )}
-                  </div>
-                </div>
-              </AnimatedBorderCard>
-            </Link>
-          )}
-        </div>
-      ) : null}
-
-      {/* Scheduled Tasks - Split into two cards for better symmetry */}
-      {visibleWidgets.cronJobs && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <Link href="/settings/cron" className="block lg:col-span-2 relative group">
-            <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-              Manage Scheduled Tasks →
-            </span>
-            <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[350px]" gradient="purple-pink">
-              <div className="p-6 relative overflow-hidden">
-                <Glow variant="bottom" className="opacity-30 group-hover:opacity-70 transition-opacity duration-700" />
-                <div className="relative z-10">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-white">Scheduled Tasks</h3>
-                    <Clock className="w-5 h-5 text-neutral-400" />
-                  </div>
-                  {cronJobs.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr>
-                            <th className="text-left text-sm font-medium text-neutral-400 pb-4">Task</th>
-                            <th className="text-left text-sm font-medium text-neutral-400 pb-4">Schedule</th>
-                            <th className="text-right text-sm font-medium text-neutral-400 pb-4">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-neutral-700">
-                          {cronJobs.slice(0, 4).map((job) => (
-                            <tr key={job.id}>
-                              <td className="py-3 text-sm font-medium text-white">
-                                <div className="truncate max-w-[180px]" title={job.name || job.job_type || "Unknown Task"}>
-                                  {job.name || job.job_type || "Unknown Task"}
-                                </div>
-                              </td>
-                              <td className="py-3 text-sm text-neutral-400">
-                                {job.schedule || "Custom"}
-                              </td>
-                              <td className="py-3 text-sm text-right">
-                                <span className={`px-2 py-1 rounded text-xs ${
-                                  job.status === 'active' 
-                                    ? 'bg-green-500/20 text-green-400' 
-                                    : 'bg-neutral-700/50 text-neutral-400'
-                                }`}>
-                                  {job.status === 'active' ? 'Active' : 'Paused'}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-48">
-                      <p className="text-sm text-neutral-400 mb-4">No scheduled tasks configured</p>
-                      <Button variant="outline" size="sm" className="bg-neutral-700 hover:bg-neutral-600">
-                        Create Scheduled Task
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </AnimatedBorderCard>
-          </Link>
-          <AnimatedBorderCard className="p-6 bg-neutral-800 border-neutral-700 shadow-lg h-[350px] flex flex-col justify-between" gradient="green-blue">
-            <div>
-              <h3 className="text-lg font-semibold text-white mb-4">Task Status</h3>
-              <div className="space-y-4">
-                {cronJobs.length > 0 ? (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-neutral-400">Active Tasks</span>
-                      <span className="text-sm font-medium text-white">
-                        {cronJobs.filter(job => job.status === 'active').length}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-neutral-400">Paused Tasks</span>
-                      <span className="text-sm font-medium text-white">
-                        {cronJobs.filter(job => job.status !== 'active').length}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-neutral-400">Successful</span>
-                      <span className="text-sm font-medium text-green-400">
-                        {cronJobs.filter(job => !job.error_message).length}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-neutral-400">Failed</span>
-                      <span className="text-sm font-medium text-red-400">
-                        {cronJobs.filter(job => job.error_message).length}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-neutral-400">No tasks to display</p>
-                )}
-              </div>
-            </div>
-            <Button variant="outline" className="bg-neutral-700 hover:bg-neutral-600 w-full" asChild>
-              <Link href="/settings/cron">Manage All Tasks</Link>
-            </Button>
-          </AnimatedBorderCard>
-        </div>
-      )}
-
-      {/* Task Overview */}
-      {visibleWidgets.taskOverview && (
-        <div className="mb-6">
-          <Link href="/tasks" className="block relative group">
-            <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-              Open Task Manager →
-            </span>
-            <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl relative overflow-hidden">
-              <GlowingEffect 
-                spread={30} 
-                glow={true} 
-                disabled={false} 
-                proximity={60} 
-                inactiveZone={0.01}
-                borderWidth={1.5}
-                movementDuration={1.5}
-                variant="default"
-              />
-              <div className="p-6 relative z-10">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-semibold text-white">Task Overview</h3>
-                  <div className="flex gap-2 items-center">
-                    <CheckCircle className="w-5 h-5 text-neutral-400" />
-                  </div>
-                </div>
-                {/* ... existing code ... */}
-                <div className="space-y-4">
-                  {tasks.length > 0 ? (
-                    <>
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div className="bg-neutral-700/20 rounded-lg p-3">
-                          <p className="text-xs text-neutral-400 mb-1">Pending Tasks</p>
-                          <p className="text-lg font-semibold text-white">
-                            {tasks.filter(task => task.progress < 100).length}
-                          </p>
-                        </div>
-                        <div className="bg-neutral-700/20 rounded-lg p-3">
-                          <p className="text-xs text-neutral-400 mb-1">Completed Tasks</p>
-                          <p className="text-lg font-semibold text-white">
-                            {tasks.filter(task => task.progress >= 100).length}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <h4 className="text-sm font-medium text-white mb-2">Recent Tasks</h4>
-                        {tasks.slice(0, 5).map(task => (
-                          <div key={task.id} className="flex items-start space-x-3 p-2 rounded-lg hover:bg-neutral-700/20">
-                            <div className="p-2 rounded-full bg-blue-500/10">
-                              {task.progress >= 100 ? (
-                                <CheckCircle className="h-4 w-4 text-green-400" />
-                              ) : (
-                                task.deadline && new Date(task.deadline) <= new Date() ? (
-                                  <AlertCircle className="h-4 w-4 text-red-400" />
-                                ) : (
-                                  <Clock className="h-4 w-4 text-blue-400" />
-                                )
-                              )}
-                            </div>
-                            <div className="flex-1 overflow-hidden">
-                              <p className="text-sm font-medium text-white truncate" title={task.title}>{task.title}</p>
-                              {task.deadline && (
-                                <p className="text-xs text-neutral-400">
-                                  Due: {new Date(task.deadline).toLocaleDateString()}
-                                </p>
-                              )}
-                              <div className="w-full bg-neutral-700 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                                <div
-                                  className={`h-full ${
-                                    task.progress >= 100 
-                                      ? 'bg-green-500' 
-                                      : task.deadline && new Date(task.deadline) <= new Date()
-                                        ? 'bg-red-500' 
-                                        : 'bg-blue-500'
-                                  }`}
-                                  style={{ width: `${task.progress}%` }}
-                                />
-                              </div>
-                            </div>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              className="p-1 h-7 text-neutral-400 hover:text-white"
-                              title="Complete Task"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleTaskComplete(task.id);
-                              }}
-                            >
-                              {task.progress >= 100 ? (
-                                <CheckCircle className="h-4 w-4 text-green-400" />
-                              ) : (
-                                <Square className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-8">
-                      <p className="text-sm text-neutral-400 mb-3">No tasks found</p>
-                      <Button variant="outline" size="sm" className="bg-neutral-700 hover:bg-neutral-600">
-                        Create New Task
-                      </Button>
-                    </div>
-                  )}
-                </div>
-          </div>
-        </Card>
-          </Link>
-      </div>
-      )}
-
-      {/* Recent Meetings */}
-      {visibleWidgets.recentMeetings && (
-        <div className="mb-6">
-          <Link href="/calendar" className="block relative group">
-            <span className="absolute right-3 top-3 text-xs text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-              Open Calendar →
-            </span>
-            <Card className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl relative overflow-hidden">
-              <GlowingEffect 
-                spread={30} 
-                glow={true} 
-                disabled={false} 
-                proximity={100} 
-                inactiveZone={0.01}
-                borderWidth={1.5}
-                movementDuration={1.5}
-                variant="default"
-              />
-              <div className="p-6 relative z-10">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-semibold text-white">Upcoming Meetings</h3>
-                  <div className="flex gap-2 items-center">
-                    <Calendar className="w-5 h-5 text-neutral-400" />
-    </div>
-                </div>
-                {/* ... existing code ... */}
-              </div>
-            </Card>
-          </Link>
-        </div>
-      )}
     </div>
   );
 } 

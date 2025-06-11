@@ -184,13 +184,13 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <AnimatedBorderCard className="bg-neutral-900/50 backdrop-blur-sm border-0 mt-8" gradient="blue-purple">
+    <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 mt-8" gradient="blue-purple">
       <div className="relative">
         <GlowingEffect 
           spread={30} 
@@ -202,21 +202,21 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
           movementDuration={1.5}
           variant="default"
         />
-        <div className="p-4 border-b border-neutral-800 flex justify-end relative z-10">
+        <div className="p-4 border-b border-border flex justify-end relative z-10">
           <div className="group relative overflow-hidden rounded-lg">
             <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-green-500 via-blue-500 to-green-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
             
-            <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
+            <div className="relative z-10 m-[1px] bg-muted rounded-lg hover:bg-muted transition-colors duration-300">
         <Select
           value={currency.value}
           onValueChange={(value) => setCurrency(CURRENCIES.find(c => c.value === value) || CURRENCIES[0])}
         >
-                <SelectTrigger className="w-32 border-0 bg-transparent text-neutral-200">
+                <SelectTrigger className="w-32 border-0 bg-transparent text-foreground">
             <SelectValue placeholder="Select currency" />
           </SelectTrigger>
-          <SelectContent className="bg-neutral-800 border-neutral-700">
+          <SelectContent className="bg-muted border-border dark:border-border">
             {CURRENCIES.map((c) => (
-              <SelectItem key={c.value} value={c.value} className="text-neutral-100">
+              <SelectItem key={c.value} value={c.value} className="text-foreground">
                 {c.label} ({c.symbol.trim()})
               </SelectItem>
             ))}
@@ -257,7 +257,7 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
                 {stageDeals.map(deal => (
                   <AlertDialog key={deal.id} onOpenChange={(open) => !open && setDealToDelete(null)}>
                       <AnimatedBorderCard
-                        className="p-3 bg-neutral-800/50 backdrop-blur-sm border-0 cursor-move hover:bg-neutral-800 transition-all group relative"
+                        className="p-3 bg-muted/50 backdrop-blur-sm border-0 cursor-move hover:bg-muted transition-all group relative"
                         gradient="purple-pink"
                       draggable
                       onDragStart={() => handleDragStart(deal.id)}
@@ -266,7 +266,7 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="absolute top-1 right-1 h-6 w-6 p-1 text-neutral-500 hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-1 right-1 h-6 w-6 p-1 text-foreground0 hover:text-red-600 dark:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={(e) => { 
                               e.stopPropagation();
                               setDealToDelete(deal);
@@ -278,17 +278,17 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
                       
                         <div className="flex flex-col gap-1 relative z-10" onClick={() => setEditingDeal(deal)}>
                           <div className="flex items-center justify-between">
-                            <h3 className="font-medium text-sm text-white overflow-hidden text-ellipsis whitespace-nowrap pr-6">
+                            <h3 className="font-medium text-sm text-foreground overflow-hidden text-ellipsis whitespace-nowrap pr-6">
                               {deal.lead_name}
                             </h3>
                           </div>
                           
-                          <div className="text-xs text-neutral-400">
+                          <div className="text-xs text-muted-foreground">
                             {deal.company}
                           </div>
                           
                           <div className="flex items-center justify-between mt-1">
-                            <div className="text-sm font-medium text-white flex items-center">
+                            <div className="text-sm font-medium text-foreground flex items-center">
                               {currency.prefix && <DollarSign className="h-3 w-3 mr-0.5" />}
                               {formatCurrency(deal.value, currency)}
                         </div>
@@ -310,10 +310,10 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
       </div>
       
       <AlertDialog open={!!dealToDelete} onOpenChange={(open) => !open && setDealToDelete(null)}>
-        <AlertDialogContent className="bg-neutral-900 border-neutral-800 text-white">
+        <AlertDialogContent className="bg-background border-border text-foreground">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Deal</AlertDialogTitle>
-            <AlertDialogDescription className="text-neutral-400">
+            <AlertDialogDescription className="text-muted-foreground">
               Are you sure you want to delete the deal "{dealToDelete?.lead_name}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -322,8 +322,8 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
               <div className="group relative overflow-hidden rounded-lg">
                 <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-neutral-700 via-neutral-600 to-neutral-700 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                 
-                <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
-                  <AlertDialogCancel className="border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white">
+                <div className="relative z-10 m-[1px] bg-muted rounded-lg hover:bg-muted transition-colors duration-300">
+                  <AlertDialogCancel className="border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground">
                     Cancel
                   </AlertDialogCancel>
                 </div>
@@ -332,8 +332,8 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
               <div className="group relative overflow-hidden rounded-lg">
                 <div className="absolute inset-0 z-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-red-500 via-red-600 to-red-500 bg-[length:200%_200%] animate-gradient rounded-lg"></div>
                 
-                <div className="relative z-10 m-[1px] bg-neutral-800 rounded-lg hover:bg-neutral-750 transition-colors duration-300">
-                  <AlertDialogAction className="border-0 bg-transparent text-neutral-200 hover:bg-transparent hover:text-white" onClick={handleDeleteDeal}>
+                <div className="relative z-10 m-[1px] bg-muted rounded-lg hover:bg-muted transition-colors duration-300">
+                  <AlertDialogAction className="border-0 bg-transparent text-foreground hover:bg-transparent hover:text-foreground" onClick={handleDeleteDeal}>
                     Delete
                   </AlertDialogAction>
                 </div>

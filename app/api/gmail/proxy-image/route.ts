@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     // Fetch the image
     const response = await fetch(imageUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Vibe/1.0; +https://solvify.se)'
+        'User-Agent': 'Mozilla/5.0 (compatible; Solvify/1.0; +https://solvify.se)'
       }
     });
     

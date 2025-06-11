@@ -82,13 +82,13 @@ export function SaleForm({
   };
 
   return (
-    <Card className="bg-neutral-900 border-neutral-800 p-6">
+    <Card className="bg-background border-border p-6">
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
           <div>
             <label
               htmlFor="customer_name"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Customer Name
             </label>
@@ -99,7 +99,7 @@ export function SaleForm({
               onChange={(e) =>
                 setFormData({ ...formData, customer_name: e.target.value })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
@@ -107,7 +107,7 @@ export function SaleForm({
           <div>
             <label
               htmlFor="amount"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Amount
             </label>
@@ -118,7 +118,7 @@ export function SaleForm({
               onChange={(e) =>
                 setFormData({ ...formData, amount: parseFloat(e.target.value) })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               min="0"
               step="0.01"
               required
@@ -128,7 +128,7 @@ export function SaleForm({
           <div>
             <label
               htmlFor="status"
-              className="block text-sm font-medium text-neutral-200 mb-1"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
               Status
             </label>
@@ -141,7 +141,7 @@ export function SaleForm({
                   status: e.target.value as "pending" | "completed" | "cancelled",
                 })
               }
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="pending">Pending</option>
               <option value="completed">Completed</option>

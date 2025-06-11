@@ -118,7 +118,7 @@ const Combobox = ({
         <Button
           variant="outline"
           aria-expanded={open}
-          className={cn('w-40 justify-between capitalize bg-neutral-800 border-neutral-700 text-neutral-100 hover:bg-neutral-700 hover:text-neutral-100', className)}
+          className={cn('w-40 justify-between capitalize bg-background border-border text-foreground hover:bg-muted hover:text-foreground', className)}
         >
           {value
             ? data.find((item) => item.value === value)?.label
@@ -126,11 +126,11 @@ const Combobox = ({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-40 p-0 bg-neutral-800 border-neutral-700">
-        <Command className="bg-neutral-800">
-          <CommandInput placeholder={labels.search} className="text-neutral-100" />
-          <CommandList className="bg-neutral-800">
-            <CommandEmpty className="text-neutral-400">{labels.empty}</CommandEmpty>
+      <PopoverContent className="w-40 p-0 bg-background border-border">
+        <Command className="bg-background">
+          <CommandInput placeholder={labels.search} className="text-foreground placeholder:text-muted-foreground" />
+          <CommandList className="bg-background">
+            <CommandEmpty className="text-muted-foreground">{labels.empty}</CommandEmpty>
             <CommandGroup>
               {data.map((item) => (
                 <CommandItem
@@ -140,7 +140,7 @@ const Combobox = ({
                     setValue(currentValue === value ? '' : currentValue);
                     setOpen(false);
                   }}
-                  className="capitalize text-neutral-100 hover:bg-neutral-700"
+                  className="capitalize text-foreground hover:bg-muted hover:text-foreground"
                 >
                   <Check
                     className={cn(
@@ -164,7 +164,7 @@ type OutOfBoundsDayProps = {
 };
 
 const OutOfBoundsDay = ({ day }: OutOfBoundsDayProps) => (
-  <div className="relative h-full w-full bg-neutral-900/50 p-1 text-muted-foreground text-xs">
+  <div className="relative h-full w-full bg-background/50 p-1 text-muted-foreground text-xs">
     {day}
   </div>
 );
@@ -209,10 +209,10 @@ export const CalendarBody = ({ features, children, onDateClick }: CalendarBodyPr
     days.push(
       <div
         key={day}
-        className="relative flex h-full w-full flex-col gap-0.5 p-1 text-muted-foreground text-xs hover:bg-neutral-700 cursor-pointer"
+        className="relative flex h-full w-full flex-col gap-0.5 p-1 text-foreground text-xs hover:bg-muted cursor-pointer"
         onClick={() => onDateClick?.(currentDate)}
       >
-        <div className="text-xs mb-0.5">{day}</div>
+        <div className="text-xs mb-0.5 text-foreground font-medium">{day}</div>
         <div className="flex-1 min-h-0 overflow-y-auto">
           {featuresForDay.slice(0, 3).map((feature) => children({ feature }))}
           {featuresForDay.length > 3 && (
@@ -245,12 +245,12 @@ export const CalendarBody = ({ features, children, onDateClick }: CalendarBodyPr
   }
 
   return (
-    <div className="grid flex-grow grid-cols-7 bg-neutral-900 rounded-md h-full">
+    <div className="grid flex-grow grid-cols-7 bg-background rounded-md h-full">
       {days.map((day, index) => (
         <div
           key={index}
           className={cn(
-            'relative overflow-hidden border-t border-r border-neutral-800',
+            'relative overflow-hidden border-t border-r border-border',
             index % 7 === 6 && 'border-r-0'
           )}
         >
@@ -378,7 +378,7 @@ export type CalendarDateProps = {
 };
 
 export const CalendarDate = ({ children }: CalendarDateProps) => (
-  <div className="flex items-center justify-between p-2 bg-neutral-900 rounded-md">{children}</div>
+  <div className="flex items-center justify-between p-2 bg-background rounded-md">{children}</div>
 );
 
 export type CalendarHeaderProps = {
@@ -389,9 +389,9 @@ export const CalendarHeader = ({ className }: CalendarHeaderProps) => {
   const { locale, startDay } = useContext(CalendarContext);
 
   return (
-    <div className={cn('grid grid-cols-7 bg-neutral-900 rounded-md', className)}>
+    <div className={cn('grid grid-cols-7 bg-background rounded-md', className)}>
       {daysForLocale(locale, startDay).map((day) => (
-        <div key={day} className="p-1.5 text-right text-neutral-400 text-xs">
+        <div key={day} className="p-1.5 text-right text-foreground text-xs font-medium">
           {day}
         </div>
       ))}
@@ -430,6 +430,6 @@ export const CalendarProvider = ({
   className,
 }: CalendarProviderProps) => (
   <CalendarContext.Provider value={{ locale, startDay }}>
-    <div className={cn('relative flex flex-col bg-neutral-900 text-neutral-100', className)}>{children}</div>
+    <div className={cn('relative flex flex-col bg-background text-foreground', className)}>{children}</div>
   </CalendarContext.Provider>
 ); 

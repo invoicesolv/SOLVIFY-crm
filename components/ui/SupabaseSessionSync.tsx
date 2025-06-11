@@ -37,13 +37,12 @@ export default function SupabaseSessionSync({
           try {
             // Skip JWT validation for Google OAuth
             // Google OAuth tokens have a different structure than Supabase tokens
-            // and will always cause "Invalid JWT structure" errors
             const isGoogleAuth = !!session.access_token && !(session as any).supabaseAccessToken;
             
             if (isGoogleAuth) {
-              // For Google OAuth logins, use anonymous auth with RLS
-              console.log("[Debug] Detected Google OAuth. Using anonymous auth with RLS policies");
-              await supabase.auth.signInAnonymously();
+              // For Google OAuth logins, use the token directly 
+              console.log("[Debug] Detected Google OAuth. Skipping authentication - will rely on RLS policies");
+              // Do NOT use anonymous auth
             } 
             else if ((session as any).supabaseAccessToken) {
               // For credential logins, we have proper Supabase tokens
@@ -56,21 +55,20 @@ export default function SupabaseSessionSync({
             
             if (error) {
                   console.error("[Debug] Error setting Supabase session:", error);
-                  // Fall back to anonymous auth
-                  await supabase.auth.signInAnonymously();
+                  // Don't fallback to anonymous auth, just log the error
+                  console.log("[Debug] Session sync failed, but continuing without authentication");
                 } else {
                   console.log("[Debug] Successfully set Supabase session");
                 }
               } catch (err) {
                 console.error("[Debug] Exception setting Supabase session:", err);
-                // Fall back to anonymous auth
-                await supabase.auth.signInAnonymously();
+                // Don't fallback to anonymous auth, just log the error
+                console.log("[Debug] Session sync failed, but continuing without authentication");
               }
             } 
             else {
-              // No valid tokens, use anonymous auth
-              console.log("[Debug] No valid tokens found. Using anonymous auth with RLS");
-              await supabase.auth.signInAnonymously();
+              // No valid tokens, don't use anonymous auth
+              console.log("[Debug] No valid tokens found. Skipping authentication");
                   }
             
             // Test queries to verify access with our RLS policies
@@ -122,13 +120,8 @@ export default function SupabaseSessionSync({
           } catch (sessionError) {
             console.error("Exception during auth:", sessionError);
             
-            // Final fallback
-            try {
-              await supabase.auth.signInAnonymously();
-              console.log("[Debug] Fallback: Using anonymous auth after error");
-            } catch (anonErr) {
-              console.error("Failed to use anonymous auth:", anonErr);
-            }
+            // Don't try anonymous auth, just log the error
+            console.log("[Debug] Authentication process failed, but continuing without authentication");
           }
         } catch (error) {
           console.error("Exception during session sync:", error);

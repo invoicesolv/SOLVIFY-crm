@@ -131,10 +131,10 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[550px] bg-neutral-800 border-neutral-700 text-white">
+      <DialogContent className="sm:max-w-[550px] bg-background border-border dark:border-border text-foreground">
         <DialogHeader>
           <DialogTitle>Create New Customer</DialogTitle>
-          <DialogDescription className="text-neutral-400">
+          <DialogDescription className="text-muted-foreground">
             Fill in the details to create a new customer
           </DialogDescription>
         </DialogHeader>
@@ -142,10 +142,10 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
         {isSuccess ? (
           <div className="py-6 flex flex-col items-center justify-center text-center">
             <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mb-4">
-              <Check className="h-6 w-6 text-green-500" />
+              <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
             </div>
-            <h3 className="text-lg font-medium text-white mb-2">Customer Created Successfully</h3>
-            <p className="text-neutral-400 max-w-sm">
+            <h3 className="text-lg font-medium text-foreground mb-2">Customer Created Successfully</h3>
+            <p className="text-muted-foreground max-w-sm">
               The customer has been added to your workspace. You can now manage their information, projects, and invoices.
             </p>
           </div>
@@ -167,7 +167,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                     placeholder="Enter customer name"
                     value={formData.name}
                     onChange={handleInputChange}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                     required
                   />
                 </div>
@@ -179,7 +179,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                     placeholder="Enter customer number"
                     value={formData.customer_number}
                     onChange={handleInputChange}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                   />
                 </div>
               </div>
@@ -194,7 +194,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                     placeholder="Enter email address"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                   />
                 </div>
                 <div className="space-y-2">
@@ -205,7 +205,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                     placeholder="Enter phone number"
                     value={formData.phone}
                     onChange={handleInputChange}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                   />
                 </div>
               </div>
@@ -218,7 +218,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                   placeholder="Street address"
                   value={formData.address}
                   onChange={handleInputChange}
-                  className="bg-neutral-700 border-neutral-600"
+                  className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                 />
               </div>
 
@@ -230,7 +230,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                   placeholder="Apartment, suite, etc."
                   value={formData.address2}
                   onChange={handleInputChange}
-                  className="bg-neutral-700 border-neutral-600"
+                  className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                 />
               </div>
 
@@ -243,7 +243,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                     placeholder="City"
                     value={formData.city}
                     onChange={handleInputChange}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                   />
                 </div>
                 <div className="space-y-2">
@@ -254,7 +254,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                     placeholder="Postal code"
                     value={formData.zip_code}
                     onChange={handleInputChange}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                   />
                 </div>
                 <div className="space-y-2">
@@ -265,7 +265,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                     placeholder="Organization number"
                     value={formData.organization_number}
                     onChange={handleInputChange}
-                    className="bg-neutral-700 border-neutral-600"
+                    className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                   />
                 </div>
               </div>
@@ -278,7 +278,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                   placeholder="Primary contact person"
                   value={formData.contact_person}
                   onChange={handleInputChange}
-                  className="bg-neutral-700 border-neutral-600"
+                  className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border"
                 />
               </div>
             </div>
@@ -288,14 +288,14 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
                 type="button"
                 variant="outline"
                 onClick={() => handleOpenChange(false)}
-                className="bg-neutral-700 border-neutral-600 text-white hover:bg-neutral-600"
+                className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border text-foreground hover:bg-gray-300 dark:hover:bg-neutral-600"
               >
                 Cancel
               </Button>
               <Button 
                 type="submit"
                 disabled={isSubmitting || !formData.name.trim()}
-                className="bg-blue-600 text-white hover:bg-blue-500"
+                className="bg-blue-600 text-foreground hover:bg-blue-500"
               >
                 {isSubmitting ? (
                   <>

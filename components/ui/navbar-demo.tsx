@@ -1,7 +1,9 @@
-import { Home, Sparkles, CreditCard, Phone, LogIn, RefreshCw, Globe, BookOpen } from 'lucide-react'
+import { Home, Sparkles, CreditCard, Phone, LogIn, RefreshCw, Globe, BookOpen, MessageSquare, LayoutDashboard } from 'lucide-react'
 import { NavBar } from "@/components/ui/tubelight-navbar"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 
 interface NavBarDemoProps {
   lang?: 'en' | 'sv'
@@ -9,47 +11,21 @@ interface NavBarDemoProps {
 
 export function NavBarDemo({ lang = 'en' }: NavBarDemoProps) {
   const pathname = usePathname()
-  const isSwedish = lang === 'sv'
+  const { data: session, status } = useSession()
   
-  // Base navigation items - public items first, then items requiring login
-  const navItemsEn = [
-    { name: 'Home', url: isSwedish ? '/sv' : '/', icon: Home },
+  // Navigation items - show Dashboard for logged-in users, Login for others
+  const navItems = [
+    { name: 'Home', url: '/', icon: Home },
     { name: 'Features', url: '#features', icon: Sparkles },
     { name: 'Replace', url: '#features', icon: RefreshCw },
     { name: 'Blog', url: '/blog', icon: BookOpen },
     { name: 'Pricing', url: '#pricing', icon: CreditCard },
     { name: 'Contact', url: '#contact', icon: Phone },
-    { name: 'Login', url: '/login', icon: LogIn }
-  ]
-  
-  const navItemsSv = [
-    { name: 'Hem', url: '/sv', icon: Home },
-    { name: 'Funktioner', url: '#features', icon: Sparkles },
-    { name: 'Ersätter', url: '#features', icon: RefreshCw },
-    { name: 'Blogg', url: '/blog/sv', icon: BookOpen },
-    { name: 'Priser', url: '#pricing', icon: CreditCard },
-    { name: 'Kontakt', url: '#contact', icon: Phone },
-    { name: 'Logga in', url: '/login', icon: LogIn }
-  ]
-  
-  // Add language switcher with appropriate redirection
-  const targetPath = isSwedish ? '/' : '/sv'
-  
-  // Create standard nav items
-  const currentNavItems = isSwedish ? navItemsSv : navItemsEn
-  
-  // Use actual flag emoji in the name
-  const flagEmoji = isSwedish ? '🇺🇸' : '🇸🇪'
-  
-  // Add language switcher with flag emoji
-  const itemsWithLanguageSwitcher = [
-    ...currentNavItems,
-    {
-      name: flagEmoji,  // Use the emoji as the name so it shows in desktop mode
-      url: targetPath,
-      icon: Globe       // Use standard Globe icon for mobile
-    }
+    // Show Dashboard if logged in, Login if not
+    session?.user 
+      ? { name: session.user.name ? `Dashboard (${session.user.name.split(' ')[0]})` : 'Dashboard', url: '/dashboard', icon: LayoutDashboard }
+      : { name: 'Login', url: '/login', icon: LogIn }
   ]
 
-  return <NavBar items={itemsWithLanguageSwitcher} />
+  return <NavBar items={navItems} />
 } 

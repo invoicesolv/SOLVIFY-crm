@@ -268,7 +268,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
         <div className="flex items-center gap-4">
           <Link
             href="/customers"
-            className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Customers
@@ -280,16 +280,16 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-neutral-400"></div>
           </div>
         ) : error ? (
-          <div className="text-center py-8 text-neutral-400">
+          <div className="text-center py-8 text-muted-foreground">
             Failed to load customer details. Please try again later.
           </div>
         ) : customer ? (
           <>
-            <Card className="bg-neutral-800 border-neutral-700 p-6">
+            <Card className="bg-background border-border dark:border-border p-6">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h1 className="text-2xl font-bold text-white">{customer.CustomerName}</h1>
-                  <p className="text-neutral-400 mt-1">
+                  <h1 className="text-2xl font-bold text-foreground">{customer.CustomerName}</h1>
+                  <p className="text-muted-foreground mt-1">
                     Customer #{customer.CustomerNumber}
                     {!customer.CustomerNumber.includes('-') ? null : (
                       <Button 
@@ -297,7 +297,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
                         size="sm" 
                         onClick={findCustomerByName}
                         disabled={isFindingByName}
-                        className="ml-2 h-7 px-2 bg-transparent border-neutral-600 text-amber-400 hover:bg-neutral-700"
+                        className="ml-2 h-7 px-2 bg-transparent border-gray-400 dark:border-border text-amber-400 hover:bg-gray-200 dark:bg-muted"
                       >
                         {isFindingByName ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -313,7 +313,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
                     variant="outline"
                     size="sm"
                     onClick={handleEdit}
-                    className="bg-transparent border-neutral-600 text-neutral-300 hover:bg-neutral-700"
+                    className="bg-transparent border-gray-400 dark:border-border text-foreground dark:text-neutral-300 hover:bg-gray-200 dark:bg-muted"
                   >
                     <Edit2 className="h-4 w-4 mr-2" /> Edit
                   </Button>
@@ -321,7 +321,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
                     variant="outline"
                     size="sm"
                     onClick={() => setDeleteConfirmOpen(true)}
-                    className="bg-transparent border-neutral-600 text-red-400 hover:bg-red-900/30 hover:text-red-300"
+                    className="bg-transparent border-gray-400 dark:border-border text-red-400 hover:bg-red-900/30 hover:text-red-300"
                   >
                     <Trash2 className="h-4 w-4 mr-2" /> Delete
                   </Button>
@@ -331,18 +331,18 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
               <div className="mb-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div>
-                    <h2 className="text-lg font-semibold text-white mb-4">Customer Information</h2>
+                    <h2 className="text-lg font-semibold text-foreground mb-4">Customer Information</h2>
                     <div className="space-y-4">
                       <div>
-                        <p className="text-sm text-neutral-400">Email</p>
+                        <p className="text-sm text-muted-foreground">Email</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <p className="text-white">{customer.Email || 'No email on record'}</p>
+                          <p className="text-foreground">{customer.Email || 'No email on record'}</p>
                           <Button 
                             variant="outline" 
                             size="sm" 
                             onClick={fetchEmailFromFortnox}
                             disabled={isUpdatingEmail}
-                            className="ml-2 h-7 px-2 bg-transparent border-neutral-600 text-neutral-300 hover:bg-neutral-700"
+                            className="ml-2 h-7 px-2 bg-transparent border-gray-400 dark:border-border text-foreground dark:text-neutral-300 hover:bg-gray-200 dark:bg-muted"
                           >
                             {isUpdatingEmail ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
@@ -355,15 +355,15 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
 
                       {customer.Phone && (
                         <div>
-                          <p className="text-sm text-neutral-400">Phone</p>
-                          <p className="text-white">{customer.Phone}</p>
+                          <p className="text-sm text-muted-foreground">Phone</p>
+                          <p className="text-foreground">{customer.Phone}</p>
                         </div>
                       )}
 
                       {(customer.Address || customer.Address2 || customer.City || customer.ZipCode || customer.Country) && (
                         <div>
-                          <p className="text-sm text-neutral-400">Address</p>
-                          <div className="text-white">
+                          <p className="text-sm text-muted-foreground">Address</p>
+                          <div className="text-foreground">
                             {customer.Address && <p>{customer.Address}</p>}
                             {customer.Address2 && <p>{customer.Address2}</p>}
                             {(customer.ZipCode || customer.City) && (
@@ -376,15 +376,15 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
 
                       {customer.ContactPerson && (
                         <div>
-                          <p className="text-sm text-neutral-400">Contact Person</p>
-                          <p className="text-white">{customer.ContactPerson}</p>
+                          <p className="text-sm text-muted-foreground">Contact Person</p>
+                          <p className="text-foreground">{customer.ContactPerson}</p>
                         </div>
                       )}
 
                       {customer.OrganizationNumber && (
                         <div>
-                          <p className="text-sm text-neutral-400">Organization Number</p>
-                          <p className="text-white">{customer.OrganizationNumber}</p>
+                          <p className="text-sm text-muted-foreground">Organization Number</p>
+                          <p className="text-foreground">{customer.OrganizationNumber}</p>
                         </div>
                       )}
                     </div>
@@ -393,49 +393,49 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <Card className="bg-neutral-700 border-neutral-600 p-4">
-                  <p className="text-sm text-neutral-400">Total Revenue</p>
-                  <p className="text-xl font-semibold text-white mt-1">
+                <Card className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border p-4">
+                  <p className="text-sm text-muted-foreground">Total Revenue</p>
+                  <p className="text-xl font-semibold text-foreground mt-1">
                     {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
                       .format(customer.Total)}
                   </p>
                 </Card>
-                <Card className="bg-neutral-700 border-neutral-600 p-4">
-                  <p className="text-sm text-neutral-400">Total Invoices</p>
-                  <p className="text-xl font-semibold text-white mt-1">{customer.InvoiceCount}</p>
+                <Card className="bg-gray-200 dark:bg-muted border-gray-400 dark:border-border p-4">
+                  <p className="text-sm text-muted-foreground">Total Invoices</p>
+                  <p className="text-xl font-semibold text-foreground mt-1">{customer.InvoiceCount}</p>
                 </Card>
               </div>
             </Card>
 
             <div>
-              <h2 className="text-lg font-semibold text-white mb-4">Invoice History</h2>
-              <Card className="bg-neutral-800 border-neutral-700">
+              <h2 className="text-lg font-semibold text-foreground mb-4">Invoice History</h2>
+              <Card className="bg-background border-border dark:border-border">
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-neutral-700">
-                        <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Invoice Number</th>
-                        <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Date</th>
-                        <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Due Date</th>
-                        <th className="text-right py-4 px-6 text-sm font-medium text-neutral-400">Amount</th>
-                        <th className="text-right py-4 px-6 text-sm font-medium text-neutral-400">Balance</th>
+                      <tr className="border-b border-border dark:border-border">
+                        <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Invoice Number</th>
+                        <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Date</th>
+                        <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Due Date</th>
+                        <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Amount</th>
+                        <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Balance</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-700">
                       {customer.Invoices.map((invoice) => (
                         <tr key={invoice.DocumentNumber} className="hover:bg-neutral-750 transition-colors">
-                          <td className="py-4 px-6 text-sm text-white">{invoice.DocumentNumber}</td>
-                          <td className="py-4 px-6 text-sm text-neutral-400">
+                          <td className="py-4 px-6 text-sm text-foreground">{invoice.DocumentNumber}</td>
+                          <td className="py-4 px-6 text-sm text-muted-foreground">
                             {new Date(invoice.InvoiceDate).toLocaleDateString()}
                           </td>
-                          <td className="py-4 px-6 text-sm text-neutral-400">
+                          <td className="py-4 px-6 text-sm text-muted-foreground">
                             {new Date(invoice.DueDate).toLocaleDateString()}
                           </td>
-                          <td className="py-4 px-6 text-sm text-right text-white">
+                          <td className="py-4 px-6 text-sm text-right text-foreground">
                             {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: invoice.Currency })
                               .format(invoice.Total)}
                           </td>
-                          <td className="py-4 px-6 text-sm text-right text-white">
+                          <td className="py-4 px-6 text-sm text-right text-foreground">
                             {invoice.Balance}
                           </td>
                         </tr>
@@ -451,10 +451,10 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-neutral-800 border-neutral-700 text-white">
+        <DialogContent className="sm:max-w-[425px] bg-background border-border dark:border-border text-foreground">
           <DialogHeader>
             <DialogTitle>Delete Customer</DialogTitle>
-            <DialogDescription className="text-neutral-400">
+            <DialogDescription className="text-muted-foreground">
               Are you sure you want to delete {customer?.CustomerName}? This action cannot be undone.
               {customer && customer.Total > 0 && (
                 <div className="mt-2 bg-destructive/10 p-3 rounded-md text-destructive border border-destructive">
@@ -467,14 +467,14 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
           <DialogFooter>
             <Button 
               onClick={() => setDeleteConfirmOpen(false)}
-              className="bg-neutral-700 hover:bg-neutral-600 border-neutral-600"
+              className="bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 border-gray-400 dark:border-border"
             >
               Cancel
             </Button>
             <Button 
               onClick={confirmDelete}
               disabled={isDeleting}
-              className="bg-red-900/80 hover:bg-red-900 text-white"
+              className="bg-red-900/80 hover:bg-red-900 text-foreground"
             >
               {isDeleting ? (
                 <>

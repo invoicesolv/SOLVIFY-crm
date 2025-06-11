@@ -2,36 +2,35 @@ import Script from 'next/script'
 import { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: "Vibe CRM | Modern CRM for Growing Businesses",
-  description: "Vibe CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
+  title: "Solvify CRM | Modern CRM for Growing Businesses",
+  description: "Solvify CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
   keywords: "CRM, customer management, project management, invoicing, accounting",
   alternates: {
-    canonical: 'https://vibe.solvify.com/landing',
+    canonical: 'https://crm.solvify.com/',
     languages: {
-      'en-US': 'https://vibe.solvify.com/landing',
-      'sv-SE': 'https://vibe.solvify.com/landing/sv',
+      'en-US': 'https://crm.solvify.com/',
     },
   },
   openGraph: {
-    title: "Vibe CRM | Modern CRM for Growing Businesses",
-    description: "Vibe CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
+    title: "Solvify CRM | Modern CRM for Growing Businesses",
+    description: "Solvify CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
     type: "website",
     locale: 'en_US',
-    url: 'https://vibe.solvify.com/landing',
+    url: 'https://crm.solvify.com/',
     images: [
       {
-        url: 'https://vibe.solvify.com/og-image.jpg',
+        url: 'https://crm.solvify.com/og-image.jpg',
         width: 1200,
         height: 630,
-        alt: 'Vibe CRM Dashboard',
+        alt: 'Solvify CRM Dashboard',
       }
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: "Vibe CRM | Modern CRM for Growing Businesses",
-    description: "Vibe CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
-    images: ['https://vibe.solvify.com/twitter-image.jpg'],
+    title: "Solvify CRM | Modern CRM for Growing Businesses",
+    description: "Solvify CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
+    images: ['https://Solvify.solvify.com/twitter-image.jpg'],
   },
 };
 
@@ -44,7 +43,7 @@ export default function LandingLayout({
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    "name": "Vibe CRM",
+    "name": "Solvify CRM",
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web",
     "offers": {
@@ -58,7 +57,7 @@ export default function LandingLayout({
       "ratingValue": "4.8",
       "ratingCount": "127"
     },
-    "description": "Vibe CRM consolidates all your essential business tools into one powerful platform, saving you time and money."
+    "description": "Solvify CRM consolidates all your essential business tools into one powerful platform, saving you time and money."
   };
 
   // Organization structured data
@@ -66,8 +65,8 @@ export default function LandingLayout({
     "@context": "https://schema.org",
     "@type": "Organization",
     "name": "Solvify AB",
-    "url": "https://vibe.solvify.com",
-    "logo": "https://vibe.solvify.com/S-logo.png",
+    "url": "https://Solvify.solvify.com",
+    "logo": "https://Solvify.solvify.com/S-logo.png",
     "sameAs": [
       "https://www.linkedin.com/company/solvify",
       "https://twitter.com/solvify"

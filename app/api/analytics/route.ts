@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import authOptions from "@/lib/auth";
 import { supabase } from '@/lib/supabase';
+import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,6 +77,41 @@ export async function POST(request: NextRequest) {
     };
     const missingTokens: string[] = [];
 
+    // MULTI-LAYERED TOKEN RETRIEVAL APPROACH
+    console.log(`[Analytics API] Using multi-layered token retrieval approach for user ${userId}`);
+    
+    // 1. Try RPC function first (direct lookup from database function with user ID)
+    const { data: savedTokens, error: tokenError } = await supabase.rpc('get_service_token', { 
+      service_name: 'google-analytics', 
+      current_user_id: userId 
+    });
+    
+    if (savedTokens && savedTokens.length > 0) {
+      console.log(`[Analytics API] Found direct token via RPC for analytics for user ${userId}`);
+      tokens['google-analytics'] = savedTokens[0].access_token;
+      
+      // If we have analytics token, try to use the same for search console
+      const { data: searchTokens, error: searchError } = await supabase.rpc('get_service_token', { 
+        service_name: 'google-searchconsole',
+        current_user_id: userId
+      });
+      
+      if (searchTokens && searchTokens.length > 0) {
+        console.log(`[Analytics API] Found direct token for search console for user ${userId}`);
+        tokens['google-searchconsole'] = searchTokens[0].access_token;
+      } else {
+        // Use analytics token as fallback for search console
+        console.log(`[Analytics API] Using analytics token for search console as fallback for user ${userId}`);
+        tokens['google-searchconsole'] = tokens['google-analytics'];
+      }
+    } else {
+      // 2. Try direct session access token if available
+      if (session.access_token) {
+        console.log(`[Analytics API] Using session access token as fallback`);
+        tokens['google-analytics'] = session.access_token;
+        tokens['google-searchconsole'] = session.access_token;
+      } else {
+        // 3. Try standard integrations table lookup
     for (const service of requiredTokens) {
       console.log(`[Analytics API] Fetching token for service: ${service}`);
       const { data: integrations, error } = await supabase
@@ -95,7 +131,58 @@ export async function POST(request: NextRequest) {
       const latestIntegration = integrations[0];
       console.log(`[Analytics API] Found token for ${service}, expires at: ${latestIntegration.expires_at}, scopes:`, latestIntegration.scopes);
       tokens[service] = latestIntegration.access_token;
+        }
+        
+        // 4. Try user-specific tokens table as a last resort
+        if (!tokens['google-analytics'] || !tokens['google-searchconsole']) {
+          const { data: userTokens, error: userTokensError } = await supabase
+            .from('user_oauth_tokens')
+            .select('access_token, service_name')
+            .eq('user_id', userId)
+            .in('service_name', ['google-analytics', 'google-searchconsole']);
+            
+          if (!userTokensError && userTokens && userTokens.length > 0) {
+            console.log(`[Analytics API] Found ${userTokens.length} tokens in user_oauth_tokens table`);
+            
+            for (const tokenRecord of userTokens) {
+              if (tokenRecord.service_name && tokenRecord.access_token) {
+                tokens[tokenRecord.service_name as ServiceName] = tokenRecord.access_token;
+                console.log(`[Analytics API] Using token from user_oauth_tokens for ${tokenRecord.service_name}`);
+                
+                // Remove from missing tokens list if it was there
+                const index = missingTokens.indexOf(tokenRecord.service_name);
+                if (index !== -1) {
+                  missingTokens.splice(index, 1);
+                }
+              }
+            }
+          } else {
+            console.log(`[Analytics API] No tokens found in user_oauth_tokens table:`, userTokensError);
+          }
+        }
+      }
     }
+
+    // Check if analytics token needs to be refreshed
+    const analyticsRefreshedToken = await getRefreshedGoogleToken(userId, 'google-analytics');
+    if (analyticsRefreshedToken) {
+      console.log('[Analytics API] Using refreshed Analytics token');
+      tokens['google-analytics'] = analyticsRefreshedToken;
+    }
+    
+    // Check if search console token needs to be refreshed
+    const searchConsoleRefreshedToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');
+    if (searchConsoleRefreshedToken) {
+      console.log('[Analytics API] Using refreshed Search Console token');
+      tokens['google-searchconsole'] = searchConsoleRefreshedToken;
+    }
+
+    // No hardcoded fallback - use only authenticated tokens
+    console.log(`[Analytics API] Token status:`, {
+      hasAnalyticsToken: !!tokens['google-analytics'],
+      hasSearchConsoleToken: !!tokens['google-searchconsole'],
+      missingTokens
+    });
 
     if (missingTokens.length > 0) {
       console.log('[Analytics API] Missing access tokens for:', missingTokens.join(', '));
@@ -117,22 +204,46 @@ export async function POST(request: NextRequest) {
       console.warn('Failed to fetch Analytics properties:', error);
     }
 
-    // Try fetching Analytics data
+    // Try fetching Analytics data with error handling for token refresh
     let analyticsData: AnalyticsResult | null = null;
-    let analyticsError = null;
+    let analyticsError: string | null = null;
+    
     try {
-      console.log('Fetching analytics data for property:', propertyId);
-      analyticsData = await fetchAnalyticsData(tokens['google-analytics'], dates.startDate, dates.endDate, propertyId);
+      if (propertyId) {
+        // Ensure propertyId is just the ID number, without the 'properties/' prefix
+        // as fetchAnalyticsData will handle the formatting
+        const cleanPropertyId = propertyId.replace('properties/', '');
+        console.log('Fetching analytics data for property:', cleanPropertyId);
+        analyticsData = await fetchAnalyticsData(tokens['google-analytics'], dates.startDate, dates.endDate, cleanPropertyId);
       console.log('Analytics data overview:', analyticsData?.overview);
-    } catch (error: any) {
-      analyticsError = error.message;
-      console.error('Analytics fetch error:', {
-        error: error.message,
-        stack: error.stack,
-        propertyId,
-        startDate: dates.startDate,
-        endDate: dates.endDate
-      });
+      } else {
+        console.log('No propertyId provided, skipping analytics data fetch');
+      }
+    } catch (apiError: any) {
+      // Handle token refresh on API error
+      try {
+        analyticsError = apiError.message || 'Unknown analytics error';
+        await handleTokenRefreshOnError(
+          apiError,
+          userId,
+          'google-analytics',
+          async (refreshedToken) => {
+            if (propertyId) {
+              const cleanPropertyId = propertyId.replace('properties/', '');
+              console.log('[Analytics API] Retrying with refreshed token for property:', cleanPropertyId);
+              analyticsData = await fetchAnalyticsData(refreshedToken, dates.startDate, dates.endDate, cleanPropertyId);
+              analyticsError = null; // Clear error if successful
+            }
+          }
+        );
+      } catch (retryError) {
+        console.error('[Analytics API] Error even after token refresh:', retryError);
+        if (retryError instanceof Error) {
+          analyticsError = retryError.message;
+        } else {
+          analyticsError = 'Error fetching analytics data after token refresh';
+        }
+      }
     }
     
     // Then try fetching Search Console data, but only if siteUrl is provided
@@ -377,6 +488,24 @@ interface AnalyticsResult {
     }>;
   };
   byDate: DateMetrics[];
+  byDatePrevious?: DateMetrics[];
+  previousPeriod?: {
+    totalUsers: number;
+    activeUsers: number;
+    newUsers: number;
+    pageViews: number;
+    sessions: number;
+    bounceRate: number;
+    engagementRate: number;
+    avgSessionDuration: number;
+    conversions?: number;
+    revenue?: number;
+    conversionRate?: number;
+    dateRange: {
+      start: string;
+      end: string;
+    };
+  };
   bySource: Record<string, SourceMetrics>;
   byDevice: Record<string, DeviceMetrics>;
   byConversion: Record<string, {
@@ -423,10 +552,15 @@ interface AnalyticsProperty {
 
 async function fetchAnalyticsData(accessToken: string, startDate: string, endDate: string, propertyId: string): Promise<AnalyticsResult> {
   console.log('[Analytics API] Fetching analytics data:', { propertyId, startDate, endDate });
+  
+  // Ensure propertyId has the correct format for GA4 API
+  // The API expects a full ID, but we need to make sure we don't duplicate the prefix
+  const formattedPropertyId = propertyId.startsWith('properties/') ? propertyId : `properties/${propertyId}`;
+  console.log(`Fetching analytics data for property: ${formattedPropertyId}`);
 
   // Overview report
   const overviewResponse = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
     {
       method: 'POST',
       headers: {
@@ -464,7 +598,7 @@ async function fetchAnalyticsData(accessToken: string, startDate: string, endDat
 
   // Conversion events report (preserved from existing code)
   const conversionResponse = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
     {
       method: 'POST',
       headers: {
@@ -511,7 +645,7 @@ async function fetchAnalyticsData(accessToken: string, startDate: string, endDat
 
   // Get device breakdown data
   const deviceResponse = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
     {
       method: 'POST',
       headers: {
@@ -569,7 +703,7 @@ async function fetchAnalyticsData(accessToken: string, startDate: string, endDat
 
   // Get conversion data by device
   const conversionByDeviceResponse = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
     {
       method: 'POST',
       headers: {
@@ -642,7 +776,7 @@ async function fetchAnalyticsData(accessToken: string, startDate: string, endDat
 
   // Get source breakdown data
   const sourceResponse = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
     {
       method: 'POST',
       headers: {
@@ -699,6 +833,176 @@ async function fetchAnalyticsData(accessToken: string, startDate: string, endDat
     }
   });
 
+  // Get daily trend data for charts - current period
+  const dailyTrendResponse = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: 'date' }],
+        metrics: [
+          { name: 'totalUsers' },
+          { name: 'activeUsers' },
+          { name: 'newUsers' },
+          { name: 'screenPageViews' },
+          { name: 'sessions' }
+        ],
+        orderBys: [{ dimension: { dimensionName: 'date' } }]
+      })
+    }
+  );
+
+  if (!dailyTrendResponse.ok) {
+    throw new Error(`Failed to fetch daily trend data: ${dailyTrendResponse.statusText}`);
+  }
+
+  const dailyTrendData = await dailyTrendResponse.json();
+  console.log('[Analytics API] Daily trend data received:', dailyTrendData);
+
+  // Process daily trend data
+  const byDate: DateMetrics[] = dailyTrendData.rows?.map((row: any) => {
+    const date = row.dimensionValues[0].value;
+    const [totalUsers, activeUsers, newUsers, pageViews, sessions] = row.metricValues.map((m: any) => parseInt(m.value));
+    
+    return {
+      date: `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`, // Format as YYYY-MM-DD
+      totalUsers,
+      activeUsers,
+      newUsers,
+      pageViews,
+      sessions
+    };
+  }) || [];
+
+  // Calculate start date for previous period (same length as current period)
+  const currentStartDate = new Date(startDate);
+  const currentEndDate = new Date(endDate);
+  const daysDiff = Math.floor((currentEndDate.getTime() - currentStartDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  const prevStartDate = new Date(currentStartDate);
+  prevStartDate.setDate(prevStartDate.getDate() - daysDiff - 1);
+  const prevEndDate = new Date(currentStartDate);
+  prevEndDate.setDate(prevEndDate.getDate() - 1);
+  
+  const formattedPrevStartDate = formatDate(prevStartDate);
+  const formattedPrevEndDate = formatDate(prevEndDate);
+
+  // Get previous period data for comparison
+  const prevPeriodResponse = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        dateRanges: [{ startDate: formattedPrevStartDate, endDate: formattedPrevEndDate }],
+        metrics: [
+          { name: 'totalUsers' },
+          { name: 'activeUsers' },
+          { name: 'newUsers' },
+          { name: 'screenPageViews' },
+          { name: 'sessions' },
+          { name: 'bounceRate' },
+          { name: 'userEngagementDuration' },
+          { name: 'engagementRate' }
+        ]
+      })
+    }
+  );
+
+  if (!prevPeriodResponse.ok) {
+    console.warn(`Failed to fetch previous period data: ${prevPeriodResponse.statusText}`);
+  }
+
+  // Process previous period data if available
+  let previousPeriod: AnalyticsResult['previousPeriod'] = undefined;
+  try {
+    const prevPeriodData = await prevPeriodResponse.json();
+    console.log('[Analytics API] Previous period data received:', prevPeriodData);
+    
+    if (prevPeriodData.rows && prevPeriodData.rows.length > 0) {
+      const prevMetrics = prevPeriodData.rows[0].metricValues;
+      const [
+        prevTotalUsers,
+        prevActiveUsers,
+        prevNewUsers,
+        prevPageViews,
+        prevSessions,
+        prevBounceRate,
+        prevEngagementDuration,
+        prevEngagementRate
+      ] = prevMetrics.map((m: { value: string }) => parseFloat(m.value));
+      
+      previousPeriod = {
+        totalUsers: prevTotalUsers,
+        activeUsers: prevActiveUsers,
+        newUsers: prevNewUsers,
+        pageViews: prevPageViews,
+        sessions: prevSessions,
+        bounceRate: prevBounceRate,
+        engagementRate: prevEngagementRate,
+        avgSessionDuration: prevSessions > 0 ? prevEngagementDuration / prevSessions : 0,
+        dateRange: {
+          start: formattedPrevStartDate,
+          end: formattedPrevEndDate
+        }
+      };
+    }
+  } catch (error) {
+    console.error('[Analytics API] Error processing previous period data:', error);
+  }
+
+  // Get daily trend data for previous period
+  const prevDailyTrendResponse = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/${formattedPropertyId}:runReport`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        dateRanges: [{ startDate: formattedPrevStartDate, endDate: formattedPrevEndDate }],
+        dimensions: [{ name: 'date' }],
+        metrics: [
+          { name: 'totalUsers' },
+          { name: 'activeUsers' },
+          { name: 'newUsers' },
+          { name: 'screenPageViews' },
+          { name: 'sessions' }
+        ],
+        orderBys: [{ dimension: { dimensionName: 'date' } }]
+      })
+    }
+  );
+
+  let byDatePrevious: DateMetrics[] = [];
+  if (prevDailyTrendResponse.ok) {
+    const prevDailyTrendData = await prevDailyTrendResponse.json();
+    console.log('[Analytics API] Previous period daily trend data received:', prevDailyTrendData);
+    
+    byDatePrevious = prevDailyTrendData.rows?.map((row: any) => {
+      const date = row.dimensionValues[0].value;
+      const [totalUsers, activeUsers, newUsers, pageViews, sessions] = row.metricValues.map((m: any) => parseInt(m.value));
+      
+      return {
+        date: `${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}`, // Format as YYYY-MM-DD
+        totalUsers,
+        activeUsers,
+        newUsers,
+        pageViews,
+        sessions
+      };
+    }) || [];
+  }
+
   // Return combined results
   return {
     overview: {
@@ -715,7 +1019,9 @@ async function fetchAnalyticsData(accessToken: string, startDate: string, endDat
       conversionRate,
       conversionEvents
     },
-    byDate: [], // These will be populated by other reports if needed
+    byDate,
+    byDatePrevious,
+    previousPeriod,
     bySource,
     byDevice,
     byConversion,

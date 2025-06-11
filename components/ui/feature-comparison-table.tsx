@@ -194,11 +194,11 @@ export function FeatureComparisonTable({
   const plansToDisplay = plans.length > 0 ? plans : defaultPlans;
 
   return (
-    <section className="py-16 bg-neutral-950 overflow-hidden">
+    <section className="py-16 bg-background overflow-hidden">
       <div className="container mx-auto px-4">
         <div className="text-center mb-12">
           <motion.h2 
-            className="text-3xl md:text-4xl font-bold text-white mb-4"
+            className="text-3xl md:text-4xl font-bold text-foreground mb-4"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -207,7 +207,7 @@ export function FeatureComparisonTable({
             {displayTitle}
           </motion.h2>
           <motion.p 
-            className="text-neutral-400 max-w-2xl mx-auto"
+            className="text-muted-foreground max-w-2xl mx-auto"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -224,40 +224,40 @@ export function FeatureComparisonTable({
           viewport={{ once: true }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <div className="min-w-full inline-block align-middle border border-neutral-800 rounded-xl overflow-hidden">
+          <div className="min-w-full inline-block align-middle border border-border rounded-xl overflow-hidden">
             <table className="min-w-full divide-y divide-neutral-800">
-              <thead className="bg-neutral-900">
+              <thead className="bg-background">
                 <tr>
-                  <th scope="col" className="px-6 py-5 text-left text-xs font-medium text-neutral-400 uppercase tracking-wider w-1/4">
+                  <th scope="col" className="px-6 py-5 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-1/4">
                     {isSwedish ? "Funktion" : "Feature"}
                   </th>
                   {plansToDisplay.map((plan) => (
                     <th 
                       key={plan.id} 
                       scope="col" 
-                      className="px-6 py-5 text-center text-xs font-medium text-neutral-400 uppercase tracking-wider"
+                      className="px-6 py-5 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider"
                     >
                       {plan.name}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-800 bg-neutral-900/50">
+              <tbody className="divide-y divide-neutral-800 bg-background/50">
                 {featuresToDisplay.map((feature, index) => (
                   <tr 
                     key={index}
-                    className={`${hoveredRow === `row-${index}` ? 'bg-neutral-800/40' : ''} transition-colors duration-150`}
+                    className={`${hoveredRow === `row-${index}` ? 'bg-background/40' : ''} transition-colors duration-150`}
                     onMouseEnter={() => setHoveredRow(`row-${index}`)}
                     onMouseLeave={() => setHoveredRow(null)}
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white flex items-center gap-2">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground flex items-center gap-2">
                       {feature.name}
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <HelpCircle className="h-4 w-4 text-neutral-500 hover:text-blue-400 cursor-help transition-colors" />
+                            <HelpCircle className="h-4 w-4 text-foreground0 hover:text-blue-400 cursor-help transition-colors" />
                           </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-xs bg-neutral-900 border-neutral-700 text-neutral-200 p-4">
+                          <TooltipContent side="right" className="max-w-xs bg-background border-border dark:border-border text-gray-800 dark:text-foreground p-4">
                             <p>{feature.description}</p>
                           </TooltipContent>
                         </Tooltip>
@@ -273,12 +273,12 @@ export function FeatureComparisonTable({
                           {isIncluded ? (
                             <div className="flex justify-center">
                               <div className="h-6 w-6 rounded-full bg-blue-500/20 flex items-center justify-center">
-                                <Check className="h-4 w-4 text-blue-500" />
+                                <Check className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                               </div>
                             </div>
                           ) : (
                             <div className="flex justify-center">
-                              <div className="h-6 w-6 rounded-full bg-neutral-800 flex items-center justify-center">
+                              <div className="h-6 w-6 rounded-full bg-background flex items-center justify-center">
                                 <X className="h-4 w-4 text-neutral-600" />
                               </div>
                             </div>

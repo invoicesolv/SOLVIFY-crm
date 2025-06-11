@@ -180,18 +180,18 @@ export default function CustomersPage() {
 
   return (
     <SidebarDemo>
-      <div className="p-6 flex-1 overflow-auto bg-neutral-950">
+      <div className="p-6 flex-1 overflow-auto bg-background">
         <div className="max-w-7xl mx-auto">
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-white">Customers</h1>
-              <p className="text-neutral-400 mt-1">Manage your customers</p>
+              <h1 className="text-2xl font-bold text-foreground">Customers</h1>
+              <p className="text-muted-foreground mt-1">Manage your customers</p>
             </div>
             <div className="flex gap-2">
               <Button 
                 onClick={deleteAllCustomers}
                 disabled={isDeletingCustomers || !workspaceId}
-                className="bg-red-800 hover:bg-red-700 border-red-700 text-white"
+                className="bg-red-800 hover:bg-red-700 border-red-700 text-foreground"
               >
                 {isDeletingCustomers ? (
                   <>
@@ -208,7 +208,7 @@ export default function CustomersPage() {
               <Button 
                 onClick={removeCustomersWithoutEmails}
                 disabled={isRemovingNoEmails || !workspaceId}
-                className="bg-amber-800 hover:bg-amber-700 border-amber-700 text-white"
+                className="bg-amber-800 hover:bg-amber-700 border-amber-700 text-foreground"
               >
                 {isRemovingNoEmails ? (
                   <>
@@ -225,7 +225,7 @@ export default function CustomersPage() {
               <Button 
                 onClick={syncCustomerEmails}
                 disabled={isSyncingEmails || !workspaceId}
-                className="bg-blue-800 hover:bg-blue-700 border-blue-700 text-white"
+                className="bg-blue-800 hover:bg-blue-700 border-blue-700 text-foreground"
               >
                 {isSyncingEmails ? (
                   <>
@@ -242,7 +242,7 @@ export default function CustomersPage() {
               <Button 
                 onClick={fetchAllFortnoxCustomers}
                 disabled={isCheckingFortnox || !workspaceId}
-                className="bg-neutral-700 hover:bg-neutral-600 border-neutral-600"
+                className="bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 border-gray-400 dark:border-border"
               >
                 {isCheckingFortnox ? (
                   <>

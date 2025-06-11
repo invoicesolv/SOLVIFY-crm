@@ -137,11 +137,14 @@ async function getLoopiaDomainsForAccount(account: typeof LOOPIA_ACCOUNTS[0]): P
   });
 }
 
-async function saveDomainDetails(details: LoopiaDomainDetails) {
+async function saveDomainDetails(details: LoopiaDomainDetails, workspaceId?: string) {
   try {
     const { normalized, display } = normalizeDomain(details.domain);
     console.log('Saving domain details:', { original: details.domain, normalized, display });
 
+    // Use provided workspace ID or get from session/context
+    const targetWorkspaceId = workspaceId || '37f99e9d-a2b6-4900-8cfb-fe1e58afa592'; // fallback for now
+    
     const { error } = await supabase
       .from('domains')
       .upsert({
@@ -156,7 +159,7 @@ async function saveDomainDetails(details: LoopiaDomainDetails) {
         loopia_account: details.account,
         customer_number: details.customer_number,
         last_updated: new Date().toISOString(),
-        workspace_id: '37f99e9d-a2b6-4900-8cfb-fe1e58afa592'
+        workspace_id: targetWorkspaceId
       }, {
         onConflict: 'domain,workspace_id,source'
       });
@@ -174,7 +177,7 @@ async function saveDomainDetails(details: LoopiaDomainDetails) {
   }
 }
 
-async function getLoopiaDomainsDetails(domains: string[], account: typeof LOOPIA_ACCOUNTS[0], signal: AbortSignal): Promise<LoopiaDomainDetails[]> {
+async function getLoopiaDomainsDetails(domains: string[], account: typeof LOOPIA_ACCOUNTS[0], signal: AbortSignal, workspaceId?: string): Promise<LoopiaDomainDetails[]> {
   const domainDetails: LoopiaDomainDetails[] = [];
   let processedCount = 0;
 
@@ -212,7 +215,7 @@ async function getLoopiaDomainsDetails(domains: string[], account: typeof LOOPIA
                 account: account.username,
                 customer_number: account.customer_number
               };
-              const savedDetails = await saveDomainDetails(domainDetails);
+              const savedDetails = await saveDomainDetails(domainDetails, workspaceId);
               resolve(savedDetails);
             });
           } else {
@@ -229,7 +232,7 @@ async function getLoopiaDomainsDetails(domains: string[], account: typeof LOOPIA
               account: account.username,
               customer_number: account.customer_number
             };
-            const savedDetails = await saveDomainDetails(domainDetails);
+            const savedDetails = await saveDomainDetails(domainDetails, workspaceId);
             resolve(savedDetails);
           }
         });
@@ -245,7 +248,7 @@ async function getLoopiaDomainsDetails(domains: string[], account: typeof LOOPIA
         account: account.username,
         customer_number: account.customer_number
       };
-      const savedDetails = await saveDomainDetails(errorDetails);
+      const savedDetails = await saveDomainDetails(errorDetails, workspaceId);
       domainDetails.push(savedDetails);
       processedCount++;
     }
@@ -363,6 +366,8 @@ async function renewDomain(account: typeof LOOPIA_ACCOUNTS[0], domain: string): 
 
 export async function GET(request: NextRequest) {
   const signal = request.signal;
+  const { searchParams } = new URL(request.url);
+  const workspaceId = searchParams.get('workspaceId');
   
   try {
     console.log('Starting Loopia domain sync for all accounts');
@@ -383,7 +388,7 @@ export async function GET(request: NextRequest) {
       totalDomains += domains.length;
       
       if (domains.length > 0) {
-        const details = await getLoopiaDomainsDetails(domains, account, signal);
+        const details = await getLoopiaDomainsDetails(domains, account, signal, workspaceId || undefined);
         allDomainDetails.push(...details);
         totalProcessed += details.length;
         hasErrors = hasErrors || details.some(d => d.error);
@@ -416,7 +421,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, domain, accountUsername } = body;
+    const { action, domain, accountUsername, workspaceId } = body;
 
     if (!action || !domain) {
       return NextResponse.json(
@@ -460,7 +465,7 @@ export async function POST(request: NextRequest) {
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Fetch updated domain details
-    const details = await getLoopiaDomainsDetails([domain], account, request.signal);
+    const details = await getLoopiaDomainsDetails([domain], account, request.signal, workspaceId);
     
     return NextResponse.json({
       success: true,

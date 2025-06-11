@@ -716,23 +716,23 @@ export default function InvoicesPage() {
       <div className="p-6">
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-white">Invoices</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Invoices</h1>
             <div className="flex items-center gap-4">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-500" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-foreground0" />
                 <input
                   type="text"
                   placeholder="Search invoices..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 pr-4 py-2 bg-neutral-800 border border-neutral-700 rounded-md text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                  className="pl-9 pr-4 py-2 bg-background border border-border dark:border-border rounded-md text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                 />
               </div>
               <button
                 onClick={checkForNewData}
                 disabled={isRefreshing}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm text-white transition-colors",
+                  "flex items-center gap-2 px-4 py-2 bg-background hover:bg-gray-200 dark:bg-muted border border-border dark:border-border rounded-md text-sm text-foreground transition-colors",
                   isRefreshing && "opacity-50 cursor-not-allowed"
                 )}
               >
@@ -741,7 +741,7 @@ export default function InvoicesPage() {
               </button>
               <button
                 onClick={() => setShowFortnoxTester(!showFortnoxTester)}
-                className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm text-white transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-background hover:bg-gray-200 dark:bg-muted border border-border dark:border-border rounded-md text-sm text-foreground transition-colors"
               >
                 <CalendarCheck className="h-4 w-4" />
                 Date Tester
@@ -750,7 +750,7 @@ export default function InvoicesPage() {
                 onClick={handleSaveAll}
                 disabled={isSaving || invoices.length === 0}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-md text-sm text-white transition-colors",
+                  "flex items-center gap-2 px-4 py-2 bg-background hover:bg-gray-200 dark:bg-muted border border-border dark:border-border rounded-md text-sm text-foreground transition-colors",
                   (isSaving || invoices.length === 0) && "opacity-50 cursor-not-allowed"
                 )}
               >
@@ -769,49 +769,49 @@ export default function InvoicesPage() {
 
           {/* Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="bg-neutral-800 border-neutral-700 p-4">
+            <Card className="bg-background border-border dark:border-border p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-neutral-400">Total Revenue</p>
-                  <h3 className="text-2xl font-semibold text-white mt-1">
+                  <p className="text-sm text-muted-foreground">Total Revenue</p>
+                  <h3 className="text-2xl font-semibold text-foreground mt-1">
                     {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(stats.totalAmount)}
                   </h3>
                 </div>
-                <div className="h-10 w-10 rounded-md bg-neutral-700 flex items-center justify-center">
-                  <DollarSign className="h-5 w-5 text-white" />
+                <div className="h-10 w-10 rounded-md bg-gray-200 dark:bg-muted flex items-center justify-center">
+                  <DollarSign className="h-5 w-5 text-foreground" />
                 </div>
               </div>
             </Card>
-            <Card className="bg-neutral-800 border-neutral-700 p-4">
+            <Card className="bg-background border-border dark:border-border p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-neutral-400">Total Invoices</p>
-                  <h3 className="text-2xl font-semibold text-white mt-1">{stats.totalCount}</h3>
+                  <p className="text-sm text-muted-foreground">Total Invoices</p>
+                  <h3 className="text-2xl font-semibold text-foreground mt-1">{stats.totalCount}</h3>
                 </div>
-                <div className="h-10 w-10 rounded-md bg-neutral-700 flex items-center justify-center">
-                  <BarChart className="h-5 w-5 text-white" />
+                <div className="h-10 w-10 rounded-md bg-gray-200 dark:bg-muted flex items-center justify-center">
+                  <BarChart className="h-5 w-5 text-foreground" />
                 </div>
               </div>
             </Card>
-            <Card className="bg-neutral-800 border-neutral-700 p-4">
+            <Card className="bg-background border-border dark:border-border p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-neutral-400">Paid Invoices</p>
-                  <h3 className="text-2xl font-semibold text-white mt-1">{stats.paidCount}</h3>
+                  <p className="text-sm text-muted-foreground">Paid Invoices</p>
+                  <h3 className="text-2xl font-semibold text-foreground mt-1">{stats.paidCount}</h3>
                 </div>
-                <div className="h-10 w-10 rounded-md bg-neutral-700 flex items-center justify-center">
-                  <BarChart className="h-5 w-5 text-white" />
+                <div className="h-10 w-10 rounded-md bg-gray-200 dark:bg-muted flex items-center justify-center">
+                  <BarChart className="h-5 w-5 text-foreground" />
                 </div>
               </div>
             </Card>
-            <Card className="bg-neutral-800 border-neutral-700 p-4">
+            <Card className="bg-background border-border dark:border-border p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-neutral-400">Overdue Invoices</p>
-                  <h3 className="text-2xl font-semibold text-white mt-1">{stats.overdueCount}</h3>
+                  <p className="text-sm text-muted-foreground">Overdue Invoices</p>
+                  <h3 className="text-2xl font-semibold text-foreground mt-1">{stats.overdueCount}</h3>
                 </div>
-                <div className="h-10 w-10 rounded-md bg-neutral-700 flex items-center justify-center">
-                  <BarChart className="h-5 w-5 text-white" />
+                <div className="h-10 w-10 rounded-md bg-gray-200 dark:bg-muted flex items-center justify-center">
+                  <BarChart className="h-5 w-5 text-foreground" />
                 </div>
               </div>
             </Card>
@@ -873,12 +873,12 @@ export default function InvoicesPage() {
           )}
 
           {/* Table */}
-          <Card className="bg-neutral-800 border-neutral-700">
+          <Card className="bg-background border-border dark:border-border">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-neutral-700">
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">
+                  <tr className="border-b border-border dark:border-border">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                       <button
                         className="flex items-center gap-1"
                         onClick={() => handleSort('DocumentNumber')}
@@ -889,7 +889,7 @@ export default function InvoicesPage() {
                         )}
                       </button>
                     </th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                       <button
                         className="flex items-center gap-1"
                         onClick={() => handleSort('CustomerName')}
@@ -900,7 +900,7 @@ export default function InvoicesPage() {
                         )}
                       </button>
                     </th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                       <button
                         className="flex items-center gap-1"
                         onClick={() => handleSort('InvoiceDate')}
@@ -911,7 +911,7 @@ export default function InvoicesPage() {
                         )}
                       </button>
                     </th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                       <button
                         className="flex items-center gap-1"
                         onClick={() => handleSort('Total')}
@@ -922,7 +922,7 @@ export default function InvoicesPage() {
                         )}
                       </button>
                     </th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                       <button
                         className="flex items-center gap-1"
                         onClick={() => handleSort('Balance')}
@@ -933,7 +933,7 @@ export default function InvoicesPage() {
                         )}
                       </button>
                     </th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">
                       <button
                         className="flex items-center gap-1"
                         onClick={() => handleSort('DueDate')}
@@ -944,15 +944,15 @@ export default function InvoicesPage() {
                         )}
                       </button>
                     </th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Status</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-700">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-neutral-400">
+                      <td colSpan={7} className="py-8 text-center text-muted-foreground">
                         <div className="flex items-center justify-center">
-                          <Loader2 className="h-6 w-6 animate-spin text-neutral-400 mx-auto" />
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mx-auto" />
                           <span className="ml-2">Loading invoices...</span>
                         </div>
                       </td>
@@ -962,13 +962,13 @@ export default function InvoicesPage() {
                       <td colSpan={7} className="py-8 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <AlertOctagon className="h-8 w-8 text-amber-500 mx-auto" />
-                          <p className="mt-2 text-neutral-400">You don't have permission to view invoices.</p>
+                          <p className="mt-2 text-muted-foreground">You don't have permission to view invoices.</p>
                         </div>
                       </td>
                     </tr>
                   ) : filteredInvoices.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-neutral-400">
+                      <td colSpan={7} className="py-8 text-center text-muted-foreground">
                         {search || Object.values(filters).some(val => val !== 'all') 
                           ? "No invoices found matching your filters." 
                           : "No invoices found. Import invoices or check from Fortnox to get started."}
@@ -985,25 +985,25 @@ export default function InvoicesPage() {
                           className="hover:bg-neutral-750 transition-colors cursor-pointer"
                           onClick={() => router.push(`/invoices/${invoice.DocumentNumber}`)}
                         >
-                          <td className="py-4 px-6 text-sm text-white">{invoice.DocumentNumber}</td>
-                          <td className="py-4 px-6 text-sm text-white">{invoice.CustomerName}</td>
-                          <td className="py-4 px-6 text-sm text-neutral-400">
+                          <td className="py-4 px-6 text-sm text-foreground">{invoice.DocumentNumber}</td>
+                          <td className="py-4 px-6 text-sm text-foreground">{invoice.CustomerName}</td>
+                          <td className="py-4 px-6 text-sm text-muted-foreground">
                             {new Date(invoice.InvoiceDate).toLocaleDateString()}
                           </td>
-                          <td className="py-4 px-6 text-sm text-white">
+                          <td className="py-4 px-6 text-sm text-foreground">
                             {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: invoice.Currency }).format(invoice.Total)}
                           </td>
-                          <td className="py-4 px-6 text-sm text-white">
+                          <td className="py-4 px-6 text-sm text-foreground">
                             {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: invoice.Currency }).format(invoice.Balance)}
                           </td>
-                          <td className="py-4 px-6 text-sm text-neutral-400">
+                          <td className="py-4 px-6 text-sm text-muted-foreground">
                             {new Date(invoice.DueDate).toLocaleDateString()}
                           </td>
                           <td className="py-4 px-6">
                             <span className={cn(
                               "px-2 py-1 text-xs font-medium rounded-full",
-                              isPaid ? "bg-green-500/10 text-green-500" : 
-                              isOverdue ? "bg-red-500/10 text-red-500" : 
+                              isPaid ? "bg-green-500/10 text-green-600 dark:text-green-400" : 
+                              isOverdue ? "bg-red-500/10 text-red-600 dark:text-red-400" : 
                               "bg-amber-500/10 text-amber-500"
                             )}>
                               {isPaid ? "Paid" : isOverdue ? "Overdue" : "Unpaid"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -10,11 +10,16 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
+import ReCAPTCHA from 'react-google-recaptcha';
+
+// reCAPTCHA site key from Google
+const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY || '6LflizkrAAAAACU7692bUxrhSuhzqOUnKXbQOuQC';
 
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -24,6 +29,7 @@ function RegisterForm() {
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isInvite, setIsInvite] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [inviteDetails, setInviteDetails] = useState<{
     email: string;
     workspace_name: string;
@@ -69,6 +75,10 @@ function RegisterForm() {
     }
   };
 
+  const handleCaptchaChange = (token: string | null) => {
+    setCaptchaToken(token);
+  };
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -81,9 +91,30 @@ function RegisterForm() {
       toast.error('Please agree to the terms and conditions');
       return;
     }
+    
+    if (!captchaToken) {
+      toast.error('Please complete the reCAPTCHA verification');
+      return;
+    }
 
     try {
       setLoading(true);
+      
+      // Verify reCAPTCHA token server-side
+      const verifyResponse = await fetch('/api/verify-recaptcha', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: captchaToken }),
+      });
+      
+      const verifyData = await verifyResponse.json();
+      
+      if (!verifyData.success) {
+        throw new Error('reCAPTCHA verification failed. Please try again.');
+      }
+      
       console.log('Starting signup process for email:', email);
 
       console.log('Checking if user exists:', email);
@@ -217,19 +248,22 @@ function RegisterForm() {
     } catch (error) {
       console.error('Registration error:', error);
       toast.error(error instanceof Error ? error.message : 'An error occurred during registration');
+      // Reset reCAPTCHA on error
+      recaptchaRef.current?.reset();
+      setCaptchaToken(null);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">
-      <Card className="w-full max-w-md border-neutral-800 bg-neutral-900">
-        <div className="space-y-1 p-6 border-b border-neutral-800">
-          <h2 className="text-2xl font-bold text-white">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md border-border bg-background">
+        <div className="space-y-1 p-6 border-b border-border">
+          <h2 className="text-2xl font-bold text-foreground">
             {isInvite ? `Join ${inviteDetails?.workspace_name || 'Team'}` : 'Create an account'}
           </h2>
-          <p className="text-neutral-400">
+          <p className="text-muted-foreground">
             {isInvite
               ? `You've been invited to join as a ${inviteDetails?.is_admin ? 'Administrator' : 'Team Member'}`
               : 'Enter your details to create your account'}
@@ -238,18 +272,18 @@ function RegisterForm() {
         <form onSubmit={handleSignUp}>
           <div className="space-y-4 p-6">
             <div className="space-y-2">
-              <label htmlFor="name jack" className="text-sm font-medium text-neutral-200">Name</label>
+              <label htmlFor="name jack" className="text-sm font-medium text-gray-800 dark:text-foreground">Name</label>
               <Input
                 id="name"
                 placeholder="John Doe"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="bg-background border-border dark:border-border text-foreground placeholder:text-foreground0"
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-neutral-200">Email</label>
+              <label htmlFor="email" className="text-sm font-medium text-gray-800 dark:text-foreground">Email</label>
               <Input
                 id="email"
                 type="email"
@@ -258,11 +292,11 @@ function RegisterForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={isInvite}
-                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="bg-background border-border dark:border-border text-foreground placeholder:text-foreground0"
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-neutral-200">Password</label>
+              <label htmlFor="password" className="text-sm font-medium text-gray-800 dark:text-foreground">Password</label>
               <Input
                 id="password"
                 type="password"
@@ -270,11 +304,11 @@ function RegisterForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="bg-background border-border dark:border-border text-foreground placeholder:text-foreground0"
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="confirmPassword" className="text-sm font-medium text-neutral-200">Confirm Password</label>
+              <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-800 dark:text-foreground">Confirm Password</label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -282,53 +316,64 @@ function RegisterForm() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                className="bg-background border-border dark:border-border text-foreground placeholder:text-foreground0"
               />
             </div>
             {!isInvite && (
               <div className="space-y-2">
-                <label htmlFor="company" className="text-sm font-medium text-neutral-200">Company (Optional)</label>
+                <label htmlFor="company" className="text-sm font-medium text-gray-800 dark:text-foreground">Company (Optional)</label>
                 <Input
                   id="company"
                   placeholder="Acme Inc."
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  className="bg-neutral-800 border-neutral-700 text-white placeholder:text-neutral-500"
+                  className="bg-background border-border dark:border-border text-foreground placeholder:text-foreground0"
                 />
               </div>
             )}
+            
+            {/* Add reCAPTCHA before the submit button */}
+            <div className="mt-6 flex justify-center">
+              <ReCAPTCHA
+                ref={recaptchaRef}
+                sitekey={RECAPTCHA_SITE_KEY}
+                onChange={handleCaptchaChange}
+                theme="dark"
+              />
+            </div>
+            
             <div className="flex items-center space-x-2">
               <Checkbox 
                 id="terms" 
                 checked={agreed}
-                onCheckedChange={(checked) => setAgreed(checked as boolean)}
-                className="border-neutral-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                onCheckedChange={(checked) => setAgreed(checked === true)}
+                className="data-[state=checked]:bg-blue-600 border-border dark:border-border"
               />
-              <label htmlFor="terms" className="text-sm text-neutral-400">
-                I agree to the <Link href="/terms" className="text-blue-500 hover:underline">terms of service</Link> and <Link href="/privacy" className="text-blue-500 hover:underline">privacy policy</Link>
+              <label htmlFor="terms" className="text-sm text-muted-foreground">
+                I agree to the <Link href="/terms" className="text-blue-600 dark:text-blue-400 hover:underline">Terms of Service</Link> and <Link href="/privacy" className="text-blue-600 dark:text-blue-400 hover:underline">Privacy Policy</Link>
               </label>
             </div>
-          </div>
-          <div className="flex flex-col space-y-4 p-6 border-t border-neutral-800">
+            
             <Button 
               type="submit" 
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white"
-              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-foreground"
+              disabled={loading || !captchaToken}
             >
               {loading ? (
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white mr-2" />
-                  {isInvite ? 'Joining...' : 'Creating account...'}
-                </div>
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Processing...
+                </span>
               ) : (
-                isInvite ? 'Accept Invitation' : 'Create Account'
+                'Create Account'
               )}
             </Button>
-            <div className="text-center text-sm text-neutral-400">
-              Already have an account?{" "}
-              <Link href="/login" className="text-blue-500 hover:underline">
-                Log in
-              </Link>
+            
+            <div className="text-center text-sm text-muted-foreground">
+              Already have an account? <Link href="/login" className="text-blue-600 dark:text-blue-400 hover:underline">Sign in</Link>
             </div>
           </div>
         </form>
@@ -339,7 +384,7 @@ function RegisterForm() {
 
 export default function Register() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background p-4">Loading...</div>}>
       <RegisterForm />
     </Suspense>
   );

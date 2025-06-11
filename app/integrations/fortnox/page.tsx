@@ -13,7 +13,7 @@ export default function FortnoxIntegrationPage() {
     <main className="container mx-auto p-6">
       <div className="flex flex-col space-y-6">
         <div className="flex items-center space-x-2">
-          <Link2 className="h-6 w-6 text-blue-500" />
+          <Link2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
           <h1 className="text-3xl font-bold tracking-tight">Fortnox Integration</h1>
         </div>
         

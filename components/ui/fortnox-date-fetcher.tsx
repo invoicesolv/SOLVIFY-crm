@@ -159,10 +159,10 @@ export function FortnoxDateFetcher({ userId, onFetchComplete }: { userId: string
   };
 
   return (
-    <div className="w-full border rounded-lg shadow-sm bg-white dark:bg-gray-800 p-4">
+    <div className="w-full border rounded-lg shadow-sm bg-background dark:bg-gray-800 p-4">
       <div className="mb-4">
         <h3 className="text-lg font-semibold mb-1">Fortnox Date Fetcher</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Test invoice fetching with different date ranges</p>
+        <p className="text-sm text-foreground0 dark:text-gray-400">Test invoice fetching with different date ranges</p>
       </div>
       
       <div className="space-y-4">
@@ -194,7 +194,7 @@ export function FortnoxDateFetcher({ userId, onFetchComplete }: { userId: string
           </div>
         </div>
         
-        <hr className="my-4 border-gray-200 dark:border-gray-700" />
+        <hr className="my-4 border-border dark:border-gray-700" />
         
         <div>
           <Label className="mb-2 block">Quick Year Fetcher</Label>
@@ -220,10 +220,10 @@ export function FortnoxDateFetcher({ userId, onFetchComplete }: { userId: string
 
         {results && (
           <>
-            <hr className="my-4 border-gray-200 dark:border-gray-700" />
+            <hr className="my-4 border-border dark:border-gray-700" />
             <div className="border rounded overflow-hidden">
               <div 
-                className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-700 cursor-pointer" 
+                className="flex items-center justify-between p-3 bg-muted dark:bg-gray-700 cursor-pointer" 
                 onClick={toggleResults}
               >
                 <h4 className="font-medium">Results ({(results.Invoices || results.invoices || []).length} invoices)</h4>

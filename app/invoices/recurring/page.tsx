@@ -304,13 +304,13 @@ export default function RecurringInvoicesPage() {
 
   const filteredOriginalInvoices = originalInvoices.filter(invoice => 
     search === '' || 
-    invoice.document_number?.toLowerCase().includes(search.toLowerCase()) ||
-    invoice.customer_name?.toLowerCase().includes(search.toLowerCase())
+    (invoice.document_number && invoice.document_number.toLowerCase().includes(search.toLowerCase())) ||
+    (invoice.customer_name && invoice.customer_name.toLowerCase().includes(search.toLowerCase()))
   );
 
   const filteredRecurringInvoices = recurringInvoices.filter(invoice =>
     search === '' ||
-    invoice.customer_name.toLowerCase().includes(search.toLowerCase())
+    (invoice.customer_name && invoice.customer_name.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
@@ -318,8 +318,8 @@ export default function RecurringInvoicesPage() {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-white">Recurring Invoices</h1>
-            <p className="text-sm text-neutral-400">
+            <h1 className="text-2xl font-semibold text-foreground">Recurring Invoices</h1>
+            <p className="text-sm text-muted-foreground">
               Manage your recurring invoice templates
             </p>
           </div>
@@ -331,41 +331,41 @@ export default function RecurringInvoicesPage() {
         </div>
 
         {/* Search */}
-        <Card className="bg-neutral-800 border-neutral-700">
+        <Card className="bg-background border-border dark:border-border">
           <div className="p-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-500" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-foreground0" />
               <input
                 type="text"
                 placeholder="Search invoices..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-neutral-900 border border-neutral-700 rounded-md text-sm text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                className="w-full pl-9 pr-4 py-2 bg-background border border-border dark:border-border rounded-md text-sm text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
               />
             </div>
           </div>
         </Card>
 
         {/* Original Invoices */}
-        <Card className="bg-neutral-800 border-neutral-700">
+        <Card className="bg-background border-border dark:border-border">
           <div className="p-4">
-            <h2 className="text-lg font-semibold text-white mb-4">Original Invoices</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-4">Original Invoices</h2>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-neutral-700">
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Invoice Number</th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Customer</th>
-                    <th className="text-right py-4 px-6 text-sm font-medium text-neutral-400">Total</th>
-                    <th className="text-right py-4 px-6 text-sm font-medium text-neutral-400">Actions</th>
+                  <tr className="border-b border-border dark:border-border">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Invoice Number</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Customer</th>
+                    <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Total</th>
+                    <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-700">
                   {filteredOriginalInvoices.map((invoice) => (
                     <tr key={invoice.id} className="hover:bg-neutral-750 transition-colors">
-                      <td className="py-4 px-6 text-sm text-white">{invoice.document_number}</td>
-                      <td className="py-4 px-6 text-sm text-white">{invoice.customer_name || 'Unknown'}</td>
-                      <td className="py-4 px-6 text-sm text-right text-white">
+                      <td className="py-4 px-6 text-sm text-foreground">{invoice.document_number}</td>
+                      <td className="py-4 px-6 text-sm text-foreground">{invoice.customer_name || 'Unknown'}</td>
+                      <td className="py-4 px-6 text-sm text-right text-foreground">
                         {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
                           .format(invoice.total)}
                       </td>
@@ -374,7 +374,7 @@ export default function RecurringInvoicesPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => copyToRecurring(invoice)}
-                          className="bg-neutral-900 hover:bg-neutral-800"
+                          className="bg-background hover:bg-background"
                         >
                           <Copy className="h-4 w-4 mr-2" />
                           Copy to Recurring
@@ -389,34 +389,34 @@ export default function RecurringInvoicesPage() {
         </Card>
 
         {/* Recurring Invoices */}
-        <Card className="bg-neutral-800 border-neutral-700">
+        <Card className="bg-background border-border dark:border-border">
           <div className="p-4">
-            <h2 className="text-lg font-semibold text-white mb-4">Recurring Invoices</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-4">Recurring Invoices</h2>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-neutral-700">
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Customer</th>
-                    <th className="text-left py-4 px-6 text-sm font-medium text-neutral-400">Next Invoice Date</th>
-                    <th className="text-right py-4 px-6 text-sm font-medium text-neutral-400">Total</th>
-                    <th className="text-center py-4 px-6 text-sm font-medium text-neutral-400">Status</th>
-                    <th className="text-right py-4 px-6 text-sm font-medium text-neutral-400">Actions</th>
+                  <tr className="border-b border-border dark:border-border">
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Customer</th>
+                    <th className="text-left py-4 px-6 text-sm font-medium text-muted-foreground">Next Invoice Date</th>
+                    <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Total</th>
+                    <th className="text-center py-4 px-6 text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="text-right py-4 px-6 text-sm font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-700">
                   {filteredRecurringInvoices.map((invoice) => (
                     <tr key={invoice.id} className="hover:bg-neutral-750 transition-colors">
-                      <td className="py-4 px-6 text-sm text-white">{invoice.customer_name}</td>
-                      <td className="py-4 px-6 text-sm text-neutral-400">
+                      <td className="py-4 px-6 text-sm text-foreground">{invoice.customer_name}</td>
+                      <td className="py-4 px-6 text-sm text-muted-foreground">
                         {new Date(invoice.next_invoice_date).toLocaleDateString('sv-SE')}
                       </td>
-                      <td className="py-4 px-6 text-sm text-right text-white">
+                      <td className="py-4 px-6 text-sm text-right text-foreground">
                         {new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' })
                           .format(invoice.total)}
                       </td>
                       <td className="py-4 px-6 text-sm text-center">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          invoice.status === 'draft' ? 'bg-neutral-700 text-neutral-200' :
+                          invoice.status === 'draft' ? 'bg-gray-200 dark:bg-muted text-gray-800 dark:text-foreground' :
                           invoice.status === 'pending' ? 'bg-yellow-900 text-yellow-200' :
                           invoice.status === 'sent_to_finance' ? 'bg-green-900 text-green-200' :
                           'bg-blue-900 text-blue-200'
@@ -430,7 +430,7 @@ export default function RecurringInvoicesPage() {
                           size="sm"
                           onClick={() => sendToFinance(invoice)}
                           disabled={invoice.status === 'sent_to_finance'}
-                          className="bg-neutral-900 hover:bg-neutral-800"
+                          className="bg-background hover:bg-background"
                         >
                           <Send className="h-4 w-4 mr-2" />
                           Send to Finance
@@ -440,7 +440,7 @@ export default function RecurringInvoicesPage() {
                           size="sm"
                           onClick={() => sendTestInvoice(invoice)}
                           disabled={invoice.status === 'test_sent'}
-                          className="bg-neutral-900 hover:bg-neutral-800"
+                          className="bg-background hover:bg-background"
                         >
                           <TestTube className="h-4 w-4 mr-2" />
                           Test Send

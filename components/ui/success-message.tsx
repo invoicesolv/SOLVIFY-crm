@@ -26,11 +26,11 @@ export function SuccessMessage() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="sm:max-w-md">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-4 text-white">🎉 Congratulations!</h2>
-          <p className="text-white mb-6">
+          <h2 className="text-2xl font-bold mb-4 text-foreground">🎉 Congratulations!</h2>
+          <p className="text-foreground mb-6">
             Welcome to your premium subscription! We're excited to have you on board and can't wait to help you succeed.
           </p>
-          <p className="text-sm text-white/80 mb-6">
+          <p className="text-sm text-foreground/80 mb-6">
             We've sent you a welcome email with some tips to get started.
           </p>
           <Button onClick={() => setOpen(false)} className="w-full">

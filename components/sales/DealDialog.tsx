@@ -39,7 +39,7 @@ export function DealDialog({
 }: DealDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] bg-neutral-900 border-neutral-800 text-white p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-[600px] bg-background border-border text-foreground p-0 overflow-hidden">
         <div className="relative">
           <GlowingEffect 
             spread={30} 
@@ -51,11 +51,11 @@ export function DealDialog({
             movementDuration={1.5}
             variant="default"
           />
-          <DialogHeader className="border-b border-neutral-700 p-6 relative z-10">
-          <DialogTitle className="text-xl font-semibold text-white">
+          <DialogHeader className="border-b border-border dark:border-border p-6 relative z-10">
+          <DialogTitle className="text-xl font-semibold text-foreground">
             {initialData ? "Edit Deal" : "New Deal"}
           </DialogTitle>
-            <DialogDescription className="text-neutral-400 mt-1">
+            <DialogDescription className="text-muted-foreground mt-1">
               {initialData 
                 ? "Update the information for this deal" 
                 : "Enter information for your new deal"}

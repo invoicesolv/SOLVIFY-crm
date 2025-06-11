@@ -92,7 +92,7 @@ export function ImportCustomersDialog({
 
     const query = searchQuery.toLowerCase();
     const filtered = customers.filter(
-      (customer) => customer.name.toLowerCase().includes(query)
+      (customer) => customer.name && customer.name.toLowerCase().includes(query)
     );
     setFilteredCustomers(filtered);
   }, [searchQuery, customers]);
@@ -236,32 +236,32 @@ export function ImportCustomersDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[625px] bg-neutral-900 border-neutral-800 text-white">
+      <DialogContent className="sm:max-w-[625px] bg-background border-border text-foreground">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
             Import Customers as Leads
           </DialogTitle>
-          <DialogDescription className="text-neutral-400">
+          <DialogDescription className="text-muted-foreground">
             Select customers to import into your leads database for re-marketing campaigns.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="flex items-center gap-2">
-            <Search className="text-neutral-400 w-4 h-4" />
+            <Search className="text-muted-foreground w-4 h-4" />
             <Input
               placeholder="Search customers..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-neutral-800 border-neutral-700 text-white"
+              className="bg-background border-border dark:border-border text-foreground"
             />
             <Button
               variant="outline"
               size="icon"
               onClick={fetchCustomers}
               disabled={loadingCustomers}
-              className="bg-neutral-800 border-neutral-700 text-white"
+              className="bg-background border-border dark:border-border text-foreground"
             >
               <RefreshCw className={`h-4 w-4 ${loadingCustomers ? 'animate-spin' : ''}`} />
             </Button>
@@ -269,11 +269,11 @@ export function ImportCustomersDialog({
 
           <div className="flex flex-col space-y-2">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-neutral-400">Lead Source</div>
+              <div className="text-sm text-muted-foreground">Lead Source</div>
               <select
                 value={leadSource}
                 onChange={(e) => setLeadSource(e.target.value)}
-                className="bg-neutral-800 border border-neutral-700 text-white rounded-md text-sm p-1"
+                className="bg-background border border-border dark:border-border text-foreground rounded-md text-sm p-1"
               >
                 {LEAD_SOURCES.map((source) => (
                   <option key={source.id} value={source.id}>
@@ -284,11 +284,11 @@ export function ImportCustomersDialog({
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="text-sm text-neutral-400">Service Category</div>
+              <div className="text-sm text-muted-foreground">Service Category</div>
               <select
                 value={serviceCategory}
                 onChange={(e) => setServiceCategory(e.target.value)}
-                className="bg-neutral-800 border border-neutral-700 text-white rounded-md text-sm p-1"
+                className="bg-background border border-border dark:border-border text-foreground rounded-md text-sm p-1"
               >
                 {SERVICE_CATEGORIES.map((category) => (
                   <option key={category.id} value={category.id}>
@@ -299,19 +299,19 @@ export function ImportCustomersDialog({
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="text-sm text-neutral-400">Qualification Score (1-10)</div>
+              <div className="text-sm text-muted-foreground">Qualification Score (1-10)</div>
               <input
                 type="number"
                 min="1"
                 max="10"
                 value={qualificationScore}
                 onChange={(e) => setQualificationScore(Number(e.target.value))}
-                className="bg-neutral-800 border border-neutral-700 text-white rounded-md text-sm p-1 w-16"
+                className="bg-background border border-border dark:border-border text-foreground rounded-md text-sm p-1 w-16"
               />
             </div>
           </div>
 
-          <div className="border-t border-neutral-800 pt-2">
+          <div className="border-t border-border pt-2">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -325,12 +325,12 @@ export function ImportCustomersDialog({
                 />
                 <label
                   htmlFor="select-all"
-                  className="text-sm font-medium leading-none cursor-pointer text-white"
+                  className="text-sm font-medium leading-none cursor-pointer text-foreground"
                 >
                   Select All
                 </label>
               </div>
-              <div className="text-sm text-neutral-400">
+              <div className="text-sm text-muted-foreground">
                 {selectedCustomers.length} of {filteredCustomers.length} selected
               </div>
             </div>
@@ -341,7 +341,7 @@ export function ImportCustomersDialog({
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
                 </div>
               ) : filteredCustomers.length === 0 ? (
-                <div className="text-center py-8 text-neutral-400">
+                <div className="text-center py-8 text-muted-foreground">
                   No customers found
                 </div>
               ) : (
@@ -349,7 +349,7 @@ export function ImportCustomersDialog({
                   {filteredCustomers.map((customer) => (
                     <div
                       key={customer.id}
-                      className="flex items-center gap-3 p-2 hover:bg-neutral-800 rounded-md"
+                      className="flex items-center gap-3 p-2 hover:bg-background rounded-md"
                     >
                       <Checkbox
                         id={`customer-${customer.id}`}
@@ -361,17 +361,17 @@ export function ImportCustomersDialog({
                         <div className="flex items-center gap-2">
                           <label
                             htmlFor={`customer-${customer.id}`}
-                            className="font-medium cursor-pointer text-white truncate"
+                            className="font-medium cursor-pointer text-foreground truncate"
                           >
                             {customer.name}
                           </label>
                           {customer.invoice_count !== undefined && customer.invoice_count > 0 && (
-                            <Badge variant="outline" className="bg-neutral-800 text-neutral-300 text-xs">
+                            <Badge variant="outline" className="bg-background text-foreground dark:text-neutral-300 text-xs">
                               {customer.invoice_count} invoice{customer.invoice_count !== 1 ? 's' : ''}
                             </Badge>
                           )}
                         </div>
-                        <div className="text-xs text-neutral-400 truncate">
+                        <div className="text-xs text-muted-foreground truncate">
                           Customer since: {
                             new Date(customer.created_at).toLocaleDateString()
                           } • Last invoice: {
@@ -393,14 +393,14 @@ export function ImportCustomersDialog({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="bg-neutral-800 border-neutral-700 text-white"
+            className="bg-background border-border dark:border-border text-foreground"
           >
             Cancel
           </Button>
           <Button
             onClick={handleImport}
             disabled={selectedCustomers.length === 0 || importing}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-blue-600 hover:bg-blue-700 text-foreground"
           >
             {importing ? (
               <>

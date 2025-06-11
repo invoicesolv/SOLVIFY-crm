@@ -51,7 +51,7 @@ export function LandingNav({
         transition={{ duration: 0.5 }}
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           isScrolled
-            ? "bg-neutral-900/90 backdrop-blur-md py-3 shadow-lg"
+            ? "bg-background/90 backdrop-blur-md py-3 shadow-lg"
             : "bg-transparent py-5"
         }`}
       >
@@ -75,14 +75,14 @@ export function LandingNav({
               <Link
                 key={index}
                 href={item.href}
-                className="text-neutral-300 hover:text-white transition-colors text-sm font-medium"
+                className="text-foreground dark:text-neutral-300 hover:text-foreground transition-colors text-sm font-medium"
               >
                 {item.label}
               </Link>
             ))}
             <Button
               asChild
-              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 h-auto"
+              className="bg-blue-600 hover:bg-blue-700 text-foreground px-5 py-2 h-auto"
             >
               <Link href={ctaHref}>{ctaText}</Link>
             </Button>
@@ -90,7 +90,7 @@ export function LandingNav({
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden text-white"
+            className="md:hidden text-foreground"
             onClick={() => setIsMobileMenuOpen(true)}
           >
             <Menu className="h-6 w-6" />
@@ -104,7 +104,7 @@ export function LandingNav({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-neutral-950/95 z-50 md:hidden"
+          className="fixed inset-0 bg-background/95 z-50 md:hidden"
         >
           <div className="container mx-auto px-4 py-5 flex flex-col h-full">
             <div className="flex justify-between items-center">
@@ -123,7 +123,7 @@ export function LandingNav({
 
               {/* Close Button */}
               <button
-                className="text-white"
+                className="text-foreground"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 <X className="h-6 w-6" />
@@ -141,7 +141,7 @@ export function LandingNav({
                 >
                   <Link
                     href={item.href}
-                    className="text-white text-xl font-medium"
+                    className="text-foreground text-xl font-medium"
                     onClick={() => setIsMobileMenuOpen(false)}
                   >
                     {item.label}
@@ -155,7 +155,7 @@ export function LandingNav({
               >
                 <Button
                   asChild
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 h-auto text-lg mt-4"
+                  className="bg-blue-600 hover:bg-blue-700 text-foreground px-8 py-3 h-auto text-lg mt-4"
                 >
                   <Link 
                     href={ctaHref}

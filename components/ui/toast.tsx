@@ -67,8 +67,8 @@ export function Toaster() {
             className={cn(
               "rounded-lg p-4 shadow-lg",
               toast.variant === "destructive"
-                ? "bg-red-600 text-white"
-                : "bg-neutral-800 text-white"
+                ? "bg-red-600 text-foreground"
+                : "bg-background text-foreground"
             )}
           >
             <div className="flex items-start gap-3">
@@ -80,7 +80,7 @@ export function Toaster() {
               </div>
               <button
                 onClick={() => dismiss(toast.id)}
-                className="text-white/80 hover:text-white"
+                className="text-foreground/80 hover:text-foreground"
               >
                 <X className="h-4 w-4" />
               </button>

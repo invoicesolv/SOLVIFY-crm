@@ -62,7 +62,7 @@ export function RecentLeads() {
       case "link_building":
         return "bg-cyan-600/20 text-cyan-400";
       default:
-        return "bg-neutral-600/20 text-neutral-400";
+        return "bg-gray-300 dark:bg-muted-foreground/20 text-muted-foreground";
     }
   };
 
@@ -72,10 +72,10 @@ export function RecentLeads() {
         View All Leads <ArrowRight className="h-4 w-4 ml-1" />
       </span>
       
-      <AnimatedBorderCard className="bg-neutral-800 border-neutral-700 shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[400px]" gradient="green-blue">
+      <AnimatedBorderCard className="bg-background border-border dark:border-border shadow-lg transition-all hover:bg-neutral-750 hover:shadow-xl h-[400px]" gradient="green-blue">
         <div className="p-6">
           <div className="flex items-center justify-between mb-8">
-            <h3 className="text-2xl font-bold text-white">Recent Leads</h3>
+            <h3 className="text-2xl font-bold text-foreground">Recent Leads</h3>
             <Grid className="w-6 h-6 text-green-400" />
           </div>
 
@@ -85,7 +85,7 @@ export function RecentLeads() {
             </div>
           ) : leads.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-center">
-              <p className="text-neutral-400 mb-3">No leads found</p>
+              <p className="text-muted-foreground mb-3">No leads found</p>
               <Link href="/leads">
                 <span className="inline-flex items-center px-4 py-2 bg-green-600/20 text-green-400 rounded-md text-sm font-medium hover:bg-green-600/30 transition-colors">
                   Create your first lead <ArrowRight className="h-4 w-4 ml-2" />
@@ -107,18 +107,18 @@ export function RecentLeads() {
                 return (
                   <div key={lead.id} className="flex items-start space-x-4 group">
                     <div className={`flex-shrink-0 p-3 rounded-full ${isRecent ? 'bg-green-600/20' : 'bg-green-500/10'}`}>
-                      <Grid className={`w-5 h-5 ${isRecent ? 'text-green-500' : 'text-green-400'}`} />
+                      <Grid className={`w-5 h-5 ${isRecent ? 'text-green-600 dark:text-green-400' : 'text-green-400'}`} />
                     </div>
                     
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
-                        <h4 className="text-base font-semibold text-white truncate" title={lead.lead_name}>
+                        <h4 className="text-base font-semibold text-foreground truncate" title={lead.lead_name}>
                           {lead.lead_name}
                         </h4>
-                        <span className="text-xs text-neutral-500 flex-shrink-0 ml-2">{formattedDate}</span>
+                        <span className="text-xs text-foreground0 flex-shrink-0 ml-2">{formattedDate}</span>
                       </div>
                       
-                      <p className="text-sm font-medium text-neutral-200 truncate" title={lead.company}>
+                      <p className="text-sm font-medium text-gray-800 dark:text-foreground truncate" title={lead.company}>
                         {lead.company}
                       </p>
                       

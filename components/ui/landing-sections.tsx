@@ -21,7 +21,7 @@ interface FeaturesSectionProps {
 // Features Section
 export function FeaturesSection({ 
   title = "Replace 8 Different Software Tools With One Solution",
-  subtitle = "Vibe CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
+  subtitle = "Solvify CRM consolidates all your essential business tools into one powerful platform, saving you time and money.",
   features = [
     {
       title: "CRM & Sales Pipeline",
@@ -56,13 +56,13 @@ export function FeaturesSection({
   ]
 }: FeaturesSectionProps) {
   return (
-    <section id="features" className="py-24 bg-neutral-950">
+    <section id="features" className="py-24 bg-background">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
             {title}
           </h2>
-          <p className="text-neutral-400 max-w-2xl mx-auto">
+          <p className="text-muted-foreground max-w-2xl mx-auto">
             {subtitle}
           </p>
         </div>
@@ -71,11 +71,11 @@ export function FeaturesSection({
           {features.map((feature, index) => (
             <Card 
               key={index} 
-              className="bg-neutral-900 border-neutral-800 p-6 hover:border-blue-500/50 transition-colors"
+              className="bg-background border-border p-6 hover:border-blue-500/50 transition-colors"
             >
               <div className="text-3xl mb-4">{feature.icon}</div>
-              <h3 className="text-xl font-semibold text-white mb-2">{feature.title}</h3>
-              <p className="text-neutral-400">{feature.description}</p>
+              <h3 className="text-xl font-semibold text-foreground mb-2">{feature.title}</h3>
+              <p className="text-muted-foreground">{feature.description}</p>
             </Card>
           ))}
         </div>
@@ -92,28 +92,28 @@ interface AboutSectionProps {
 
 // About Section
 export function AboutSection({ 
-  title = "About Vibe CRM",
+  title = "About Solvify CRM",
   subtitle = "We're on a mission to help businesses grow by eliminating software fragmentation.",
   content = [
-    "Vibe CRM was founded with a clear vision: to end the era of disconnected business tools. We were tired of seeing businesses juggle 8+ different subscriptions, wasting time switching between platforms, and losing critical data in the gaps.",
+    "Solvify CRM was founded with a clear vision: to end the era of disconnected business tools. We were tired of seeing businesses juggle 8+ different subscriptions, wasting time switching between platforms, and losing critical data in the gaps.",
     "Our team of experienced developers and designers has created an all-in-one platform that consolidates CRM, project management, invoicing, email marketing, analytics, and more into a single, cohesive solution that costs less than what you're currently paying for multiple tools.",
-    "Businesses using Vibe CRM report saving an average of $12,000 per year in software costs while increasing productivity by eliminating context switching between applications. Join the growing number of companies simplifying their tech stack with our unified platform."
+    "Businesses using Solvify CRM report saving an average of $12,000 per year in software costs while increasing productivity by eliminating context switching between applications. Join the growing number of companies simplifying their tech stack with our unified platform."
   ]
 }: AboutSectionProps) {
   return (
-    <section id="about" className="py-24 bg-neutral-950">
+    <section id="about" className="py-24 bg-background">
       <div className="container mx-auto px-4">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
               {title}
             </h2>
-            <p className="text-neutral-400">
+            <p className="text-muted-foreground">
               {subtitle}
             </p>
           </div>
           
-          <div className="space-y-8 text-neutral-300">
+          <div className="space-y-8 text-foreground dark:text-neutral-300">
             {content.map((paragraph, index) => (
               <p key={index}>{paragraph}</p>
             ))}
@@ -176,25 +176,25 @@ export function ContactSection({
   const currentContactInfo = contactInfo[language];
 
   return (
-    <section id="contact" className="py-24 bg-neutral-900">
+    <section id="contact" className="py-24 bg-background">
       <div className="container mx-auto px-4">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
               {title}
             </h2>
-            <p className="text-neutral-400">
+            <p className="text-muted-foreground">
               {subtitle}
             </p>
           </div>
           
-          <Card className="bg-neutral-800 border-neutral-700 p-8">
+          <Card className="bg-background border-border dark:border-border p-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
-                <h3 className="text-xl font-semibold text-white mb-4">
+                <h3 className="text-xl font-semibold text-foreground mb-4">
                   Contact Information
                 </h3>
-                <div className="space-y-4 text-neutral-300">
+                <div className="space-y-4 text-foreground dark:text-neutral-300">
                   <p>Email: {currentContactInfo.email}</p>
                   <p>Phone: {currentContactInfo.phone}</p>
                   <p>Address: {currentContactInfo.address}</p>
@@ -202,17 +202,17 @@ export function ContactSection({
                 </div>
                 
                 <div className="mt-8">
-                  <h4 className="text-lg font-medium text-white mb-3">
+                  <h4 className="text-lg font-medium text-foreground mb-3">
                     Follow Us
                   </h4>
                   <div className="flex space-x-4">
-                    <a href="#" className="text-neutral-400 hover:text-white transition-colors">
+                    <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
                       Twitter
                     </a>
-                    <a href="#" className="text-neutral-400 hover:text-white transition-colors">
+                    <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
                       LinkedIn
                     </a>
-                    <a href="#" className="text-neutral-400 hover:text-white transition-colors">
+                    <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
                       Facebook
                     </a>
                   </div>
@@ -220,38 +220,38 @@ export function ContactSection({
               </div>
               
               <div>
-                <h3 className="text-xl font-semibold text-white mb-4">
+                <h3 className="text-xl font-semibold text-foreground mb-4">
                   Send Us a Message
                 </h3>
                 <form className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-neutral-400 mb-1">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
                       {formLabels.name}
                     </label>
                     <input
                       type="text"
-                      className="w-full px-4 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-2 bg-gray-200 dark:bg-muted border border-gray-400 dark:border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-neutral-400 mb-1">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
                       {formLabels.email}
                     </label>
                     <input
                       type="email"
-                      className="w-full px-4 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-2 bg-gray-200 dark:bg-muted border border-gray-400 dark:border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-neutral-400 mb-1">
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
                       {formLabels.message}
                     </label>
                     <textarea
                       rows={4}
-                      className="w-full px-4 py-2 bg-neutral-700 border border-neutral-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-2 bg-gray-200 dark:bg-muted border border-gray-400 dark:border-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
                     ></textarea>
                   </div>
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700 text-foreground">
                     {formLabels.submit}
                   </Button>
                 </form>
@@ -287,7 +287,7 @@ interface FooterProps {
 
 // Footer
 export function Footer({ 
-  description = "Vibe CRM: The all-in-one solution that replaces 8+ separate business tools. Save money, streamline workflows, and eliminate software fragmentation.",
+  description = "Solvify CRM: The all-in-one solution that replaces 8+ separate business tools. Save money, streamline workflows, and eliminate software fragmentation.",
   links = {
     product: {
       title: "Product",
@@ -310,34 +310,34 @@ export function Footer({
     legal: {
       title: "Legal",
       items: [
-        { label: "Privacy Policy", href: "#" },
-        { label: "Terms of Service", href: "#" },
-        { label: "Cookie Policy", href: "#" },
-        { label: "GDPR", href: "#" }
+        { label: "Privacy Policy", href: "/privacy-policy" },
+        { label: "Terms of Service", href: "/terms-of-service" },
+        { label: "Cookie Policy", href: "/privacy-policy#cookies" },
+        { label: "GDPR", href: "/privacy-policy#gdpr" }
       ]
     }
   }
 }: FooterProps) {
   return (
-    <footer className="bg-neutral-900 py-16 px-4">
+    <footer className="bg-background py-16 px-4">
       <div className="container mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
           <div className="md:col-span-1">
             <div className="flex items-center space-x-2 mb-4">
               <div className="w-6 h-6 rounded-full bg-blue-500"></div>
-              <span className="text-white font-bold text-xl">Vibe CRM</span>
+              <span className="text-foreground font-bold text-xl">Solvify CRM</span>
             </div>
-            <p className="text-neutral-400 mb-4">{description}</p>
+            <p className="text-muted-foreground mb-4">{description}</p>
           </div>
           
           <div>
-            <h3 className="font-semibold text-white mb-4">{links.product.title}</h3>
+            <h3 className="font-semibold text-foreground mb-4">{links.product.title}</h3>
             <ul className="space-y-3">
               {links.product.items.map((link, i) => (
                 <li key={i}>
                   <a 
                     href={link.href} 
-                    className="text-neutral-400 hover:text-white transition-colors"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {link.label}
                   </a>
@@ -347,13 +347,13 @@ export function Footer({
           </div>
           
           <div>
-            <h3 className="font-semibold text-white mb-4">{links.company.title}</h3>
+            <h3 className="font-semibold text-foreground mb-4">{links.company.title}</h3>
             <ul className="space-y-3">
               {links.company.items.map((link, i) => (
                 <li key={i}>
                   <a 
                     href={link.href} 
-                    className="text-neutral-400 hover:text-white transition-colors"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {link.label}
                   </a>
@@ -363,13 +363,13 @@ export function Footer({
           </div>
           
           <div>
-            <h3 className="font-semibold text-white mb-4">{links.legal.title}</h3>
+            <h3 className="font-semibold text-foreground mb-4">{links.legal.title}</h3>
             <ul className="space-y-3">
               {links.legal.items.map((link, i) => (
                 <li key={i}>
                   <a 
                     href={link.href} 
-                    className="text-neutral-400 hover:text-white transition-colors"
+                    className="text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {link.label}
                   </a>
@@ -379,21 +379,21 @@ export function Footer({
           </div>
         </div>
         
-        <div className="border-t border-neutral-800 pt-8 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-neutral-500 text-sm mb-4 md:mb-0">
-            © 2023 Vibe CRM. All rights reserved.
+        <div className="border-t border-border pt-8 flex flex-col md:flex-row justify-between items-center">
+          <p className="text-foreground0 text-sm mb-4 md:mb-0">
+            © 2023 Solvify CRM. All rights reserved.
           </p>
           <div className="flex space-x-6">
-            <a href="#" className="text-neutral-500 hover:text-white transition-colors">
+            <a href="#" className="text-foreground0 hover:text-foreground transition-colors">
               Twitter
             </a>
-            <a href="#" className="text-neutral-500 hover:text-white transition-colors">
+            <a href="#" className="text-foreground0 hover:text-foreground transition-colors">
               LinkedIn
             </a>
-            <a href="#" className="text-neutral-500 hover:text-white transition-colors">
+            <a href="#" className="text-foreground0 hover:text-foreground transition-colors">
               Facebook
             </a>
-            <a href="#" className="text-neutral-500 hover:text-white transition-colors">
+            <a href="#" className="text-foreground0 hover:text-foreground transition-colors">
               Instagram
             </a>
           </div>

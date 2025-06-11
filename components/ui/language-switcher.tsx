@@ -13,12 +13,6 @@ interface Language {
 
 const languages: Language[] = [
   {
-    code: "sv",
-    flag: "🇸🇪",
-    name: "Svenska",
-    path: "/sv",
-  },
-  {
     code: "en",
     flag: "🇺🇸",
     name: "English",

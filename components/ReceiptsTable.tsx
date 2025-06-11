@@ -25,7 +25,7 @@ export function ReceiptsTable({ receipts }: ReceiptsTableProps) {
       case "low":
         return "bg-red-500/20 text-red-400";
       default:
-        return "bg-neutral-500/20 text-neutral-400";
+        return "bg-neutral-500/20 text-muted-foreground";
     }
   };
 
@@ -66,28 +66,28 @@ export function ReceiptsTable({ receipts }: ReceiptsTableProps) {
             placeholder="Search receipts by any field..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 bg-neutral-800 border border-neutral-700 rounded-lg 
-                     text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-2 
+            className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-lg 
+                     text-gray-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none focus:ring-2 
                      focus:ring-neutral-600 focus:border-transparent"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 
-                       hover:text-neutral-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground 
+                       hover:text-gray-800 dark:text-foreground"
             >
               ×
             </button>
           )}
         </div>
-        <div className="text-sm text-neutral-400">
+        <div className="text-sm text-muted-foreground">
           {filteredReceipts.length} of {receipts.length} receipts
         </div>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left text-neutral-400">
-          <thead className="text-xs uppercase bg-neutral-800">
+        <table className="w-full text-sm text-left text-muted-foreground">
+          <thead className="text-xs uppercase bg-background">
             <tr>
               <th scope="col" className="px-6 py-3">Merchant</th>
               <th scope="col" className="px-6 py-3">Date</th>
@@ -99,7 +99,7 @@ export function ReceiptsTable({ receipts }: ReceiptsTableProps) {
           </thead>
           <tbody>
             {filteredReceipts.map((receipt, index) => (
-              <tr key={index} className="border-b border-neutral-700 bg-neutral-800/50 hover:bg-neutral-700">
+              <tr key={index} className="border-b border-border dark:border-border bg-background/50 hover:bg-gray-200 dark:bg-muted">
                 <td className="px-6 py-4 font-medium whitespace-nowrap">
                   {receipt.merchant || 'Unknown'}
                 </td>

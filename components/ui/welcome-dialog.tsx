@@ -109,29 +109,29 @@ export function WelcomeDialog() {
 
   const steps = [
     {
-      title: "Welcome to Vibe CRM",
+      title: "Welcome to Solvify CRM",
       description: "Let's take a quick tour of your new CRM system. We'll show you the key features to help you get started.",
-      icon: <Sparkles className="w-12 h-12 text-blue-500" />
+      icon: <Sparkles className="w-12 h-12 text-blue-600 dark:text-blue-400" />
     },
     {
       title: "Your Dashboard",
       description: "This is your command center. Track revenue, monitor customer activity, and stay on top of important tasks.",
-      icon: <LayoutDashboard className="w-12 h-12 text-blue-500" />
+      icon: <LayoutDashboard className="w-12 h-12 text-blue-600 dark:text-blue-400" />
     },
     {
       title: "Customer Management",
       description: "Manage your customers, track interactions, and build stronger relationships all in one place.",
-      icon: <Users className="w-12 h-12 text-blue-500" />
+      icon: <Users className="w-12 h-12 text-blue-600 dark:text-blue-400" />
     },
     {
       title: "Invoicing & Payments",
       description: "Create and send professional invoices, track payments, and manage your finances effortlessly.",
-      icon: <Receipt className="w-12 h-12 text-blue-500" />
+      icon: <Receipt className="w-12 h-12 text-blue-600 dark:text-blue-400" />
     },
     {
       title: "Ready to Start?",
       description: "You're all set! Start exploring your new CRM system. If you need help, click the support button in the bottom right.",
-      icon: <Check className="w-12 h-12 text-green-500" />
+      icon: <Check className="w-12 h-12 text-green-600 dark:text-green-400" />
     }
   ]
 
@@ -147,16 +147,16 @@ export function WelcomeDialog() {
   if (!hasCheckedStatus || !isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg bg-neutral-900 border-neutral-800 p-6 shadow-xl">
+    <div className="fixed inset-0 bg-gray-900/50 dark:bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <Card className="w-full max-w-lg bg-background border-border p-6 shadow-xl">
         <div className="flex flex-col items-center text-center">
           {steps[currentStep].icon}
           
-          <h2 className="mt-6 text-2xl font-semibold text-white">
+          <h2 className="mt-6 text-2xl font-semibold text-foreground">
             {steps[currentStep].title}
           </h2>
           
-          <p className="mt-2 text-neutral-400">
+          <p className="mt-2 text-muted-foreground">
             {steps[currentStep].description}
           </p>
 
@@ -168,7 +168,7 @@ export function WelcomeDialog() {
                   'w-2 h-2 rounded-full transition-colors',
                   index === currentStep && 'bg-blue-500',
                   index < currentStep && 'bg-green-500',
-                  index > currentStep && 'bg-neutral-700'
+                  index > currentStep && 'bg-gray-200 dark:bg-muted'
                 )}
               />
             ))}
@@ -176,7 +176,7 @@ export function WelcomeDialog() {
 
           <Button
             onClick={nextStep}
-            className="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white"
+            className="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-foreground"
             size="lg"
           >
             {currentStep === steps.length - 1 ? (

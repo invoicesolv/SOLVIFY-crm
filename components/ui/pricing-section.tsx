@@ -23,10 +23,10 @@ export function PricingSection({
     <section className="flex flex-col items-center gap-10 py-10">
       <div className="space-y-7 text-center">
         <div className="space-y-4">
-          <h1 className="text-4xl font-medium text-white md:text-5xl">{title}</h1>
-          <p className="text-white">{subtitle}</p>
+          <h1 className="text-4xl font-medium text-foreground md:text-5xl">{title}</h1>
+          <p className="text-foreground">{subtitle}</p>
         </div>
-        <div className="mx-auto flex w-fit rounded-full bg-white/5 border border-white/10 backdrop-blur-sm p-1">
+        <div className="mx-auto flex w-fit rounded-full bg-background/5 border border-white/10 backdrop-blur-sm p-1">
           {frequencies.map((freq) => (
             <Tab
               key={freq}

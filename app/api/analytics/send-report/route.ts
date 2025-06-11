@@ -23,6 +23,7 @@ interface ConversionBreakdown {
 }
 
 interface DeviceStats {
+  users: number;
   sessions: number;
   pageViews: number;
   conversions: number;
@@ -46,9 +47,25 @@ export async function POST(request: NextRequest) {
     const { propertyId, recipients, analyticsData, isTest, dateRange } = await request.json();
     
     console.log('Received request:', { propertyId, recipients, isTest, dateRange });
+    
+    // Log the bySource data structure for debugging
+    console.log('bySource data structure:', {
+      keys: Object.keys(analyticsData.bySource || {}),
+      firstSource: analyticsData.bySource && Object.keys(analyticsData.bySource).length > 0 
+        ? analyticsData.bySource[Object.keys(analyticsData.bySource)[0]] 
+        : 'no sources',
+      hasSessionsProperty: analyticsData.bySource && Object.keys(analyticsData.bySource).length > 0 
+        ? 'sessions' in analyticsData.bySource[Object.keys(analyticsData.bySource)[0]] 
+        : 'no sources'
+    });
 
-    // Only require authentication for non-test emails
-    if (!isTest) {
+    // Check for CRON authorization (from cron jobs) first
+    const authHeader = request.headers.get('Authorization');
+    const isCronAuth = authHeader && authHeader.startsWith('Bearer ') && 
+                        authHeader.substring(7) === (process.env.CRON_SECRET || 'development');
+    
+    // Only require authentication for non-test emails and when not authorized via cron secret
+    if (!isTest && !isCronAuth) {
       const session = await getServerSession(authOptions);
       const userId = session?.user?.id;
 
@@ -121,6 +138,154 @@ export async function POST(request: NextRequest) {
               </ul>
             </div>
           </div>
+        </div>
+
+        <!-- Device Distribution Chart -->
+        <div style="background: linear-gradient(to bottom right, #4a3a59, #222); padding: 20px; border-radius: 8px; margin: 20px 0; color: white;">
+          <h2 style="color: white; font-weight: bold; margin-bottom: 20px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3);">Device Distribution</h2>
+          
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <!-- Visual representation of device distribution -->
+            <div style="width: 60%;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  ${(() => {
+                    // Process device data safely
+                    const deviceData = analyticsData.byDevice || {};
+                    const deviceEntries = Object.entries(deviceData);
+                    const totalUsers = deviceEntries.reduce((sum, [_, deviceStats]) => {
+                      const stats = deviceStats as any;
+                      return sum + (stats.users || 0);
+                    }, 0);
+                    
+                    // Define colors based on device type
+                    const colors = [
+                      'rgb(0, 204, 255)',    // Electric blue
+                      'rgb(255, 64, 87)',    // Hot pink
+                      'rgb(113, 255, 78)',   // Neon green
+                      'rgb(255, 215, 0)',    // Gold
+                      'rgb(211, 92, 255)'    // Violet
+                    ];
+                    
+                    // Create cells for each device
+                    return deviceEntries.map(([device, deviceStats], index) => {
+                      const stats = deviceStats as any;
+                      const users = stats.users || 0;
+                      const percentage = totalUsers > 0 ? (users / totalUsers) * 100 : 0;
+                      
+                      return `<td style="width: ${percentage}%; background-color: ${colors[index % colors.length]}; height: 30px; border-radius: 0;"></td>`;
+                    }).join('');
+                  })()}
+                </tr>
+              </table>
+            </div>
+            
+            <!-- Legend -->
+            <div style="width: 35%;">
+              <table style="width: 100%; border-collapse: collapse;">
+                ${(() => {
+                  // Process device data safely
+                  const deviceData = analyticsData.byDevice || {};
+                  const deviceEntries = Object.entries(deviceData);
+                  const totalUsers = deviceEntries.reduce((sum, [_, deviceStats]) => {
+                    const stats = deviceStats as any;
+                    return sum + (stats.users || 0);
+                  }, 0);
+                  
+                  // Define colors
+                  const colors = [
+                    'rgb(0, 204, 255)',    // Electric blue
+                    'rgb(255, 64, 87)',    // Hot pink
+                    'rgb(113, 255, 78)',   // Neon green
+                    'rgb(255, 215, 0)',    // Gold
+                    'rgb(211, 92, 255)'    // Violet
+                  ];
+                  
+                  // Create rows for each device
+                  return deviceEntries.map(([device, deviceStats], index) => {
+                    const stats = deviceStats as any;
+                    const users = stats.users || 0;
+                    const percentage = totalUsers > 0 ? (users / totalUsers) * 100 : 0;
+                    
+                    return `
+                      <tr>
+                        <td style="padding-bottom: 10px;">
+                          <div style="display: flex; align-items: center;">
+                            <div style="width: 15px; height: 15px; background-color: ${colors[index % colors.length]}; margin-right: 10px; border-radius: 3px;"></div>
+                            <div style="flex-grow: 1;">${device.charAt(0).toUpperCase() + device.slice(1)}</div>
+                            <div style="font-weight: bold;">${users} (${percentage.toFixed(1)}%)</div>
+                          </div>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('');
+                })()}
+              </table>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Traffic by Source Chart -->
+        <div style="background: linear-gradient(to bottom right, #59452a, #222); padding: 20px; border-radius: 8px; margin: 20px 0; color: white;">
+          <h2 style="color: white; font-weight: bold; margin-bottom: 20px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3);">Traffic by Source</h2>
+          
+          <table style="width: 100%; border-collapse: collapse;">
+            ${(() => {
+              // Process source data safely
+              const sourceData = analyticsData.bySource || {};
+              // Convert to array of objects for easier manipulation
+              const sources = Object.entries(sourceData)
+                .map(([source, sourceStats]) => {
+                  // Properly extract the sessions value
+                  // Source metrics should have a 'sessions' property
+                  return {
+                    name: source.charAt(0).toUpperCase() + source.slice(1),
+                    sessions: (sourceStats as any)?.sessions || 0
+                  };
+                })
+                .sort((a, b) => b.sessions - a.sessions)
+                .slice(0, 8); // Limit to top 8 sources
+              
+              // Add console logging to debug
+              console.log('Traffic sources processed for email:', sources);
+              
+              const maxSessions = Math.max(...sources.map(s => s.sessions), 1);
+              
+              // Define colors for sources
+              const colors = [
+                'rgb(0, 224, 255)',     // Electric blue
+                'rgb(255, 69, 87)',     // Hot pink
+                'rgb(123, 255, 90)',    // Neon green
+                'rgb(255, 230, 20)',    // Bright yellow
+                'rgb(221, 102, 255)',   // Bright purple
+                'rgb(255, 138, 20)',    // Bright orange
+                'rgb(10, 230, 200)',    // Bright teal
+                'rgb(255, 130, 210)'    // Bright pink
+              ];
+              
+              // Create rows for each source
+              return sources.map((source, index) => {
+                const percentage = (source.sessions / maxSessions) * 100;
+                return `
+                  <tr>
+                    <td style="padding-bottom: 12px;">
+                      <div style="display: flex; align-items: center;">
+                        <div style="width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px;">
+                          ${source.name}
+                        </div>
+                        <div style="flex-grow: 1; height: 25px; position: relative;">
+                          <div style="position: absolute; top: 0; left: 0; height: 100%; width: ${percentage}%; background-color: ${colors[index % colors.length]}; border-radius: 4px; border: 2px solid white;"></div>
+                        </div>
+                        <div style="width: 80px; text-align: right; font-weight: bold; margin-left: 10px;">
+                          ${source.sessions.toLocaleString()}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('');
+            })()}
+          </table>
         </div>
 
         <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">

@@ -695,16 +695,33 @@ ${session?.user?.name || ''}
       // Add instruction to include signature
       const signatureInstruction = `End your email with this signature: "${signature}". Do not modify the signature.`;
       
-      // Create the prompt with additional context if provided
-      let prompt = `${languageInstruction}${template.prompt}\n\n`;
+      // Check if user has entered text to rewrite
+      const userText = responseText.trim();
+      let prompt;
       
-      // Add additional context if provided
-      if (additionalContext.trim()) {
-        prompt += `Additional context: ${additionalContext.trim()}\n\n`;
+      if (userText) {
+        // User has entered text they want rewritten in the specified style
+        prompt = `${languageInstruction}This is a sample email that I want to rewrite in a ${template.type.toLowerCase()} tone/style.
+
+IMPORTANT: Write the email in a completely natural human voice. Avoid any AI-sounding language, formulaic phrases, or overly formal structures. Write as a real person would write an email to a colleague or business partner.
+
+Analyze the content and create a fresh response that captures the same intent but with a ${template.type.toLowerCase()} voice. Be concise and direct. Use natural transitions and conversational language.
+
+${template.prompt}\n\n`;
+        prompt += `Here is the email to analyze and rewrite with a completely fresh perspective: 
+${userText}\n\n${signatureInstruction}`;
+      } else {
+        // Standard generation based on original email
+        prompt = `${languageInstruction}${template.prompt}\n\nIMPORTANT: Write the email in a completely natural human voice. Avoid any AI-sounding language, formulaic phrases, or overly formal structures. Write as a real person would write an email to a colleague or business partner. Be concise and direct. Use natural transitions and conversational language.\n\n`;
+        
+        // Add additional context if provided
+        if (additionalContext.trim()) {
+          prompt += `Additional context: ${additionalContext.trim()}\n\n`;
+        }
+        
+        // Add the original email
+        prompt += `Original Email:\nSubject: ${email.subject}\nFrom: ${email.from}\n\n${truncatedBody}\n\n${signatureInstruction}`;
       }
-      
-      // Add the original email
-      prompt += `Original Email:\nSubject: ${email.subject}\nFrom: ${email.from}\n\n${truncatedBody}\n\n${signatureInstruction}`;
       
       console.log('Using template:', template);
       console.log('Prompt with language:', languageInstruction);
@@ -944,6 +961,12 @@ ${session?.user?.name || ''}
         body.style.minHeight = '100%';
       }
       
+      // Force all text elements to have light color
+      const textElements = doc.querySelectorAll('p, span, div, td, th, li, strong, b, em, i, a, h1, h2, h3, h4, h5, h6');
+      textElements.forEach(el => {
+        (el as HTMLElement).style.color = '#e0e0e0';
+      });
+      
       // Fix relative URLs for images
       const images = doc.querySelectorAll('img');
       images.forEach(img => {
@@ -984,7 +1007,7 @@ ${session?.user?.name || ''}
         link.style.color = '#77b7ff';
       });
       
-      // Fix inline styles for dark mode compatibility
+      // Fix inline styles for dark mode compatibility - more aggressive replacement
       const elements = doc.querySelectorAll('[style]');
       elements.forEach(el => {
         const currentStyle = el.getAttribute('style') || '';
@@ -993,26 +1016,15 @@ ${session?.user?.name || ''}
         if (currentStyle) {
           let newStyle = currentStyle;
           
-          // Replace black text colors with light colors for dark mode
-          if (currentStyle.includes('color: #000') || 
-              currentStyle.includes('color:black') || 
-              currentStyle.includes('color: black') ||
-              currentStyle.includes('color: rgb(0, 0, 0)')) {
-            newStyle = newStyle.replace(/color:\s*(#000000|black|rgb\(0,\s*0,\s*0\))/gi, 'color: #cccccc');
-          }
+          // Replace any kind of dark text colors with light colors for dark mode
+          newStyle = newStyle.replace(/color:\s*(#000000|#000|black|rgb\(0,\s*0,\s*0\)|#111|#222|#333|#444|#555)/gi, 'color: #e0e0e0');
           
-          // Replace white backgrounds with transparent for dark mode
-          if (currentStyle.includes('background-color: #fff') || 
-              currentStyle.includes('background-color:white') || 
-              currentStyle.includes('background-color: white') ||
-              currentStyle.includes('background-color: rgb(255, 255, 255)')) {
-            newStyle = newStyle.replace(/background-color:\s*(#ffffff|white|rgb\(255,\s*255,\s*255\))/gi, 'background-color: transparent');
-          }
+          // Replace white backgrounds with darker background for dark mode
+          newStyle = newStyle.replace(/background-color:\s*(#ffffff|#fff|white|rgb\(255,\s*255,\s*255\))/gi, 'background-color: #1a1a1a');
+          newStyle = newStyle.replace(/background:\s*(#ffffff|#fff|white|rgb\(255,\s*255,\s*255\))/gi, 'background: #1a1a1a');
           
           // Update the style attribute
-          if (newStyle !== currentStyle) {
-            el.setAttribute('style', newStyle);
-          }
+          el.setAttribute('style', newStyle);
         }
       });
       
@@ -1033,6 +1045,18 @@ ${session?.user?.name || ''}
           (cell as HTMLTableCellElement).style.backgroundColor = '#1a1a1a';
         });
       });
+      
+      // Add an overall wrapper with important color rules
+      const wrapper = doc.createElement('div');
+      wrapper.setAttribute('style', 'color: #e0e0e0 !important; background-color: #121212 !important;');
+      
+      // Move all body children to this wrapper
+      while (body.firstChild) {
+        wrapper.appendChild(body.firstChild);
+      }
+      
+      // Append wrapper back to body
+      body.appendChild(wrapper);
       
       return doc.documentElement.outerHTML;
     } catch (error) {
@@ -1210,224 +1234,195 @@ ${session?.user?.name || ''}
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[1200px] w-[98vw] h-[90vh] flex flex-col bg-neutral-950 border-neutral-800 rounded-lg p-6 overflow-visible"
+      <DialogContent className="sm:max-w-[1200px] w-[98vw] h-[90vh] flex flex-col bg-background border-border rounded-lg p-0 overflow-visible"
       onInteractOutside={(e) => {
         // Prevent clicks on popover content from closing dialog
         e.preventDefault();
       }}>
-        <DialogTitle className="sr-only">
-          {email ? `Email from ${email.from}` : 'Email Response'}
-        </DialogTitle>
-        <button 
-          className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none disabled:pointer-events-none"
-          onClick={() => onOpenChange(false)}
-        >
-          <X className="h-4 w-4 text-neutral-400" />
-          <span className="sr-only">Close</span>
-        </button>
-
-        <div className="border-b border-neutral-800 pb-3 mb-4">
-          <div className="text-xl text-white font-sans font-bold flex items-center">
-            <div className="mr-3 p-2 rounded-full bg-neutral-800 text-white">
-              <MessageSquare className="h-5 w-5" />
-            </div>
-            <span>Email from {email?.from}</span>
-          </div>
-          <div className="text-neutral-400 font-sans">
-            <span className="text-sm font-medium text-white">Subject:</span> {email?.subject}
-          </div>
-          <div className="text-xs text-neutral-500 mt-1 font-sans">
-            <span className="text-neutral-400">Received:</span> {email?.date ? new Date(email.date).toLocaleString() : ''}
-          </div>
-        </div>
-        
-        <div className="flex flex-col flex-1 overflow-hidden gap-6">
-          {/* Email Content - Now on top taking full width with more space */}
-          <div className="flex flex-col h-[40vh] overflow-hidden email-content transition-all duration-200 ease-in-out">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-medium text-white flex items-center">
-                <span className="mr-2">Original Email</span>
-              </h3>
-              <div className="flex bg-neutral-900 rounded-lg p-1">
-                <button 
-                  className={`px-2 py-1 text-xs rounded-md transition-all ${displayFormat === 'plain' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'}`}
-                  onClick={() => setDisplayFormat('plain')}
-                >
-                  Plain Text
-                </button>
-                <button 
-                  className={`px-2 py-1 text-xs rounded-md transition-all ${displayFormat === 'html' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'}`}
-                  onClick={() => setDisplayFormat('html')}
-                  disabled={!emailHtmlBody}
-                >
-                  HTML
-                </button>
-              </div>
-            </div>
-            <div className="border rounded-md border-neutral-800 p-4 overflow-y-auto bg-neutral-950 flex-1">
-              {isLoadingBody ? (
-                <div className="flex items-center justify-center h-32">
-                  <Loader2 className="h-6 w-6 animate-spin text-white" />
-                </div>
-              ) : displayFormat === 'plain' ? (
-                <div className="text-sm text-neutral-300 whitespace-pre-wrap font-sans leading-relaxed">
-                  {emailBody || email?.snippet || 'No content available'}
-                </div>
-              ) : (
-                <div 
-                  className={`text-sm w-full h-full overflow-y-auto ${styles.emailContent}`}
-                  style={{ backgroundColor: '#121212' }}
-                >
-                  <div 
-                    className="h-full"
-                    dangerouslySetInnerHTML={{ 
-                      __html: processHtmlEmail(emailHtmlBody) || '<p>No HTML content available</p>' 
-                    }}
-                  />
-                </div>
-              )}
+        <div className="sticky top-0 z-10 bg-background p-3 border-b border-border flex items-center justify-between">
+          <div className="flex-1 mr-4 overflow-hidden">
+            <h2 className="text-base text-foreground font-sans font-medium truncate">{email?.subject}</h2>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <span className="font-medium truncate">{email?.from}</span>
+              <span className="mx-2">•</span>
+              <span>{email?.date ? new Date(email.date).toLocaleString() : ''}</span>
             </div>
           </div>
           
-          {/* Response Section - More compact with optimized space */}
-          <div className="flex flex-col h-[35vh] overflow-hidden response-section transition-all duration-200 ease-in-out">
-            <Tabs defaultValue="manual" className="w-full h-full flex flex-col">
-              <div className="flex justify-between items-center mb-2">
-                <TabsList className="bg-transparent">
-                  <TabsTrigger 
-                    value="manual" 
-                    className="text-sm font-medium data-[state=active]:bg-neutral-700 data-[state=active]:text-white"
-                  >
-                    Manual Response
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="ai" 
-                    className="text-sm font-medium data-[state=active]:bg-neutral-700 data-[state=active]:text-white"
-                  >
-                    AI-Assisted Response
-                  </TabsTrigger>
-                </TabsList>
-                
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => onOpenChange(false)} 
-                    className="h-8 text-xs text-neutral-400 hover:text-white hover:bg-neutral-800"
-                  >
-                    Cancel
-                  </Button>
-                  <Button 
-                    onClick={sendResponse}
-                    disabled={isSending || !responseText.trim()}
-                    className="h-8 bg-neutral-800 hover:bg-neutral-700 text-white text-xs"
-                  >
-                    {isSending ? (
-                      <>
-                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                        Sending...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-3 w-3 mr-1" />
-                        Send Response
-                      </>
-                    )}
-                  </Button>
-                </div>
+          <div className="flex gap-2 shrink-0">
+            <div className="flex bg-background rounded-lg p-1">
+              <button 
+                className={`px-2 py-1 text-xs rounded-md transition-all ${displayFormat === 'plain' ? 'bg-gray-200 dark:bg-muted text-foreground' : 'text-muted-foreground hover:text-gray-800 dark:text-foreground'}`}
+                onClick={() => setDisplayFormat('plain')}
+              >
+                Plain Text
+              </button>
+              <button 
+                className={`px-2 py-1 text-xs rounded-md transition-all ${displayFormat === 'html' ? 'bg-gray-200 dark:bg-muted text-foreground' : 'text-muted-foreground hover:text-gray-800 dark:text-foreground'}`}
+                onClick={() => setDisplayFormat('html')}
+                disabled={!emailHtmlBody}
+              >
+                HTML
+              </button>
+            </div>
+            
+            <Button 
+              onClick={sendResponse}
+              disabled={isSending || !responseText.trim()}
+              className="h-8 bg-background hover:bg-gray-200 dark:bg-muted text-foreground text-xs"
+            >
+              {isSending ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-3 w-3 mr-1" />
+                  Reply
+                </>
+              )}
+            </Button>
+            
+            <Button
+              variant="ghost" 
+              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-background"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        
+        <div className="flex flex-col flex-1 overflow-hidden">
+          {/* Main email content - full height */}
+          <div className="flex-1 overflow-auto p-4 h-[calc(100%-80px)]">
+            {isLoadingBody ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="h-6 w-6 animate-spin text-foreground" />
               </div>
-              
-              <TabsContent value="manual" className="flex-1 flex flex-col overflow-hidden mt-0">
-                <div className="relative">
-                  <Textarea 
-                    placeholder="Type your response here..."
-                    className="w-full flex-1 bg-transparent border-neutral-800/50 text-white focus:border-neutral-700 focus:ring-neutral-800 font-sans resize-none overflow-y-auto focus:h-[30vh] transition-all duration-200"
-                    value={responseText}
-                    onChange={(e) => setResponseText(e.target.value)}
-                    onFocus={() => {
-                      // Find the parent div and increase its height
-                      const responseSection = document.querySelector('.response-section');
-                      if (responseSection) {
-                        responseSection.classList.add('expanded');
-                      }
-                    }}
-                    onBlur={() => {
-                      // Find the parent div and reset its height
-                      const responseSection = document.querySelector('.response-section');
-                      if (responseSection) {
-                        responseSection.classList.remove('expanded');
-                      }
-                    }}
-                  />
-                  <div className="absolute top-2 right-2 flex items-center gap-2">
-                    <Button
-                      onClick={openGrammarCheck}
-                      disabled={!responseText.trim()}
-                      className="h-7 px-2 text-xs bg-neutral-800 hover:bg-neutral-700 text-white"
-                      title="Proofread and correct your text"
+            ) : displayFormat === 'plain' ? (
+              <div className="text-sm text-foreground dark:text-neutral-300 whitespace-pre-wrap font-sans leading-relaxed">
+                {emailBody || email?.snippet || 'No content available'}
+              </div>
+            ) : (
+              <div 
+                className="text-sm w-full h-full overflow-y-auto email-content"
+                style={{ backgroundColor: '#121212' }}
+              >
+                <div 
+                  className="h-full"
+                  dangerouslySetInnerHTML={{ 
+                    __html: processHtmlEmail(emailHtmlBody) || '<p>No HTML content available</p>' 
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          
+          {/* Collapsed reply area - initially hidden or minimal */}
+          <div className="email-reply-area border-t border-border transition-all duration-300 ease-in-out flex flex-col bg-background overflow-hidden" style={{ height: '80px' }}>
+            <div className="flex items-center p-2 justify-between">
+              <Tabs defaultValue="manual" className="w-full">
+                <div className="flex justify-between items-center">
+                  <TabsList className="bg-transparent h-8">
+                    <TabsTrigger 
+                      value="manual" 
+                      className="text-xs data-[state=active]:bg-gray-200 dark:bg-muted data-[state=active]:text-foreground"
                     >
-                      Improve Text
-                    </Button>
-                  </div>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="ai" className="space-y-2 flex-1 flex flex-col overflow-hidden mt-0">
-                <div className="flex gap-2 items-center">
-                  <div className="flex gap-2 flex-1">
-                    <div className="w-[140px]">
-                      <Select onValueChange={handleResponseTypeChange} value={selectedResponseType}>
-                        <SelectTrigger className="h-8 text-xs bg-transparent border-neutral-800/50 text-white focus:border-neutral-700 focus:ring-neutral-800">
-                          <SelectValue placeholder="Response Type" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-neutral-900 border-neutral-800 text-white z-[11000]" position="popper">
-                          <SelectItem value="professional">Professional</SelectItem>
-                          <SelectItem value="strategic">Strategic</SelectItem>
-                          <SelectItem value="grammar">Grammar Check</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="w-[140px]">
-                      <Select onValueChange={handleLanguageChange} value={selectedLanguage}>
-                        <SelectTrigger className="h-8 text-xs bg-transparent border-neutral-800/50 text-white focus:border-neutral-700 focus:ring-neutral-800">
-                          <SelectValue placeholder="Language" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-neutral-900 border-neutral-800 text-white z-[11000]" position="popper">
-                          <SelectItem value="English">English</SelectItem>
-                          <SelectItem value="Spanish">Spanish</SelectItem>
-                          <SelectItem value="Swedish">Svenska</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    {/* Add expand button */}
-                    <Button
-                      onClick={() => {
-                        const responseSection = document.querySelector('.response-section');
-                        const isExpanded = responseSection?.classList.contains('expanded');
-                        if (isExpanded) {
-                          collapseResponseSection();
-                        } else {
-                          expandResponseSection();
-                        }
-                      }}
-                      className="h-8 px-2 text-xs bg-transparent border-neutral-700 text-white hover:bg-neutral-800"
-                      title="Expand/collapse response area"
+                      Manual
+                    </TabsTrigger>
+                    <TabsTrigger 
+                      value="ai" 
+                      className="text-xs data-[state=active]:bg-gray-200 dark:bg-muted data-[state=active]:text-foreground"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="15 3 21 3 21 9"></polyline>
-                        <polyline points="9 21 3 21 3 15"></polyline>
-                        <line x1="21" y1="3" x2="14" y2="10"></line>
-                        <line x1="3" y1="21" x2="10" y2="14"></line>
-                      </svg>
-                    </Button>
-                  </div>
+                      AI-Assisted
+                    </TabsTrigger>
+                  </TabsList>
                   
-                  <div className="flex gap-2">
+                  <Button
+                                          onClick={() => {
+                       const replyArea = document.querySelector('.email-reply-area');
+                       const isExpanded = replyArea?.getAttribute('data-expanded') === 'true';
+                       
+                       if (replyArea) {
+                         if (isExpanded) {
+                           (replyArea as HTMLElement).style.height = '80px';
+                           replyArea.setAttribute('data-expanded', 'false');
+                         } else {
+                           (replyArea as HTMLElement).style.height = '300px';
+                           replyArea.setAttribute('data-expanded', 'true');
+                         }
+                       }
+                    }}
+                    className="h-6 px-2 text-xs bg-transparent text-muted-foreground hover:text-foreground"
+                    title="Expand/collapse reply area"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 3 21 3 21 9"></polyline>
+                      <polyline points="9 21 3 21 3 15"></polyline>
+                      <line x1="21" y1="3" x2="14" y2="10"></line>
+                      <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                  </Button>
+                </div>
+                
+                <TabsContent value="manual" className="mt-1">
+                  <div className="relative">
+                    <Textarea 
+                      placeholder="Type your response here..."
+                      className="w-full bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800 font-sans resize-none h-[200px]"
+                      value={responseText}
+                      onChange={(e) => setResponseText(e.target.value)}
+                                             onFocus={() => {
+                         const replyArea = document.querySelector('.email-reply-area');
+                         if (replyArea) {
+                           (replyArea as HTMLElement).style.height = '300px';
+                           replyArea.setAttribute('data-expanded', 'true');
+                         }
+                       }}
+                    />
+                    <div className="absolute top-2 right-2 flex items-center gap-2">
+                      <Button
+                        onClick={openGrammarCheck}
+                        disabled={!responseText.trim()}
+                        className="h-7 px-2 text-xs bg-background hover:bg-gray-200 dark:bg-muted text-foreground"
+                        title="Proofread and correct your text"
+                      >
+                        Improve Text
+                      </Button>
+                    </div>
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="ai" className="mt-1">
+                  <div className="flex gap-2 mb-2">
+                    <Select onValueChange={handleResponseTypeChange} value={selectedResponseType}>
+                      <SelectTrigger className="h-8 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
+                        <SelectValue placeholder="Response Type" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
+                        <SelectItem value="professional">Professional</SelectItem>
+                        <SelectItem value="strategic">Strategic</SelectItem>
+                        <SelectItem value="grammar">Grammar Check</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    
+                    <Select onValueChange={handleLanguageChange} value={selectedLanguage}>
+                      <SelectTrigger className="h-8 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
+                        <SelectValue placeholder="Language" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
+                        <SelectItem value="English">English</SelectItem>
+                        <SelectItem value="Spanish">Spanish</SelectItem>
+                        <SelectItem value="Swedish">Svenska</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    
                     <Button 
                       onClick={generateAIResponse}
                       disabled={isGenerating || !selectedResponseType || !selectedLanguage}
-                      className="h-8 bg-neutral-800 hover:bg-neutral-700 text-white text-xs"
+                      className="h-8 bg-background hover:bg-gray-200 dark:bg-muted text-foreground text-xs"
                     >
                       {isGenerating ? (
                         <>
@@ -1441,138 +1436,55 @@ ${session?.user?.name || ''}
                         </>
                       )}
                     </Button>
-                    
-                    <Button 
-                      onClick={saveResponseTemplate}
-                      disabled={isSaving || !responseText.trim() || !selectedTemplate}
-                      className="h-8 text-xs bg-transparent border-neutral-700 text-white hover:bg-neutral-800"
-                    >
-                      {isSaving ? (
-                        <>
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <Save className="h-3 w-3 mr-1" />
-                          Save Template
-                        </>
-                      )}
-                    </Button>
                   </div>
-                </div>
-
-                {/* Context input with improved visibility */}
-                <div className="relative mb-2 mt-2">
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs text-neutral-400 flex items-center gap-1 font-medium">
-                      Your context/knowledge (added to AI prompt)
-                    </label>
-                    {additionalContext.trim() && (
-                      <Button 
-                        onClick={() => setAdditionalContext('')}
-                        className="h-5 px-2 text-xs text-neutral-400 hover:text-white hover:bg-neutral-800"
-                        variant="ghost"
-                      >
-                        Clear
-                      </Button>
-                    )}
-                  </div>
+                  
                   <Textarea 
-                    placeholder="Add your own expertise, knowledge or context to guide the AI response"
-                    className="w-full bg-neutral-800/30 border-neutral-700/50 text-white focus:border-neutral-600 focus:ring-neutral-700 font-sans resize-none text-xs min-h-[80px] p-3"
-                    value={additionalContext}
-                    onChange={(e) => setAdditionalContext(e.target.value)}
-                  />
-                </div>
-
-                {/* Main response area - now with better sizing */}
-                <div className="relative flex-1 min-h-[130px] border border-neutral-800/50 rounded-md p-2 bg-neutral-900/30">
-                  <Textarea 
-                    placeholder="AI-generated response will appear here..."
-                    className={`w-full h-full bg-transparent border-0 text-white focus:ring-0 font-sans resize-none overflow-y-auto px-1 responseTextarea ${!isEditing ? 'opacity-90' : ''}`}
+                    placeholder="Paste a sample email here that you want to transform into a new email with the selected style. The AI will understand the context and create a fresh response that matches your intent."
+                    className="w-full bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800 font-sans resize-none h-[140px]"
                     value={responseText}
                     onChange={(e) => setResponseText(e.target.value)}
-                    readOnly={!isEditing}
-                    onFocus={() => {
-                      expandResponseSection();
-                    }}
-                    onBlur={() => {
-                      // Only collapse if we're not clicking another element in the same area
-                      setTimeout(() => {
-                        const activeElement = document.activeElement;
-                        if (!activeElement || !activeElement.closest('.response-section')) {
-                          collapseResponseSection();
-                        }
-                      }, 100);
-                    }}
+                    readOnly={false}
                   />
+                  
                   {responseText && (
-                    <Button 
-                      onClick={toggleEditMode}
-                      className="absolute top-2 right-2 h-6 w-6 p-0 rounded-full bg-neutral-800/80 hover:bg-neutral-700"
-                      title={isEditing ? "Lock editing" : "Edit response"}
-                    >
-                      {isEditing ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect>
-                          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                        </svg>
-                      ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3Z"></path>
-                        </svg>
-                      )}
-                    </Button>
+                    <div className="flex justify-end mt-2">
+                      <Button 
+                        onClick={toggleEditMode}
+                        className="h-6 px-2 text-xs bg-background/80 hover:bg-gray-200 dark:bg-muted"
+                        title={isEditing ? "Lock editing" : "Edit response"}
+                      >
+                        {isEditing ? "Lock" : "Edit"}
+                      </Button>
+                    </div>
                   )}
-                </div>
-
-                {/* Compact signature display */}
-                <div className="flex justify-between items-center text-xs">
-                  <div className="text-neutral-500 truncate flex-1">
-                    Signature: <span className="text-neutral-400">{signature ? (signature.length > 50 ? signature.substring(0, 50) + '...' : signature) : 'None'}</span>
-                  </div>
-                  <Button
-                    onClick={() => {
-                      const newSignature = prompt("Edit your signature:", signature);
-                      if (newSignature !== null) {
-                        handleSignatureEdit(newSignature);
-                      }
-                    }}
-                    variant="ghost"
-                    className="h-6 px-2 text-xs text-neutral-400 hover:text-white"
-                    type="button"
-                  >
-                    Edit
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
+                </TabsContent>
+              </Tabs>
+            </div>
           </div>
         </div>
 
         {errorMessage && (
-          <div className="mt-2 p-2 bg-red-900/50 border border-red-700 text-red-200 rounded text-sm">
+          <div className="p-2 bg-red-900/50 border border-red-700 text-red-200 rounded text-sm">
             {errorMessage}
           </div>
         )}
 
-        {/* Grammar check dialog */}
+        {/* Grammar check dialog - keep this unchanged */}
         <Dialog open={grammarDialogOpen} onOpenChange={setGrammarDialogOpen}>
-          <DialogContent className="bg-neutral-950 border-neutral-800 text-white">
+          <DialogContent className="bg-background border-border text-foreground">
             <DialogHeader>
               <DialogTitle>Text Improvement</DialogTitle>
-              <DialogDescription className="text-neutral-400">
+              <DialogDescription className="text-muted-foreground">
                 We'll clean up your text and fix any grammar issues.
               </DialogDescription>
             </DialogHeader>
             
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center space-x-2">
-                <span className="text-xs text-neutral-400">Style:</span>
-                <div className="flex bg-neutral-900 rounded-lg p-1">
+                <span className="text-xs text-muted-foreground">Style:</span>
+                <div className="flex bg-background rounded-lg p-1">
                   <button
-                    className={`px-2 py-1 text-xs rounded-md transition-all ${grammarStyle === 'formal' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'}`}
+                    className={`px-2 py-1 text-xs rounded-md transition-all ${grammarStyle === 'formal' ? 'bg-gray-200 dark:bg-muted text-foreground' : 'text-muted-foreground hover:text-gray-800 dark:text-foreground'}`}
                     onClick={() => {
                       setGrammarStyle('formal');
                       if (originalText) performGrammarCheck(originalText, 'formal');
@@ -1582,7 +1494,7 @@ ${session?.user?.name || ''}
                     Formal
                   </button>
                   <button
-                    className={`px-2 py-1 text-xs rounded-md transition-all ${grammarStyle === 'casual' ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-neutral-200'}`}
+                    className={`px-2 py-1 text-xs rounded-md transition-all ${grammarStyle === 'casual' ? 'bg-gray-200 dark:bg-muted text-foreground' : 'text-muted-foreground hover:text-gray-800 dark:text-foreground'}`}
                     onClick={() => {
                       setGrammarStyle('casual');
                       if (originalText) performGrammarCheck(originalText, 'casual');
@@ -1599,7 +1511,7 @@ ${session?.user?.name || ''}
                   if (originalText) performGrammarCheck(originalText, grammarStyle);
                 }}
                 disabled={isCheckingGrammar || !originalText}
-                className="h-7 px-2 text-xs bg-neutral-800 hover:bg-neutral-700 text-white"
+                className="h-7 px-2 text-xs bg-background hover:bg-gray-200 dark:bg-muted text-foreground"
               >
                 {isCheckingGrammar ? (
                   <>
@@ -1614,23 +1526,23 @@ ${session?.user?.name || ''}
             
             <div className="grid grid-cols-2 gap-4 my-2">
               <div className="flex flex-col">
-                <h4 className="text-xs font-medium text-neutral-400 mb-1">Original Text</h4>
-                <div className="bg-neutral-900 rounded-md p-2 text-neutral-300 text-sm overflow-y-auto h-[200px] whitespace-pre-wrap">
+                <h4 className="text-xs font-medium text-muted-foreground mb-1">Original Text</h4>
+                <div className="bg-background rounded-md p-2 text-foreground dark:text-neutral-300 text-sm overflow-y-auto h-[200px] whitespace-pre-wrap">
                   {originalText}
                 </div>
               </div>
               <div className="flex flex-col">
-                <h4 className="text-xs font-medium text-neutral-400 mb-1">Improved Text</h4>
-                <div className="bg-neutral-900 rounded-md p-2 text-white text-sm overflow-y-auto h-[200px] whitespace-pre-wrap">
+                <h4 className="text-xs font-medium text-muted-foreground mb-1">Improved Text</h4>
+                <div className="bg-background rounded-md p-2 text-foreground text-sm overflow-y-auto h-[200px] whitespace-pre-wrap">
                   {isCheckingGrammar ? (
                     <div className="flex items-center justify-center h-full">
-                      <Loader2 className="h-5 w-5 animate-spin text-neutral-400" />
-                      <span className="ml-2 text-neutral-400">Improving text...</span>
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-muted-foreground">Improving text...</span>
                     </div>
                   ) : improvedText ? (
                     improvedText
                   ) : (
-                    <span className="text-neutral-500">Improved text will appear here</span>
+                    <span className="text-foreground0">Improved text will appear here</span>
                   )}
                 </div>
               </div>
@@ -1640,14 +1552,14 @@ ${session?.user?.name || ''}
               <Button
                 variant="outline"
                 onClick={() => setGrammarDialogOpen(false)}
-                className="h-8 text-xs text-neutral-400 hover:text-white hover:bg-neutral-800"
+                className="h-8 text-xs text-muted-foreground hover:text-foreground hover:bg-background"
               >
                 Cancel
               </Button>
               <Button
                 onClick={applyImprovedText}
                 disabled={isCheckingGrammar || !improvedText}
-                className="h-8 bg-neutral-800 hover:bg-neutral-700 text-white text-xs"
+                className="h-8 bg-background hover:bg-gray-200 dark:bg-muted text-foreground text-xs"
               >
                 Apply Changes
               </Button>

@@ -311,11 +311,11 @@ export function FortnoxInvoiceAccruals({ userId }: { userId: string }) {
   };
 
   return (
-    <div className="w-full border rounded-lg shadow-sm bg-white dark:bg-gray-800 p-4">
+    <div className="w-full border rounded-lg shadow-sm bg-background dark:bg-gray-800 p-4">
       <div className="mb-4 flex justify-between items-center">
         <div>
           <h3 className="text-lg font-semibold mb-1">Fortnox Invoice Accruals</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-foreground0 dark:text-gray-400">
             Manage invoice accruals in your Fortnox account
           </p>
         </div>
@@ -466,7 +466,7 @@ export function FortnoxInvoiceAccruals({ userId }: { userId: string }) {
               <Label htmlFor="period" className="mb-1 block">Period *</Label>
               <select 
                 id="period"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="w-full px-3 py-2 border border-border rounded-md"
                 value={newAccrual.Period || 'MONTHLY'}
                 onChange={e => handleInputChange('Period', e.target.value as any)}
                 required
@@ -507,22 +507,22 @@ export function FortnoxInvoiceAccruals({ userId }: { userId: string }) {
         <h4 className="text-md font-medium mb-2">Invoice Accruals</h4>
         
         {accruals.length === 0 ? (
-          <p className="text-gray-500 italic">No invoice accruals found. Click "Fetch All" to load accruals.</p>
+          <p className="text-foreground0 italic">No invoice accruals found. Click "Fetch All" to load accruals.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Invoice #</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Description</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Dates</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Amount</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Period</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Times</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-foreground0 dark:text-gray-300 uppercase tracking-wider">Invoice #</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-foreground0 dark:text-gray-300 uppercase tracking-wider">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-foreground0 dark:text-gray-300 uppercase tracking-wider">Dates</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-foreground0 dark:text-gray-300 uppercase tracking-wider">Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-foreground0 dark:text-gray-300 uppercase tracking-wider">Period</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-foreground0 dark:text-gray-300 uppercase tracking-wider">Times</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-foreground0 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200">
+              <tbody className="bg-background dark:bg-gray-800 divide-y divide-gray-200">
                 {accruals.map((accrual) => (
                   <tr key={accrual.InvoiceNumber}>
                     <td className="px-6 py-4 whitespace-nowrap">{accrual.InvoiceNumber}</td>

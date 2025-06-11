@@ -605,15 +605,15 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
 
   if (loading) {
     return (
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-background border-border text-foreground">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
+          <CardTitle className="text-foreground flex items-center gap-2">
             <Loader2 className="h-5 w-5 animate-spin" /> Generation Progress
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-6">
-            <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         </CardContent>
       </Card>
@@ -622,14 +622,14 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
 
   if (error) {
     return (
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-background border-border text-foreground">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 text-red-500" /> Error Loading Progress
+          <CardTitle className="text-foreground flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" /> Error Loading Progress
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-neutral-400">{error}</p>
+          <p className="text-muted-foreground">{error}</p>
           <Button 
             variant="outline" 
             size="sm" 
@@ -649,27 +649,27 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
 
   if (generatedArticles.length === 0) {
     return (
-      <Card className="bg-neutral-900 border-neutral-800">
+      <Card className="bg-background border-border text-foreground">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2">
+          <CardTitle className="text-foreground flex items-center gap-2">
             <FileText className="h-5 w-5" /> Generation Progress
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-neutral-400 text-center py-4">No previously generated content found for this workspace.</p>
+          <p className="text-muted-foreground text-center py-4">No previously generated content found for this workspace.</p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="bg-neutral-900 border-neutral-800">
+    <Card className="bg-background border-border text-foreground">
       <CardHeader>
-        <CardTitle className="text-white flex items-center gap-2">
+        <CardTitle className="text-foreground flex items-center gap-2">
           <FileText className="h-5 w-5" /> Generation Progress 
           {refreshInterval && (
             <span className="ml-2">
-              <Loader2 className="h-4 w-4 inline animate-spin text-neutral-400" />
+              <Loader2 className="h-4 w-4 inline animate-spin text-muted-foreground" />
             </span>
           )}
         </CardTitle>
@@ -678,10 +678,10 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
         {Object.entries(progress).map(([id, progressValue]) => (
           <div 
             key={id} 
-            className="border border-neutral-800 rounded-md p-3 space-y-2"
+            className="border border-border rounded-md p-3 space-y-2"
           >
             <div className="flex justify-between items-start">
-              <h3 className="font-medium text-white">{titles[id] || 'Content'}</h3>
+              <h3 className="font-medium text-foreground">{titles[id] || 'Content'}</h3>
               <div className="flex">
                 {statuses[id] === 'success' && (
                   <span className="bg-green-900/30 text-green-400 text-xs rounded-full px-2 py-1 flex items-center">
@@ -689,7 +689,7 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
                   </span>
                 )}
                 {statuses[id] === 'generating' && (
-                  <span className="bg-blue-900/30 text-blue-400 text-xs rounded-full px-2 py-1 flex items-center">
+                  <span className="bg-blue-200 dark:bg-blue-900/30 text-blue-400 text-xs rounded-full px-2 py-1 flex items-center">
                     <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Generating
                   </span>
                 )}
@@ -702,7 +702,7 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
             </div>
             
             <div className="space-y-1">
-              <div className="flex justify-between text-xs text-neutral-400">
+              <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Progress</span>
                 <span>{statuses[id] === 'success' ? 'Completed' : 
                          statuses[id] === 'error' ? 'Failed' : 
@@ -710,7 +710,7 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
               </div>
               <Progress 
                 value={progressValue} 
-                className="h-1.5 bg-neutral-800" 
+                className="h-1.5 bg-background" 
                 indicatorClassName={
                   statuses[id] === 'error' ? 'bg-red-500' : 
                   statuses[id] === 'success' ? 'bg-green-500' : 
@@ -723,7 +723,7 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
               <div className="pt-1">
                 <Link 
                   href={`/content-viewer/${id}`} 
-                  className="inline-block text-sm px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-md"
+                  className="inline-block text-sm px-3 py-1.5 bg-background hover:bg-gray-200 dark:bg-muted text-foreground rounded-md"
                 >
                   View Article
                 </Link>

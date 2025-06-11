@@ -249,14 +249,14 @@ export default function SearchConsolePage() {
 
       const data = await response.json();
       console.log('API success response:', {
-        hasSearchData: !!data.searchConsole,
+        hasSearchData: !!data.searchData,
         sitesCount: data.sites?.length || 0,
         errors: data.errors
       });
 
       // Only update search data if we have a selected site
       if (selectedSite) {
-        setSearchData(data.searchConsole);
+        setSearchData(data.searchData);
       }
       
       // Always update sites list
@@ -264,7 +264,7 @@ export default function SearchConsolePage() {
 
       // Update cache with new data
       setCachedData({
-        searchData: selectedSite ? data.searchConsole : null,
+        searchData: selectedSite ? data.searchData : null,
         sites: data.sites || [],
         selectedSite
       });
@@ -314,9 +314,9 @@ export default function SearchConsolePage() {
       }
 
       const data = await response.json();
-      setSearchData(data.searchConsole);
+      setSearchData(data.searchData);
       setCachedData({
-        searchData: data.searchConsole,
+        searchData: data.searchData,
         selectedSite: value
       });
     } catch (error: any) {
@@ -528,8 +528,8 @@ export default function SearchConsolePage() {
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-white">Search Console</h1>
-            <p className="text-sm text-neutral-400">
+            <h1 className="text-2xl font-semibold text-foreground">Search Console</h1>
+            <p className="text-sm text-muted-foreground">
               View your website's search performance
             </p>
           </div>
@@ -540,7 +540,7 @@ export default function SearchConsolePage() {
                   onClick={handleSendTestReport}
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                    "bg-blue-600 text-foreground hover:bg-blue-500 transition-colors"
                   )}
                 >
                   <Mail className="h-4 w-4" />
@@ -550,7 +550,7 @@ export default function SearchConsolePage() {
                   onClick={handleSendManualReport}
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-green-600 text-white hover:bg-green-500 transition-colors"
+                    "bg-green-600 text-foreground hover:bg-green-500 transition-colors"
                   )}
                 >
                   <Mail className="h-4 w-4" />
@@ -560,7 +560,7 @@ export default function SearchConsolePage() {
                   onClick={handleShowEmailSettings}
                   className={cn(
                     "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-neutral-800 text-white hover:bg-neutral-700 transition-colors"
+                    "bg-background text-foreground hover:bg-gray-200 dark:bg-muted transition-colors"
                   )}
                 >
                   <Settings2 className="h-4 w-4" />
@@ -572,7 +572,7 @@ export default function SearchConsolePage() {
               onClick={handleRefresh}
               className={cn(
                 "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                "bg-neutral-800 text-white hover:bg-neutral-700 transition-colors",
+                "bg-background text-foreground hover:bg-gray-200 dark:bg-muted transition-colors",
                 "disabled:opacity-50 disabled:cursor-not-allowed"
               )}
               disabled={isRefreshing}
@@ -584,21 +584,21 @@ export default function SearchConsolePage() {
         </div>
 
         {/* Debug Info */}
-        <div className="text-xs text-neutral-500">
+        <div className="text-xs text-foreground0">
           Selected Site: {selectedSite || 'none'}<br />
           Has Search Data: {searchData ? 'yes' : 'no'}
         </div>
 
         {/* Site Selection */}
-        <Card className="bg-neutral-900 border-neutral-800">
+        <Card className="bg-background border-border text-foreground">
           <div className="p-6 space-y-4">
             <div className="space-y-2">
-              <label className="text-sm text-neutral-400">Search Console Site ({sites.length} available)</label>
+              <label className="text-sm text-muted-foreground">Search Console Site ({sites.length} available)</label>
               <Select
                 value={selectedSite || ''}
                 onValueChange={handleSiteChange}
               >
-                <SelectTrigger className="w-full bg-neutral-900 border-neutral-700 text-white">
+                <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground">
                   <SelectValue placeholder="Select a site" />
                 </SelectTrigger>
                 <SelectContent>
@@ -613,7 +613,7 @@ export default function SearchConsolePage() {
 
             {/* Add Date Range Selector */}
             <div className="space-y-2">
-              <label className="text-sm text-neutral-400">Date Range</label>
+              <label className="text-sm text-muted-foreground">Date Range</label>
               <Select
                 value={startDate}
                 onValueChange={(value) => {
@@ -624,7 +624,7 @@ export default function SearchConsolePage() {
                   }
                 }}
               >
-                <SelectTrigger className="w-full bg-neutral-900 border-neutral-700 text-white">
+                <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground">
                   <SelectValue placeholder="Select date range" />
                 </SelectTrigger>
                 <SelectContent>
@@ -640,49 +640,49 @@ export default function SearchConsolePage() {
 
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-white" />
+            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white" />
           </div>
         ) : (
           <>
             {/* Search Console Overview */}
             {searchData && (
-              <Card className="bg-neutral-900 border-neutral-800">
+              <Card className="bg-background border-border text-foreground">
                 <div className="p-6">
-                  <h2 className="text-lg font-medium text-white mb-4">Search Performance</h2>
+                  <h2 className="text-lg font-medium text-foreground mb-4">Search Performance</h2>
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="p-4 rounded-lg bg-neutral-800/50">
-                      <div className="flex items-center gap-2 text-neutral-400 mb-2">
+                    <div className="p-4 rounded-lg bg-background/50">
+                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
                         <MousePointerClick className="h-4 w-4" />
                         <span>Clicks</span>
                       </div>
-                      <div className="text-2xl font-semibold text-white">
+                      <div className="text-2xl font-semibold text-foreground">
                         {formatNumber(searchData.overview.clicks)}
                       </div>
                     </div>
-                    <div className="p-4 rounded-lg bg-neutral-800/50">
-                      <div className="flex items-center gap-2 text-neutral-400 mb-2">
+                    <div className="p-4 rounded-lg bg-background/50">
+                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
                         <Search className="h-4 w-4" />
                         <span>Impressions</span>
                       </div>
-                      <div className="text-2xl font-semibold text-white">
+                      <div className="text-2xl font-semibold text-foreground">
                         {formatNumber(searchData.overview.impressions)}
                       </div>
                     </div>
-                    <div className="p-4 rounded-lg bg-neutral-800/50">
-                      <div className="flex items-center gap-2 text-neutral-400 mb-2">
+                    <div className="p-4 rounded-lg bg-background/50">
+                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
                         <ArrowUpRight className="h-4 w-4" />
                         <span>CTR</span>
                       </div>
-                      <div className="text-2xl font-semibold text-white">
+                      <div className="text-2xl font-semibold text-foreground">
                         {searchData.overview.ctr.toFixed(1)}%
                       </div>
                     </div>
-                    <div className="p-4 rounded-lg bg-neutral-800/50">
-                      <div className="flex items-center gap-2 text-neutral-400 mb-2">
+                    <div className="p-4 rounded-lg bg-background/50">
+                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
                         <TrendingUp className="h-4 w-4" />
                         <span>Avg. Position</span>
                       </div>
-                      <div className="text-2xl font-semibold text-white">
+                      <div className="text-2xl font-semibold text-foreground">
                         {searchData.overview.position.toFixed(1)}
                       </div>
                     </div>
@@ -693,30 +693,30 @@ export default function SearchConsolePage() {
 
             {/* Top Search Queries */}
             {searchData?.topQueries && (
-              <Card className="bg-neutral-900 border-neutral-800">
+              <Card className="bg-background border-border text-foreground">
                 <div className="p-6">
-                  <h2 className="text-lg font-medium text-white mb-4">Top Search Queries</h2>
+                  <h2 className="text-lg font-medium text-foreground mb-4">Top Search Queries</h2>
                   <div className="relative overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="text-neutral-200">Query</TableHead>
-                          <TableHead className="text-neutral-200">Page</TableHead>
-                          <TableHead className="text-right text-neutral-200">Clicks</TableHead>
-                          <TableHead className="text-right text-neutral-200">Impressions</TableHead>
-                          <TableHead className="text-right text-neutral-200">CTR</TableHead>
-                          <TableHead className="text-right text-neutral-200">Position</TableHead>
+                          <TableHead className="text-gray-800 dark:text-foreground">Query</TableHead>
+                          <TableHead className="text-gray-800 dark:text-foreground">Page</TableHead>
+                          <TableHead className="text-right text-gray-800 dark:text-foreground">Clicks</TableHead>
+                          <TableHead className="text-right text-gray-800 dark:text-foreground">Impressions</TableHead>
+                          <TableHead className="text-right text-gray-800 dark:text-foreground">CTR</TableHead>
+                          <TableHead className="text-right text-gray-800 dark:text-foreground">Position</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {searchData.topQueries.map((query: SearchQuery, index: number) => (
-                          <TableRow key={index} className="hover:bg-neutral-800">
-                            <TableCell className="text-neutral-100 font-medium">{query.query}</TableCell>
-                            <TableCell className="text-neutral-100 max-w-xs truncate">{query.page}</TableCell>
-                            <TableCell className="text-right text-neutral-100">{query.clicks}</TableCell>
-                            <TableCell className="text-right text-neutral-100">{query.impressions}</TableCell>
-                            <TableCell className="text-right text-neutral-100">{query.ctr}</TableCell>
-                            <TableCell className="text-right text-neutral-100">{query.position}</TableCell>
+                          <TableRow key={`${query.query}-${index}`} className="hover:bg-background">
+                            <TableCell className="text-gray-900 dark:text-neutral-100 font-medium">{query.query}</TableCell>
+                            <TableCell className="text-gray-900 dark:text-neutral-100 max-w-xs truncate">{query.page}</TableCell>
+                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.clicks}</TableCell>
+                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.impressions}</TableCell>
+                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.ctr}</TableCell>
+                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.position}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -730,38 +730,38 @@ export default function SearchConsolePage() {
 
         {/* Email Settings Modal */}
         {showEmailSettings && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-neutral-900 p-8 rounded-lg w-full max-w-md border border-neutral-800">
-              <h2 className="text-xl font-semibold text-white mb-6">Email Report Settings</h2>
+          <div className="fixed inset-0 bg-gray-900/50 dark:bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-background p-8 rounded-lg w-full max-w-md border border-border">
+              <h2 className="text-xl font-semibold text-foreground mb-6">Email Report Settings</h2>
               
               <div className="space-y-6">
                 {/* Test Report Recipients */}
                 <div>
-                  <label className="block mb-2 text-sm font-medium text-neutral-200">Test Report Recipients</label>
+                  <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Test Report Recipients</label>
                   <input
                     type="text"
                     value={emailSettings.testRecipients}
                     onChange={(e) => setEmailSettings(prev => ({ ...prev, testRecipients: e.target.value }))}
-                    className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm placeholder:text-neutral-500"
+                    className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm placeholder:text-foreground0"
                     placeholder="email@example.com, another@example.com"
                   />
-                  <p className="mt-1 text-xs text-neutral-400">Recipients for test reports when using "Send Test Report"</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Recipients for test reports when using "Send Test Report"</p>
                 </div>
 
                 {/* Manual Report Recipients */}
                 <div>
-                  <label className="block mb-2 text-sm font-medium text-neutral-200">Manual Report Recipients</label>
+                  <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Manual Report Recipients</label>
                   <input
                     type="text"
                     value={emailSettings.manualRecipients}
                     onChange={(e) => setEmailSettings(prev => ({ ...prev, manualRecipients: e.target.value }))}
-                    className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm placeholder:text-neutral-500"
+                    className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm placeholder:text-foreground0"
                     placeholder="email@example.com, another@example.com"
                   />
-                  <p className="mt-1 text-xs text-neutral-400">Recipients for manual reports when using "Send Report Now"</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Recipients for manual reports when using "Send Report Now"</p>
                 </div>
 
-                <div className="p-4 bg-neutral-800 rounded-md border border-neutral-700">
+                <div className="p-4 bg-background rounded-md border border-border dark:border-border">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <Switch
@@ -770,8 +770,8 @@ export default function SearchConsolePage() {
                         className="data-[state=checked]:bg-blue-600"
                       />
                       <div>
-                        <label className="text-white text-sm font-medium">Enable Weekly Reports</label>
-                        <p className="text-xs text-neutral-400">Turn on to schedule automated weekly reports</p>
+                        <label className="text-foreground text-sm font-medium">Enable Weekly Reports</label>
+                        <p className="text-xs text-muted-foreground">Turn on to schedule automated weekly reports</p>
                       </div>
                     </div>
                   </div>
@@ -780,23 +780,23 @@ export default function SearchConsolePage() {
                 {emailSettings.enabled && (
                   <>
                     <div>
-                      <label className="block mb-2 text-sm font-medium text-neutral-200">Weekly Report Recipients</label>
+                      <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Weekly Report Recipients</label>
                       <input
                         type="text"
                         value={emailSettings.weeklyRecipients}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, weeklyRecipients: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm placeholder:text-neutral-500"
+                        className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm placeholder:text-foreground0"
                         placeholder="email@example.com, another@example.com"
                       />
-                      <p className="mt-1 text-xs text-neutral-400">Recipients for automated weekly reports</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Recipients for automated weekly reports</p>
                     </div>
 
                     <div>
-                      <label className="block mb-2 text-sm font-medium text-neutral-200">Send Day</label>
+                      <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Send Day</label>
                       <select
                         value={emailSettings.sendDay}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sendDay: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm"
+                        className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm"
                       >
                         <option value="monday">Monday</option>
                         <option value="tuesday">Tuesday</option>
@@ -809,30 +809,30 @@ export default function SearchConsolePage() {
                     </div>
 
                     <div>
-                      <label className="block mb-2 text-sm font-medium text-neutral-200">Send Time</label>
+                      <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Send Time</label>
                       <input
                         type="time"
                         value={emailSettings.sendTime}
                         onChange={(e) => setEmailSettings(prev => ({ ...prev, sendTime: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-neutral-800 border border-neutral-700 text-white text-sm"
+                        className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm"
                       />
                     </div>
 
                     {cronJobs.length > 0 && (
-                      <div className="pt-4 border-t border-neutral-800">
-                        <h3 className="text-sm font-medium text-neutral-200 mb-3">Current Schedule</h3>
+                      <div className="pt-4 border-t border-border">
+                        <h3 className="text-sm font-medium text-gray-800 dark:text-foreground mb-3">Current Schedule</h3>
                         {cronJobs.map((job) => (
-                          <div key={job.id} className="p-3 rounded-md bg-neutral-800 border border-neutral-700">
+                          <div key={job.id} className="p-3 rounded-md bg-background border border-border dark:border-border">
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-white">Weekly Report</span>
+                              <span className="text-sm font-medium text-foreground">Weekly Report</span>
                               <span className={cn(
                                 "text-xs px-2 py-1 rounded-full",
-                                job.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-neutral-700 text-neutral-400'
+                                job.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-200 dark:bg-muted text-muted-foreground'
                               )}>
                                 {job.status}
                               </span>
                             </div>
-                            <div className="text-xs space-y-1 text-neutral-400">
+                            <div className="text-xs space-y-1 text-muted-foreground">
                               <p>Every {job.settings.send_day} at {job.settings.send_time}</p>
                               <p>Next run: {new Date(job.next_run).toLocaleString()}</p>
                               <p>Recipients: {job.settings.recipients.join(', ')}</p>
@@ -848,13 +848,13 @@ export default function SearchConsolePage() {
               <div className="mt-8 flex justify-end gap-3">
                 <button
                   onClick={() => setShowEmailSettings(false)}
-                  className="px-4 py-2 text-sm font-medium rounded-md bg-neutral-800 text-white hover:bg-neutral-700 transition-colors"
+                  className="px-4 py-2 text-sm font-medium rounded-md bg-background text-foreground hover:bg-gray-200 dark:bg-muted transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSaveEmailSettings}
-                  className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-500 transition-colors"
+                  className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-foreground hover:bg-blue-500 transition-colors"
                 >
                   Save Schedule
                 </button>

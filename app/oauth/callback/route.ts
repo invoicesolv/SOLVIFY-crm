@@ -35,8 +35,8 @@ async function saveTokenToSupabase(token: any, userId: string) {
     expiresAt.setSeconds(expiresAt.getSeconds() + token.expires_in);
     
     console.log(`Token will expire at: ${expiresAt.toISOString()}`);
-    console.log(`Access token (first 10 chars): ${token.access_token ? token.access_token.substring(0, 10) + '...' : 'missing'}`);
-    console.log(`Refresh token (first 10 chars): ${token.refresh_token ? token.refresh_token.substring(0, 10) + '...' : 'missing'}`);
+    console.log(`Access token: ${token.access_token ? 'present' : 'missing'}`);
+    console.log(`Refresh token: ${token.refresh_token ? 'present' : 'missing'}`);
     console.log(`Token expires in: ${token.expires_in} seconds`);
     console.log(`Token type: ${token.token_type || 'not specified'}`);
     
@@ -161,8 +161,8 @@ export async function GET(req: NextRequest) {
     if ('access_token' in tokenData) {
       console.log('✅ Access token received successfully');
       console.log('Token details:');
-      console.log(`- Access token (first 10 chars): ${tokenData.access_token.substring(0, 10)}...`);
-      console.log(`- Refresh token (first 10 chars): ${tokenData.refresh_token ? tokenData.refresh_token.substring(0, 10) + '...' : 'not provided'}`);
+      console.log(`- Access token: present`);
+      console.log(`- Refresh token: ${tokenData.refresh_token ? 'present' : 'not provided'}`);
       console.log(`- Expires in: ${tokenData.expires_in} seconds`);
       console.log(`- Token type: ${tokenData.token_type}`);
       console.log(`- Scope: ${tokenData.scope || 'not specified'}`);

@@ -127,8 +127,8 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
         href: "/contact"
       },
       stripePriceId: {
-        monthly: "price_1R3KjdKrzodQUsuFRvxjWweU",
-        yearly: "price_1R3KjpKrzodQUsuF0ZO54S4S"
+        monthly: process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID || "price_1R3KjdKrzodQUsuFRvxjWweU",
+        yearly: process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_YEARLY_PRICE_ID || "price_1R3KjpKrzodQUsuF0ZO54S4S"
       }
     }
   ],
@@ -163,8 +163,8 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
       name: "Team",
       description: "For small teams",
       price: {
-        monthly: 299,
-        yearly: 2990
+        monthly: 29,
+        yearly: 290
       },
       features: [
         "Everything in Personal",
@@ -179,8 +179,8 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
       },
       trial: "14 days for free",
       stripePriceId: {
-        monthly: "price_1R3KiwKrzodQUsuF79bVaycE",
-        yearly: "price_1R3Kj6KrzodQUsuFOsAVUeWl"
+        monthly: process.env.NEXT_PUBLIC_STRIPE_TEAM_PRICE_ID || "price_1R3KiwKrzodQUsuF79bVaycE",
+        yearly: process.env.NEXT_PUBLIC_STRIPE_TEAM_YEARLY_PRICE_ID || "price_1R3Kj6KrzodQUsuFOsAVUeWl"
       },
       popular: true
     },
@@ -189,8 +189,8 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
       name: "Organizations",
       description: "For larger companies",
       price: {
-        monthly: 499,
-        yearly: 4990
+        monthly: 49,
+        yearly: 490
       },
       features: [
         "Everything in Team",
@@ -205,8 +205,8 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
       },
       trial: "14 days for free",
       stripePriceId: {
-        monthly: "price_1R3KjGKrzodQUsuFkBaoyjB2",
-        yearly: "price_1R3KjTKrzodQUsuF2ULuAm7D"
+        monthly: process.env.NEXT_PUBLIC_STRIPE_BUSINESS_PRICE_ID || "price_1R3KjGKrzodQUsuFkBaoyjB2",
+        yearly: process.env.NEXT_PUBLIC_STRIPE_BUSINESS_YEARLY_PRICE_ID || "price_1R3KjTKrzodQUsuF2ULuAm7D"
       }
     },
     {
@@ -214,8 +214,8 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
       name: "Enterprise",
       description: "For large companies",
       price: {
-        monthly: 999,
-        yearly: 9990
+        monthly: 99,
+        yearly: 990
       },
       features: [
         "Everything in Organizations",
@@ -229,8 +229,8 @@ export const TIERS: { sv: PricingTier[], en: PricingTier[] } = {
         href: "/contact"
       },
       stripePriceId: {
-        monthly: "price_1R3KjdKrzodQUsuFRvxjWweU",
-        yearly: "price_1R3KjpKrzodQUsuF0ZO54S4S"
+        monthly: process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID || "price_1R3KjdKrzodQUsuFRvxjWweU",
+        yearly: process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_YEARLY_PRICE_ID || "price_1R3KjpKrzodQUsuF0ZO54S4S"
       }
     }
   ]
@@ -252,7 +252,7 @@ export function PricingSectionDemo({
   tiers = TIERS[lang],
 }: PricingSectionDemoProps) {
   return (
-    <section id="pricing" className="py-24 bg-neutral-900">
+    <section id="pricing" className="py-24 bg-background">
       <div className="container mx-auto px-4">
         <PricingSection
           title={title}
