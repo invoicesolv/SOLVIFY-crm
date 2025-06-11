@@ -227,15 +227,7 @@ export async function GET(request: NextRequest) {
                   is_connected: true,
                   token_expires_at: expiresAt,
                   created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                  // Store page-specific data
-                  additional_data: JSON.stringify({
-                    page_id: page.id,
-                    page_name: page.name,
-                    page_category: page.category,
-                    page_perms: page.perms,
-                    is_page: true
-                  })
+                  updated_at: new Date().toISOString()
                 }, {
                   onConflict: 'workspace_id,platform,account_id'
                 });
