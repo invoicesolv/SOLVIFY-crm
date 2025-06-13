@@ -130,65 +130,25 @@ export default function LeadsPage() {
         setLoadingWorkspace(true);
         console.log('[Leads] Loading workspace for user:', session.user.email);
         
-        // First try to get team memberships by user ID
-        const { data: teamData, error: teamError } = await supabase
-          .from("team_members")
-          .select(`
-            workspace_id,
-            workspaces:workspace_id (
-              id,
-              name
-            )
-          `)
-          .eq("user_id", session.user.id);
-
-        if (teamError) {
-          console.error("[Leads] Error loading team data by user_id:", teamError);
-          
-          // Try by email as fallback
-          if (session.user?.email) {
-            console.log('[Leads] Trying to fetch by email:', session.user.email);
-            const { data: emailTeamData, error: emailTeamError } = await supabase
-              .from("team_members")
-              .select(`
-                workspace_id,
-                workspaces:workspace_id (
-                  id,
-                  name
-                )
-              `)
-              .eq("email", session.user.email);
-              
-            if (emailTeamError) {
-              console.error("[Leads] Error loading team data by email:", emailTeamError);
-              return;
-            }
-            
-            if (emailTeamData && emailTeamData.length > 0) {
-              const workspaceData = emailTeamData.map(item => item.workspaces).filter(Boolean);
-              console.log('[Leads] Found workspaces by email:', workspaceData);
-              setWorkspaces(workspaceData);
-              
-              if (workspaceData.length > 0) {
-                setWorkspace(workspaceData[0].id);
-                console.log('[Leads] Set workspace to:', workspaceData[0].id);
-              }
-            }
-          }
+        // Use the same API endpoint as other components for consistency
+        const response = await fetch('/api/workspace/leave');
+        if (!response.ok) {
+          throw new Error('Failed to fetch workspaces');
+        }
+        const data = await response.json();
+        
+        if (!data.success || !data.workspaces || data.workspaces.length === 0) {
+          console.log('[Leads] No workspaces found for user');
+          setWorkspaces([]);
           return;
         }
-
-        if (teamData && teamData.length > 0) {
-          const workspaceData = teamData.map(item => item.workspaces).filter(Boolean);
-          console.log('[Leads] Found workspaces by user_id:', workspaceData);
-          setWorkspaces(workspaceData);
-          
-          if (workspaceData.length > 0) {
-            setWorkspace(workspaceData[0].id);
-            console.log('[Leads] Set workspace to:', workspaceData[0].id);
-          }
-        } else {
-          console.log('[Leads] No team memberships found');
+        
+        console.log('[Leads] Found workspaces:', data.workspaces);
+        setWorkspaces(data.workspaces);
+        
+        if (data.workspaces.length > 0) {
+          setWorkspace(data.workspaces[0].id);
+          console.log('[Leads] Set workspace to:', data.workspaces[0].id);
         }
       } catch (error) {
         console.error("[Leads] Error loading workspaces:", error);

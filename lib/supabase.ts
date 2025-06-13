@@ -89,7 +89,9 @@ export const syncSupabaseSession = async (accessToken: string) => {
     // we'll use signInWithPassword which creates a proper Supabase session
     try {
       // Try to get user information from NextAuth session
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+      const baseUrl = typeof window !== 'undefined' 
+        ? window.location.origin 
+        : process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
       console.log("[Supabase] Fetching session from:", `${baseUrl}/api/auth/session`);
       
       const sessionResponse = await fetch(`${baseUrl}/api/auth/session`);

@@ -8,9 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { useSession } from "next-auth/react";
-import { Users, UserPlus, Building, Plus, Trash2, MailPlus, ShieldCheck, Shield } from "lucide-react";
+import { Users, UserPlus, Building, Plus, Trash2, MailPlus, ShieldCheck, Shield, LogOut, AlertTriangle } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -240,6 +240,11 @@ export default function TeamPage() {
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
 
+  // Workspace management state
+  const [isLeaveWorkspaceDialogOpen, setIsLeaveWorkspaceDialogOpen] = useState(false);
+  const [isDeleteWorkspaceDialogOpen, setIsDeleteWorkspaceDialogOpen] = useState(false);
+  const [workspaceActionLoading, setWorkspaceActionLoading] = useState(false);
+
   // Update the initialPermissions state with proper typing
   const [initialPermissions, setInitialPermissions] = useState<Record<PermissionKey, boolean>>({
     view_projects: true,
@@ -315,184 +320,61 @@ export default function TeamPage() {
     }
   };
 
-  // Load the user's workspaces
+  // Load the user's workspaces using the API endpoint
   const loadWorkspaces = async () => {
     try {
       console.log('Loading workspaces for user:', session?.user?.id);
-      console.log('Full session object:', {
-        id: session?.user?.id,
-        email: session?.user?.email,
-        hasAccessToken: !!session?.access_token,
-        status
+      
+      // Use the original API endpoint that handles authentication properly
+      const response = await fetch('/api/workspace/leave', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
 
-      // Don't try to set Supabase session with Google OAuth token
-      // Instead skip authentication and rely on RLS policies
-      const isGoogleAuth = !!session?.access_token && !(session as any).supabaseAccessToken;
-      
-      if (isGoogleAuth) {
-        console.log('[Team Page] Using RLS policies for Google OAuth without anonymous auth');
-        // Skip authentication - no anonymous auth
-      } 
-      else if ((session as any)?.supabaseAccessToken) {
-        console.log('[Team Page] Using Supabase token from session');
-        try {
-        const { error: authError } = await supabase.auth.setSession({
-            access_token: (session as any).supabaseAccessToken,
-            refresh_token: '',
-        });
-          
-        if (authError) {
-            console.error('[Team Page] Error setting Supabase session:', authError);
-            // Don't fall back to anonymous auth
-      } else {
-            console.log('[Team Page] Successfully set Supabase session');
-          }
-        } catch (err) {
-          console.error('[Team Page] Exception setting Supabase session:', err);
-          // Don't fall back to anonymous auth
-        }
-      } 
-      else {
-        console.log('[Team Page] No valid tokens. Skipping authentication (no anonymous auth)');
-      }
-
-      // First, get user's workspace memberships without joining workspaces
-      console.log('Fetching team memberships for user:', session?.user?.id);
-      const { data: memberships, error: membershipError } = await supabase
-        .from('team_members')
-        .select(`
-          id,
-          workspace_id,
-          user_id,
-          role,
-          name,
-          email,
-          is_admin,
-          permissions
-        `)
-        .eq('user_id', session?.user?.id);
-
-      console.log('Team memberships query result:', {
-        membershipCount: memberships?.length,
-        hasData: !!memberships?.length,
-        error: membershipError?.message,
-        errorCode: membershipError?.code
-      });
-
-      if (membershipError) {
-        console.error('Error fetching team memberships:', membershipError);
-        toast.error('Error loading team memberships');
-        return;
-      }
-
-      // Cast the result to the expected type after fetching
-      const typedMemberships = memberships as TeamMember[] | null;
-      
-      if (!typedMemberships?.length) {
-        console.log('No team memberships found for user, creating default workspace');
-        // Create a default workspace for the user
-        const { data: newWorkspace, error: createError } = await supabase
-          .from('workspaces')
-          .insert([
-            { 
-              name: 'My Workspace',
-              owner_id: session?.user?.id
-            }
-          ])
-          .select()
-          .single();
-
-        console.log('Created default workspace:', {
-          workspace: newWorkspace,
-          error: createError?.message
-        });
-
-        if (createError) {
-          console.error('Error creating default workspace:', createError);
-          toast.error('Failed to create default workspace');
-          return;
-        }
-
-        if (newWorkspace) {
-          // Add user as admin of the new workspace
-          const { error: memberError } = await supabase
-            .from('team_members')
-            .insert([
-              {
-                user_id: session?.user?.id,
-                workspace_id: newWorkspace.id,
-                role: 'admin',
-                name: session?.user?.name || 'Admin User',
-                email: session?.user?.email || '',
-                is_admin: true,
-                permissions: ROLE_DEFINITIONS.admin.permissions
-              }
-            ]);
-
-          console.log('Added user to workspace:', {
-            error: memberError?.message
-          });
-
-          if (memberError) {
-            console.error('Error adding user to workspace:', memberError);
-            toast.error('Failed to add you to workspace');
-            return;
-          }
-
-          setWorkspaces([newWorkspace]);
-          setActiveWorkspace(newWorkspace.id);
-        }
-        return;
-      }
-
-      // Get workspace IDs from memberships
-      const workspaceIds: string[] = typedMemberships.map(m => m.workspace_id);
-      console.log('Workspace IDs to fetch:', workspaceIds);
-
-      // Fetch workspaces directly using the Supabase client with in operator
-      const { data: workspacesData, error: workspacesError } = await supabase
-        .from('workspaces')
-        .select('id, name, created_at, owner_id')
-        .in('id', workspaceIds);
-        
-      if (workspacesError) {
-        console.error('Error fetching workspaces:', workspacesError);
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error from workspaces API:', errorData);
         toast.error('Failed to load workspaces');
         return;
       }
 
-      console.log('Fetched workspaces:', {
-        count: workspacesData?.length,
-        workspaces: workspacesData
-      });
-      
-      // Set workspaces
-      setWorkspaces(workspacesData || []);
-      
-      // Check for stored workspace preference in localStorage
-      let storedWorkspaceId = null;
-      if (typeof window !== 'undefined' && session?.user?.id) {
-        storedWorkspaceId = localStorage.getItem(`workspace_${session.user.id}`);
-        console.log(`[Workspace] Found stored workspace preference: ${storedWorkspaceId}`);
+      const data = await response.json();
+      console.log('Workspaces API response:', data);
+
+      if (data.success && data.workspaces) {
+        setWorkspaces(data.workspaces);
         
-        // Verify the stored workspace is in the list of accessible workspaces
-        if (storedWorkspaceId && workspacesData?.some(w => w.id === storedWorkspaceId)) {
-          console.log(`[Workspace] Using stored workspace preference: ${storedWorkspaceId}`);
-          setActiveWorkspace(storedWorkspaceId);
-        } else if (workspacesData?.length > 0 && !activeWorkspace) {
-          // Fall back to first workspace if no valid stored preference
-          console.log(`[Workspace] No valid stored preference, using first workspace: ${workspacesData[0].id}`);
-          setActiveWorkspace(workspacesData[0].id);
+        // Check for stored workspace preference in localStorage
+        let storedWorkspaceId: string | null = null;
+        if (typeof window !== 'undefined' && session?.user?.id) {
+          storedWorkspaceId = localStorage.getItem(`workspace_${session.user.id}`);
+          console.log(`[Workspace] Found stored workspace preference: ${storedWorkspaceId}`);
           
-          // Store this preference for future use
-          if (session?.user?.id) {
-            localStorage.setItem(`workspace_${session.user.id}`, workspacesData[0].id);
+          // Verify the stored workspace is in the list of accessible workspaces
+          if (storedWorkspaceId && data.workspaces.some((w: any) => w.id === storedWorkspaceId)) {
+            console.log(`[Workspace] Using stored workspace preference: ${storedWorkspaceId}`);
+            setActiveWorkspace(storedWorkspaceId);
+          } else if (data.workspaces.length > 0 && !activeWorkspace) {
+            // Fall back to first workspace if no valid stored preference
+            console.log(`[Workspace] No valid stored preference, using first workspace: ${data.workspaces[0].id}`);
+            setActiveWorkspace(data.workspaces[0].id);
+            
+            // Store this preference for future use
+            if (session?.user?.id) {
+              localStorage.setItem(`workspace_${session.user.id}`, data.workspaces[0].id);
+            }
           }
+        } else if (data.workspaces.length > 0 && !activeWorkspace) {
+          // Fall back to first workspace if localStorage not available
+          setActiveWorkspace(data.workspaces[0].id);
         }
-      } else if (workspacesData?.length > 0 && !activeWorkspace) {
-        // Fall back to first workspace if localStorage not available
-        setActiveWorkspace(workspacesData[0].id);
+      } else {
+        // No workspaces found - this is now expected for existing users who need to be invited
+        console.log('No workspaces found for user');
+        setWorkspaces([]);
+        setActiveWorkspace(null);
       }
     } catch (error) {
       console.error('Error in loadWorkspaces:', error);
@@ -509,10 +391,12 @@ export default function TeamPage() {
     try {
       setLoading(true);
       
-      const { data, error } = await supabase
+      // Use supabaseAdmin to bypass RLS issues
+      const { data, error } = await supabaseAdmin
         .from('team_members')
         .select('*')
         .eq('workspace_id', workspaceId)
+        .not('user_id', 'is', null) // Exclude corrupted records
         .order('created_at', { ascending: false });
         
       if (error) throw error;
@@ -532,28 +416,26 @@ export default function TeamPage() {
         }
       }));
       
-      // Deduplicate team members by user_id to handle duplicate records
-      const deduplicatedMembers = membersWithDefaultPermissions.reduce((acc, member) => {
+      // Deduplicate team members by user_id
+      const uniqueMembers = membersWithDefaultPermissions.reduce((acc, member) => {
         const existingIndex = acc.findIndex(m => m.user_id === member.user_id);
         if (existingIndex === -1) {
           acc.push(member);
         } else {
-          // Keep the one that's an admin, or just keep the first one
-          const existing = acc[existingIndex];
-          if (member.is_admin && !existing.is_admin) {
+          // Keep the most recent one (they're ordered by created_at desc)
+          if (new Date(member.created_at) > new Date(acc[existingIndex].created_at)) {
             acc[existingIndex] = member;
           }
-          // Otherwise keep the existing one (first found)
         }
         return acc;
-      }, [] as typeof membersWithDefaultPermissions);
+      }, [] as any[]);
       
-      setTeamMembers(deduplicatedMembers);
+      setTeamMembers(uniqueMembers);
       
       // Check if user is admin or workspace owner
       const workspace = workspaces.find(w => w.id === workspaceId);
       const isOwner = workspace?.owner_id === session.user.id;
-      const currentMember = membersWithDefaultPermissions?.find(member => member.user_id === session.user.id);
+      const currentMember = uniqueMembers?.find((member: any) => member.user_id === session.user.id);
       
       console.log('Admin check:', {
         isOwner,
@@ -836,6 +718,112 @@ export default function TeamPage() {
     return !!activeWorkspace && workspaces.some(w => w.id === activeWorkspace);
   };
 
+  // Check if current user can leave the workspace (not the only admin)
+  const canLeaveWorkspace = () => {
+    if (!activeWorkspace || isWorkspaceOwner()) return false;
+    
+    // Count admins in the workspace
+    const adminCount = teamMembers.filter(member => member.is_admin).length;
+    const currentUserIsAdmin = teamMembers.find(member => member.user_id === session?.user?.id)?.is_admin;
+    
+    // Can leave if not admin, or if admin but there are other admins
+    return !currentUserIsAdmin || adminCount > 1;
+  };
+
+  // Check if current user can delete the workspace (is owner)
+  const canDeleteWorkspace = () => {
+    const workspace = workspaces.find(w => w.id === activeWorkspace);
+    return workspace?.owner_id === session?.user?.id && workspace?.name !== 'solvify';
+  };
+
+  // Handle leaving workspace
+  const handleLeaveWorkspace = async () => {
+    if (!activeWorkspace) return;
+    
+    setWorkspaceActionLoading(true);
+    try {
+      const response = await fetch('/api/workspace/leave', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ workspace_id: activeWorkspace }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to leave workspace');
+      }
+
+      toast.success('Successfully left workspace');
+      
+      // Remove the workspace from the list and reset active workspace
+      setWorkspaces(prev => prev.filter(w => w.id !== activeWorkspace));
+      setActiveWorkspace(null);
+      setTeamMembers([]);
+      
+      // Clear localStorage
+      if (typeof window !== 'undefined' && session?.user?.id) {
+        localStorage.removeItem(`workspace_${session.user.id}`);
+      }
+      
+      setIsLeaveWorkspaceDialogOpen(false);
+    } catch (error) {
+      console.error('Error leaving workspace:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to leave workspace');
+    } finally {
+      setWorkspaceActionLoading(false);
+    }
+  };
+
+  // Handle deleting workspace
+  const handleDeleteWorkspace = async () => {
+    if (!activeWorkspace) return;
+    
+    setWorkspaceActionLoading(true);
+    try {
+      // First delete all team members
+      const { error: memberError } = await supabase
+        .from('team_members')
+        .delete()
+        .eq('workspace_id', activeWorkspace);
+        
+      if (memberError) {
+        throw new Error(`Failed to remove team members: ${memberError.message}`);
+      }
+      
+      // Then delete the workspace
+      const { error: deleteError } = await supabase
+        .from('workspaces')
+        .delete()
+        .eq('id', activeWorkspace);
+        
+      if (deleteError) {
+        throw new Error(`Failed to delete workspace: ${deleteError.message}`);
+      }
+      
+      toast.success('Workspace deleted successfully');
+      
+      // Remove the workspace from the list and reset active workspace
+      setWorkspaces(prev => prev.filter(w => w.id !== activeWorkspace));
+      setActiveWorkspace(null);
+      setTeamMembers([]);
+      
+      // Clear localStorage
+      if (typeof window !== 'undefined' && session?.user?.id) {
+        localStorage.removeItem(`workspace_${session.user.id}`);
+      }
+      
+      setIsDeleteWorkspaceDialogOpen(false);
+    } catch (error) {
+      console.error('Error deleting workspace:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete workspace');
+    } finally {
+      setWorkspaceActionLoading(false);
+    }
+  };
+
   return (
     <SidebarDemo>
       <div className="p-6 space-y-6">
@@ -910,6 +898,29 @@ export default function TeamPage() {
                       >
                         <UserPlus className="h-4 w-4 mr-2" />
                         Invite Member
+                      </Button>
+                    )}
+
+                    {/* Workspace Management Buttons */}
+                    {hasActiveWorkspace() && canLeaveWorkspace() && (
+                      <Button
+                        onClick={() => setIsLeaveWorkspaceDialogOpen(true)}
+                        variant="outline"
+                        className="bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-400"
+                      >
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Leave Workspace
+                      </Button>
+                    )}
+
+                    {hasActiveWorkspace() && canDeleteWorkspace() && (
+                      <Button
+                        onClick={() => setIsDeleteWorkspaceDialogOpen(true)}
+                        variant="outline"
+                        className="bg-red-50 border-red-200 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Workspace
                       </Button>
                     )}
                   </div>
@@ -1425,6 +1436,119 @@ export default function TeamPage() {
                 <>
                   <Plus className="h-4 w-4 mr-2" />
                   Create Workspace
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Leave Workspace Dialog */}
+      <Dialog open={isLeaveWorkspaceDialogOpen} onOpenChange={setIsLeaveWorkspaceDialogOpen}>
+        <DialogContent className="bg-background border-border text-foreground">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              Leave Workspace
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Are you sure you want to leave this workspace? You will lose access to all projects and data in this workspace.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-md p-4">
+              <p className="text-sm text-orange-800 dark:text-orange-200">
+                <strong>Workspace:</strong> {getActiveWorkspaceName()}
+              </p>
+              <p className="text-sm text-orange-700 dark:text-orange-300 mt-2">
+                This action cannot be undone. You will need to be re-invited to access this workspace again.
+              </p>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsLeaveWorkspaceDialogOpen(false)}
+              className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
+              disabled={workspaceActionLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleLeaveWorkspace}
+              className="bg-orange-600 hover:bg-orange-700 text-white"
+              disabled={workspaceActionLoading}
+            >
+              {workspaceActionLoading ? (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white" />
+                  Leaving...
+                </div>
+              ) : (
+                <>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Leave Workspace
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Workspace Dialog */}
+      <Dialog open={isDeleteWorkspaceDialogOpen} onOpenChange={setIsDeleteWorkspaceDialogOpen}>
+        <DialogContent className="bg-background border-border text-foreground">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              Delete Workspace
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Are you sure you want to permanently delete this workspace? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4">
+              <p className="text-sm text-red-800 dark:text-red-200">
+                <strong>Workspace:</strong> {getActiveWorkspaceName()}
+              </p>
+              <p className="text-sm text-red-700 dark:text-red-300 mt-2">
+                This will permanently delete:
+              </p>
+              <ul className="text-sm text-red-700 dark:text-red-300 mt-1 ml-4 list-disc">
+                <li>All team members and their access</li>
+                <li>All projects and data in this workspace</li>
+                <li>All settings and configurations</li>
+              </ul>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteWorkspaceDialogOpen(false)}
+              className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
+              disabled={workspaceActionLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDeleteWorkspace}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={workspaceActionLoading}
+            >
+              {workspaceActionLoading ? (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white" />
+                  Deleting...
+                </div>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Workspace
                 </>
               )}
             </Button>

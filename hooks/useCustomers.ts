@@ -99,89 +99,24 @@ export function useCustomers() {
     try {
       console.log('[Customers] Fetching customers for user ID:', session.user.id, 'Email:', session.user.email);
       
-      // Get all workspaces the user is a member of
-      const { data: teamMemberships, error: teamError } = await supabase
-        .from('team_members')
-        .select('workspace_id, is_admin, permissions')
-        .eq('user_id', session.user.id);
-
-      if (teamError) {
-        console.error('[Customers] Error fetching team memberships:', teamError);
-        throw teamError;
+      // Use the same API endpoint as other components for consistency
+      const response = await fetch('/api/workspace/leave');
+      if (!response.ok) {
+        throw new Error('Failed to fetch workspaces');
       }
-
-      console.log('[Customers] Team memberships:', teamMemberships);
-
-      if (!teamMemberships || teamMemberships.length === 0) {
-        console.log('[Customers] No workspaces found for user by ID, trying email fallback');
-        
-        // Try email-based lookup as fallback
-        if (session.user.email) {
-          const { data: emailTeamMemberships, error: emailTeamError } = await supabase
-            .from('team_members')
-            .select('workspace_id, is_admin, permissions')
-            .eq('email', session.user.email);
-            
-          if (emailTeamError) {
-            console.error('[Customers] Error fetching team memberships by email:', emailTeamError);
-            throw emailTeamError;
-          }
-          
-          if (emailTeamMemberships && emailTeamMemberships.length > 0) {
-            console.log('[Customers] Found workspaces by email:', emailTeamMemberships);
-            
-            // Use email-based team memberships instead
-            const workspaceIds = emailTeamMemberships.map(tm => tm.workspace_id);
-            console.log('[Customers] Workspace IDs from email lookup:', workspaceIds);
-            
-            // Check if user has permission to view customers (using email-based memberships)
-            const hasPermission = emailTeamMemberships.some(membership => 
-              membership.is_admin || 
-              (membership.permissions && 
-                (membership.permissions.view_customers || 
-                membership.permissions.admin))
-            );
-            
-            if (hasPermission) {
-              // Continue with fetching using email-based workspace IDs
-              await fetchCustomersForWorkspaces(workspaceIds);
-              return;
-            } else {
-              console.log('[Customers] User does not have permission to view customers (email fallback)');
-              setPermissionDenied(true);
-              setIsLoading(false);
-              return;
-            }
-          } else {
-            console.log('[Customers] No workspaces found for user by email either');
-            setCustomers([]);
-            setIsLoading(false);
-            return;
-          }
-        } else {
-          console.log('[Customers] No email available for fallback lookup');
-          setCustomers([]);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // Check if user has permission to view customers
-      const hasPermission = teamMemberships.some(membership => 
-        membership.is_admin || 
-        (membership.permissions && 
-         (membership.permissions.view_customers || 
-          membership.permissions.admin))
-      );
-
-      if (!hasPermission) {
-        console.log('[Customers] User does not have permission to view customers');
-        setPermissionDenied(true);
+      const data = await response.json();
+      
+      if (!data.success || !data.workspaces || data.workspaces.length === 0) {
+        console.log('[Customers] No workspaces found for user');
+        setCustomers([]);
         setIsLoading(false);
         return;
       }
-
-      const workspaceIds = teamMemberships.map(tm => tm.workspace_id);
+      
+      console.log('[Customers] Found workspaces:', data.workspaces);
+      
+      // Get workspace IDs
+      const workspaceIds = data.workspaces.map((w: any) => w.id);
       console.log('[Customers] Workspace IDs:', workspaceIds);
       
       await fetchCustomersForWorkspaces(workspaceIds);

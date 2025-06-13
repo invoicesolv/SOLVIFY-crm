@@ -20,24 +20,8 @@ interface ExtendedSession extends Session {
 
 const authOptions: AuthOptions = {
   providers: [
-    FacebookProvider({
-      clientId: process.env.FACEBOOK_APP_ID!,
-      clientSecret: process.env.FACEBOOK_APP_SECRET!,
-      authorization: {
-        params: {
-          scope: [
-            'public_profile',
-            'email',
-            'pages_manage_posts',
-            'pages_read_engagement',
-            'pages_manage_engagement',
-            'pages_show_list',
-            'read_insights',
-            'business_management'
-          ].join(',')
-        }
-      }
-    }),
+    // Facebook OAuth is handled by custom /api/oauth/facebook route
+    // to support business page management and social account storage
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,

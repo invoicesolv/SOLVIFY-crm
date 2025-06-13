@@ -27,7 +27,8 @@ import {
   Bot,
   Share2,
   Search,
-  BarChart
+  BarChart,
+  Activity
 } from "lucide-react";
 import type { LucideIcon } from 'lucide-react';
 import Link from "next/link";
@@ -230,6 +231,11 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
           label: "Workspaces",
           href: "/settings/workspaces",
           icon: <FolderOpen className="text-foreground h-4 w-4 flex-shrink-0" />
+        },
+        {
+          label: "System Status",
+          href: "/status",
+          icon: <Activity className="text-foreground h-4 w-4 flex-shrink-0" />
         }
       ]
     },

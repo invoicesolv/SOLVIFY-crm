@@ -10,7 +10,7 @@ import Link from "next/link";
 import { TaskExpanded } from "./TaskExpanded";
 import { TaskForm } from "./TaskForm";
 import { ReportButtons } from "./ReportButtons";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { toast } from "sonner";
 import React from "react";
 import { useSession } from "next-auth/react";
@@ -289,81 +289,51 @@ export function ProjectsView({ className }: ProjectsViewProps) {
   // Initial fetch of projects
   useEffect(() => {
     if (session?.user?.id) {
-      // Check if user has permission to view projects
+      // Check if user has permission to view projects using the workspace API
       const checkProjectPermission = async () => {
         try {
           console.log('[Projects] Checking permission for user:', session.user.email);
           
-          // Get team memberships by user ID first
-          const { data: teamMemberships, error: teamError } = await supabase
+          // Use the same API endpoint as dashboard and team page
+          const response = await fetch('/api/workspace/leave');
+          if (!response.ok) {
+            throw new Error('Failed to fetch workspaces');
+          }
+          const data = await response.json();
+          
+          if (!data.success || !data.workspaces || data.workspaces.length === 0) {
+            console.log('[Projects] No workspaces found for user');
+            setPermissionDenied(true);
+            setLoading(false);
+            return;
+          }
+          
+          console.log('[Projects] Found workspaces:', data.workspaces);
+          
+          // Get workspace IDs
+          const workspaceIds = data.workspaces.map((w: any) => w.id);
+          
+          // Use admin client to check permissions and fetch projects
+          const { data: teamMemberships, error: teamError } = await supabaseAdmin
             .from('team_members')
             .select('workspace_id, is_admin, permissions')
-            .eq('user_id', session.user.id);
+            .eq('user_id', session.user.id)
+            .in('workspace_id', workspaceIds);
             
           if (teamError) {
             console.error('[Projects] Error fetching team memberships:', teamError);
-            // Don't fail immediately, try by email as fallback
+            setPermissionDenied(true);
+            setLoading(false);
+            return;
           }
           
-          // If we didn't find memberships by user ID, try by email (especially for kevin@amptron.com)
           if (!teamMemberships || teamMemberships.length === 0) {
-            console.log('[Projects] No workspaces found by user_id, trying email fallback');
-            
-            if (session.user?.email) {
-              // Try to fetch by email instead (to handle ID mismatches)
-              const { data: emailMemberships, error: emailError } = await supabase
-                .from('team_members')
-                .select('workspace_id, is_admin, permissions, user_id')
-                .eq('email', session.user.email);
-                
-              if (emailError) {
-                console.error('[Projects] Error fetching team memberships by email:', emailError);
-                setPermissionDenied(true);
-                setLoading(false);
-                return;
-              }
-              
-              if (!emailMemberships || emailMemberships.length === 0) {
-                console.log('[Projects] No workspaces found by email either');
-                setPermissionDenied(true);
-                setLoading(false);
-                return;
-              }
-              
-              console.log('[Projects] Found workspace by email:', emailMemberships);
-              
-              // Use these memberships instead
-              // Check if user has permission to view projects
-              const hasPermission = emailMemberships.some(membership => 
-                membership.is_admin || 
-                (membership.permissions && 
-                  (membership.permissions.view_projects || 
-                  membership.permissions.admin))
-              );
-              
-              if (!hasPermission) {
-                console.log('[Projects] User does not have view_projects permission (via email check)');
-                setPermissionDenied(true);
-                setLoading(false);
-                return;
-              }
-              
-              // User has permission via email check, call fetchProjects with the email-based memberships
-              fetchProjectsWithMemberships(emailMemberships);
-              
-              // Also fetch customers
-              fetchCustomers();
-              
-              return;
-            } else {
-              // No email to try with, so just deny permission
-              setPermissionDenied(true);
-              setLoading(false);
-              return;
-            }
+            console.log('[Projects] No team memberships found');
+            setPermissionDenied(true);
+            setLoading(false);
+            return;
           }
           
-          // If we get here, we found memberships by user_id
           // Check if user has permission to view projects
           const hasPermission = teamMemberships.some(membership => 
             membership.is_admin || 

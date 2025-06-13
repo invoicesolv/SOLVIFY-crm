@@ -27,7 +27,7 @@ import {
   Globe
 } from "lucide-react";
 import { saveServiceSettings, getServiceSettings, deleteServiceSettings } from '@/lib/settings';
-import { getActiveWorkspaceId } from '@/lib/permission';
+
 import { Input } from "@/components/ui/input";
 
 interface AuthService {
@@ -219,10 +219,15 @@ function SettingsContent() {
     const fetchActiveWorkspace = async () => {
       if (!session?.user?.id) return;
       try {
-        const wsId = await getActiveWorkspaceId(session.user.id);
-        setCurrentWorkspaceId(wsId);
-        if (!wsId) {
-          console.log("No active workspace found for user.");
+        const response = await fetch('/api/workspace/leave');
+        if (response.ok) {
+          const data = await response.json();
+          const workspaces = data.workspaces || [];
+          if (workspaces.length > 0) {
+            setCurrentWorkspaceId(workspaces[0].id);
+          } else {
+            console.log("No active workspace found for user.");
+          }
         }
       } catch (error) {
         console.error("Error fetching active workspace ID:", error);

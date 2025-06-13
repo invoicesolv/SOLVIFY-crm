@@ -32,7 +32,7 @@ import {
   FolderOpen
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import punycode from 'punycode';
@@ -128,37 +128,23 @@ export default function DomainsPage() {
       try {
         setPermissionLoading(true);
         
-        // First, get the active workspace
-        // Check both user_id and email to handle cases where IDs don't match
-        const { data: teamMembersById } = await supabase
-          .from('team_members')
-          .select('workspace_id, is_admin, permissions')
-          .eq('user_id', session.user.id);
-          
-        const { data: teamMembersByEmail } = await supabase
-          .from('team_members')
-          .select('workspace_id, is_admin, permissions')
-          .eq('email', session.user.email);
-          
-        // Combine results from both queries
-        const allTeamMembers = [
-          ...(teamMembersById || []),
-          ...(teamMembersByEmail || [])
-        ];
+        // Get workspace using API endpoint
+        const response = await fetch('/api/workspace/leave');
+        if (!response.ok) {
+          throw new Error('Failed to fetch workspaces');
+        }
         
-        // Remove duplicates (if any)
-        const uniqueTeamMembers = allTeamMembers.filter((member, index, self) =>
-          index === self.findIndex((m) => m.workspace_id === member.workspace_id)
-        );
+        const data = await response.json();
+        const workspaces = data.workspaces || [];
         
-        if (uniqueTeamMembers.length === 0) {
+        if (workspaces.length === 0) {
           setHasPermission(false);
           setHasEditPermission(false);
           return;
         }
         
         // Get first workspace ID or active one if set previously
-        const workspaceId = activeWorkspace || uniqueTeamMembers[0].workspace_id;
+        const workspaceId = activeWorkspace || workspaces[0].id;
         setActiveWorkspace(workspaceId);
         
         // Continue with permission checking...

@@ -6,10 +6,10 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Search, Filter, ArrowUpDown, Mail, Save, RefreshCw, Loader2, AlertOctagon } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
-import { checkPermission, getActiveWorkspaceId } from '@/lib/permission';
+import { checkPermission } from '@/lib/permission';
 import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { DollarSign, BarChart, CalendarCheck } from 'lucide-react';
@@ -251,90 +251,22 @@ export default function InvoicesPage() {
         console.log('[Invoices] Falling back to database...');
       }
       
-      // Get workspaces directly from team_members table
-      const { data: teamMemberships, error: teamError } = await supabase
-        .from('team_members')
-        .select('workspace_id, is_admin, permissions')
-        .eq('user_id', session.user.id);
-
-      if (teamError) {
-        console.error('[Invoices] Error fetching team memberships:', teamError);
-        toast.error('Failed to load team memberships');
+      // Get workspaces using API endpoint
+      const workspaceResponse = await fetch('/api/workspace/leave');
+      if (!workspaceResponse.ok) {
+        throw new Error('Failed to fetch workspaces');
+      }
+      
+      const workspaceData = await workspaceResponse.json();
+      const workspaces = workspaceData.workspaces || [];
+      
+      if (workspaces.length === 0) {
+        console.log('[Invoices] No workspaces found for user');
         setLoading(false);
         return;
       }
 
-      // Handle case where user has no memberships
-      if (!teamMemberships || teamMemberships.length === 0) {
-        console.log('[Invoices] No workspaces found for user by ID, trying email fallback');
-        
-        // Try email-based lookup as fallback (especially for kevin@amptron.com)
-        if (session.user.email) {
-          const { data: emailTeamMemberships, error: emailTeamError } = await supabase
-            .from('team_members')
-            .select('workspace_id, is_admin, permissions')
-            .eq('email', session.user.email);
-            
-          if (emailTeamError) {
-            console.error('[Invoices] Error fetching team memberships by email:', emailTeamError);
-            toast.error('Failed to load team memberships');
-            setLoading(false);
-            return;
-          }
-          
-          if (!emailTeamMemberships || emailTeamMemberships.length === 0) {
-            console.log('[Invoices] No workspaces found for user by email either');
-            setLoading(false);
-            return;
-          }
-          
-          console.log('[Invoices] Found workspaces by email:', emailTeamMemberships);
-          
-          // Check if user has permission to view invoices using email-based team memberships
-          const hasPermission = emailTeamMemberships.some((membership: TeamMembership) => 
-            membership.is_admin || 
-            (membership.permissions && 
-              (membership.permissions.view_invoices || 
-              membership.permissions.admin))
-          );
-          
-          if (!hasPermission) {
-            console.log('[Invoices] User does not have permission to view invoices (via email check)');
-            setPermissionDenied(true);
-            setLoading(false);
-            return;
-          }
-          
-          // Use email-based workspace IDs to fetch invoices
-          const workspaceIds = emailTeamMemberships.map((tm: TeamMembership) => tm.workspace_id);
-          console.log('[Invoices] Workspace IDs from email lookup:', workspaceIds);
-          
-          // Continue with fetching invoices using these workspace IDs
-          await fetchInvoicesForWorkspaces(workspaceIds);
-          return;
-        } else {
-          console.log('[Invoices] No workspaces found and no email available for fallback');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Check if user has permission to view invoices
-      const hasPermission = teamMemberships.some((membership: TeamMembership) => 
-        membership.is_admin || 
-        (membership.permissions && 
-          (membership.permissions.view_invoices || 
-          membership.permissions.admin))
-      );
-
-      if (!hasPermission) {
-        console.log('[Invoices] User does not have permission to view invoices');
-        setPermissionDenied(true);
-        setLoading(false);
-        return;
-      }
-
-      const workspaceIds = teamMemberships.map((tm: TeamMembership) => tm.workspace_id);
+      const workspaceIds = workspaces.map((w: any) => w.id);
       console.log('[Invoices] Workspace IDs:', workspaceIds);
 
       // Continue with the existing workflow using the workspaceIds

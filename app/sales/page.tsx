@@ -24,7 +24,7 @@ import { MockupFrame } from "@/components/ui/mockup";
 import { SaleDialog } from "@/components/sales/SaleDialog";
 import { DealDialog } from "@/components/sales/DealDialog";
 import { DealBoard } from "@/components/sales/DealBoard";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseAdmin } from "@/lib/supabase";
 import { SelectItem } from "@/components/ui/select";
 import { SidebarDemo } from "@/components/ui/code.demo";
 
@@ -71,26 +71,19 @@ export default function SalesPage() {
     }));
   }, [calculateConversionRate]);
 
-  // Load workspaces
+  // Load workspaces using API endpoint
   useEffect(() => {
     async function loadWorkspaces() {
       if (!session?.user?.id) return;
 
       try {
-        const { data: memberships, error: membershipError } = await supabase
-          .from("team_members")
-          .select("workspace_id, workspaces(id, name)")
-          .eq("user_id", session.user.id);
-
-        if (membershipError) throw membershipError;
-
-        const workspaceData = (memberships as TeamMember[] | null)
-          ?.map((m) => m.workspaces)
-          .filter(Boolean)
-          .map((w) => ({
-            id: w.id,
-            name: w.name,
-          })) || [];
+        const response = await fetch('/api/workspace/leave');
+        if (!response.ok) {
+          throw new Error('Failed to fetch workspaces');
+        }
+        
+        const data = await response.json();
+        const workspaceData = data.workspaces || [];
 
         setWorkspaces(workspaceData);
         if (workspaceData?.length > 0 && !activeWorkspace) {

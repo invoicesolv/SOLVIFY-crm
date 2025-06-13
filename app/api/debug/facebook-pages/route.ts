@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import authOptions from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { getActiveWorkspaceId } from '@/lib/permission';
+import crypto from 'crypto';
 
 export async function GET(request: NextRequest) {
   console.log('🔍 Debug: Facebook pages endpoint called');
@@ -40,9 +41,23 @@ export async function GET(request: NextRequest) {
     // Use the first Facebook account token to fetch pages
     const userToken = facebookAccount[0].access_token;
 
+    // Generate appsecret_proof for Facebook API security requirement
+    const clientSecret = process.env.FACEBOOK_CLIENT_SECRET || 
+                         process.env.META_CLIENT_SECRET || 
+                         process.env.FACEBOOK_APP_SECRET;
+                         
+    if (!clientSecret) {
+      return NextResponse.json({
+        error: 'Facebook client secret not configured',
+        debug: 'Missing FACEBOOK_CLIENT_SECRET, META_CLIENT_SECRET, or FACEBOOK_APP_SECRET'
+      }, { status: 500 });
+    }
+
+    const appsecret_proof = crypto.createHmac('sha256', clientSecret).update(userToken).digest('hex');
+
     // Test the token by getting user info first
     console.log('🔍 Testing user token...');
-    const userResponse = await fetch(`https://graph.facebook.com/me?access_token=${userToken}`);
+    const userResponse = await fetch(`https://graph.facebook.com/me?access_token=${userToken}&appsecret_proof=${appsecret_proof}`);
     const userData = await userResponse.json();
     
     if (!userResponse.ok) {
@@ -56,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     // Check permissions
     console.log('🔍 Checking permissions...');
-    const permissionsResponse = await fetch(`https://graph.facebook.com/me/permissions?access_token=${userToken}`);
+    const permissionsResponse = await fetch(`https://graph.facebook.com/me/permissions?access_token=${userToken}&appsecret_proof=${appsecret_proof}`);
     const permissionsData = await permissionsResponse.json();
     
     const grantedPermissions = permissionsData.data?.filter((perm: any) => perm.status === 'granted').map((perm: any) => perm.permission) || [];
@@ -64,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch pages with all fields
     console.log('🔍 Fetching Facebook pages...');
-    const pagesResponse = await fetch(`https://graph.facebook.com/me/accounts?fields=id,name,access_token,category,perms,link&access_token=${userToken}`);
+    const pagesResponse = await fetch(`https://graph.facebook.com/me/accounts?fields=id,name,access_token,category,link&access_token=${userToken}&appsecret_proof=${appsecret_proof}`);
     const pagesData = await pagesResponse.json();
 
     if (!pagesResponse.ok) {
@@ -87,7 +102,6 @@ export async function GET(request: NextRequest) {
         name: page.name,
         category: page.category,
         hasAccessToken: !!page.access_token,
-        perms: page.perms,
         link: page.link
       })) || [],
       rawPagesData: pagesData,

@@ -108,31 +108,74 @@ export async function GET() {
   }
 
   try {
+    console.log('[Workspace API] Fetching workspaces for user:', session.user.id);
+    
+    // Use team_members table instead of workspace_memberships
+    // Filter out the deleted workspace
     const { data: memberships, error } = await supabase
-      .from('workspace_memberships')
+      .from('team_members')
       .select(`
         workspace_id,
-        role,
+        is_admin,
         workspaces!inner (
           id,
           name,
           created_at
         )
       `)
-      .eq('user_id', session.user.id);
+      .eq('user_id', session.user.id)
+      .neq('workspace_id', '4251bc40-5a36-493a-9f85-eb728c4d86fa') // Exclude deleted workspace
+      .not('user_id', 'is', null); // Exclude corrupted records
 
     if (error) {
+      console.error('[Workspace API] Error fetching workspaces:', error);
       return NextResponse.json({ error: 'Failed to fetch workspaces' }, { status: 500 });
     }
 
+    // Also check for workspaces the user owns directly
+    const { data: ownedWorkspaces, error: ownedError } = await supabase
+      .from('workspaces')
+      .select('id, name, created_at')
+      .eq('owner_id', session.user.id)
+      .neq('id', '4251bc40-5a36-493a-9f85-eb728c4d86fa'); // Exclude deleted workspace
+
+    if (ownedError) {
+      console.error('[Workspace API] Error fetching owned workspaces:', ownedError);
+    }
+
+    // Combine and deduplicate workspaces
+    const allWorkspaces = new Map();
+    
+    // Add team memberships
+    memberships?.forEach((m: any) => {
+      if (m.workspaces && !allWorkspaces.has(m.workspace_id)) {
+        allWorkspaces.set(m.workspace_id, {
+          id: m.workspace_id,
+          name: m.workspaces.name,
+          role: m.is_admin ? 'admin' : 'member',
+          created_at: m.workspaces.created_at
+        });
+      }
+    });
+    
+    // Add owned workspaces
+    ownedWorkspaces?.forEach((w: any) => {
+      if (!allWorkspaces.has(w.id)) {
+        allWorkspaces.set(w.id, {
+          id: w.id,
+          name: w.name,
+          role: 'owner',
+          created_at: w.created_at
+        });
+      }
+    });
+
+    const workspaceList = Array.from(allWorkspaces.values());
+    console.log('[Workspace API] Returning workspaces:', workspaceList);
+
     return NextResponse.json({ 
       success: true,
-      workspaces: memberships?.map((m: any) => ({
-        id: m.workspace_id,
-        name: m.workspaces?.name,
-        role: m.role,
-        created_at: m.workspaces?.created_at
-      })) || []
+      workspaces: workspaceList
     });
 
   } catch (error) {

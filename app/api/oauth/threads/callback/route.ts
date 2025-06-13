@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import authOptions from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { getActiveWorkspaceId } from '@/lib/permission';
+import crypto from 'crypto';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -78,9 +79,18 @@ export async function GET(request: NextRequest) {
       throw new Error('No access token received from Threads');
     }
 
+    // Generate appsecret_proof for Facebook API security requirement
+    const clientSecret = process.env.FACEBOOK_APP_SECRET;
+    if (!clientSecret) {
+      console.error('Threads OAuth: Missing Facebook app secret');
+      throw new Error('Facebook app secret not configured');
+    }
+
+    const appsecret_proof = crypto.createHmac('sha256', clientSecret).update(tokenData.access_token).digest('hex');
+
     // Get user information from Facebook Graph API (Threads data comes through Facebook)
     console.log('Threads OAuth: Fetching user profile from Facebook Graph API');
-    const userResponse = await fetch(`https://graph.facebook.com/me?fields=id,name&access_token=${tokenData.access_token}`, {
+    const userResponse = await fetch(`https://graph.facebook.com/me?fields=id,name&access_token=${tokenData.access_token}&appsecret_proof=${appsecret_proof}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',

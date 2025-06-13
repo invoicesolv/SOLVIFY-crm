@@ -585,38 +585,38 @@ export function Dashboard() {
         if (consistentId) {
           try {
             console.log('[Dashboard] Loading workspaces for user ID:', consistentId);
-        const { data: memberships, error: membershipError } = await supabase
-          .from("team_members")
-          .select("workspace_id, workspaces(id, name)")
-          .eq("user_id", consistentId);
-
-        if (membershipError) {
-              console.error('[Dashboard] Membership query error:', membershipError);
-          throw membershipError;
+        // Use the API endpoint instead of direct database query to avoid RLS issues
+        const response = await fetch('/api/workspace/leave');
+        if (!response.ok) {
+          throw new Error('Failed to fetch workspaces');
         }
-
-        const workspaceData = (memberships as any[] | null)
-          ?.filter(m => m.workspaces) // Filter out any null workspaces
-          .map((m) => ({
-            id: m.workspaces.id,
-            name: m.workspaces.name,
-          })) || [];
-
-            if (workspaceData.length > 0) {
-        setWorkspaces(workspaceData);
-              console.log('[Dashboard] Loaded workspaces:', workspaceData);
+        const data = await response.json();
         
-              // Set active workspace if none is selected
-              if (!activeWorkspace) {
-          setActiveWorkspace(workspaceData[0].id);
-                console.log('[Dashboard] Set active workspace to:', workspaceData[0].id);
+        if (data.success && data.workspaces) {
+          const workspaceData = data.workspaces.map((w: any) => ({
+            id: w.id,
+            name: w.name,
+          }));
           
-                // Store selection in localStorage
-            localStorage.setItem(`workspace_${consistentId}`, workspaceData[0].id);
-          }
+          if (workspaceData.length > 0) {
+            setWorkspaces(workspaceData);
+            console.log('[Dashboard] Loaded workspaces:', workspaceData);
+            
+            // Set active workspace if none is selected
+            if (!activeWorkspace) {
+              setActiveWorkspace(workspaceData[0].id);
+              console.log('[Dashboard] Set active workspace to:', workspaceData[0].id);
               
-              return; // Exit if we loaded workspaces successfully
+              // Store selection in localStorage
+              localStorage.setItem(`workspace_${consistentId}`, workspaceData[0].id);
             }
+            
+            return; // Exit if we loaded workspaces successfully
+          }
+        }
+        
+        // If we get here, no workspaces were returned
+        throw new Error('No workspaces found');
           } catch (err) {
             console.error("[Dashboard] Error loading user workspaces:", err);
           }

@@ -5,16 +5,32 @@ export const dynamic = 'force-dynamic';
 
 // Facebook OAuth endpoint - using Facebook Login for Business
 export async function GET(request: NextRequest) {
+  console.log('🔵 [FACEBOOK OAUTH] Starting OAuth flow...');
+  
   const searchParams = request.nextUrl.searchParams;
   const state = searchParams.get('state') || '';
   const forceBusiness = searchParams.get('force_business') === 'true';
 
+  console.log('🔵 [FACEBOOK OAUTH] Request parameters:', {
+    state: state,
+    forceBusiness: forceBusiness,
+    allParams: Object.fromEntries(searchParams.entries())
+  });
+
   // Facebook Graph API
   const clientId = process.env.FACEBOOK_APP_ID;
-  const redirectUri = `${process.env.NEXTAUTH_URL}/api/oauth/facebook/callback`;
+  const baseUrl = process.env.NEXTAUTH_URL;
+  const redirectUri = `${(baseUrl || '').replace(/\/$/, '')}/api/oauth/facebook/callback`;
+  
+  console.log('🔵 [FACEBOOK OAUTH] Environment check:', {
+    hasClientId: !!clientId,
+    clientIdPreview: clientId ? clientId.substring(0, 8) + '***' : 'None',
+    baseUrl: baseUrl,
+    redirectUri: redirectUri
+  });
   
   if (!clientId) {
-    console.error('Facebook OAuth error: Missing FACEBOOK_APP_ID');
+    console.error('🔴 [FACEBOOK OAUTH] Missing FACEBOOK_APP_ID');
     return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=facebook_config_missing`));
   }
   
@@ -52,6 +68,7 @@ export async function GET(request: NextRequest) {
     console.log('Facebook OAuth: Forcing business permission rerequest');
   }
 
-  console.log('Facebook Business OAuth URL:', authUrl.toString());
+  console.log('🔵 [FACEBOOK OAUTH] Generated OAuth URL:', authUrl.toString());
+  console.log('🔵 [FACEBOOK OAUTH] Redirecting user to Facebook...');
   return NextResponse.redirect(authUrl.toString());
 } 

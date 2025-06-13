@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { 
   Mail, 
   Users, 
@@ -26,7 +26,7 @@ import { GlowingEffect } from '@/components/ui/glowing-effect';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { getActiveWorkspaceId } from '@/lib/permission';
+
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { cn } from '@/lib/utils';
 
@@ -83,8 +83,14 @@ export default function EmailMarketingPage() {
     const initializeWorkspace = async () => {
       if (session?.user?.id) {
         try {
-          const activeWorkspaceId = await getActiveWorkspaceId(session.user.id);
-          setWorkspaceId(activeWorkspaceId);
+          const response = await fetch('/api/workspace/leave');
+          if (response.ok) {
+            const data = await response.json();
+            const workspaces = data.workspaces || [];
+            if (workspaces.length > 0) {
+              setWorkspaceId(workspaces[0].id);
+            }
+          }
         } catch (error) {
           console.error('Error getting workspace ID:', error);
         }
