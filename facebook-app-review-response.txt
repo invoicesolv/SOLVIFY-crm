@@ -1,0 +1,40 @@
+**How our CRM uses pages_manage_posts permission:**
+
+Our CRM platform provides comprehensive social media management for businesses. The pages_manage_posts permission is essential for our core functionality:
+
+**1. Content Publishing & Scheduling**
+- Create and schedule marketing posts, product announcements, and customer engagement content on Facebook Pages and connected Instagram Business accounts
+- Enables businesses to maintain consistent social media presence through automated posting
+
+**2. Content Management & Moderation** 
+- Edit or delete inappropriate, outdated, or incorrect posts to maintain professional brand image
+- Critical for reputation management and regulatory compliance
+
+**3. Customer Engagement Management**
+- Create response posts to customer inquiries and feedback through our CRM interface
+- Essential for providing timely customer service via social media
+
+**4. Marketing Campaign Optimization**
+- Modify or remove campaign posts based on performance analytics
+- Enables A/B testing and dynamic campaign management for improved ROI
+
+**5. Compliance & Governance**
+- Remove posts that violate company policies or industry regulations
+- Particularly important for businesses in regulated industries
+
+**Value for Users:**
+- Time efficiency: Manage all social media from one CRM platform
+- Professional brand management: Quick response to content issues
+- Improved customer service: Rapid engagement capabilities
+- Marketing optimization: Data-driven content management
+
+**Analytics Usage:**
+We use aggregated, anonymized post performance data to provide insights for content strategy improvement and marketing optimization. All data is de-identified and cannot be re-identified.
+
+**Privacy & Security:**
+- All actions require explicit user consent
+- Users maintain full control and can revoke access anytime
+- Secure token handling with encryption
+- Minimal data retention following Facebook's best practices
+
+This permission is fundamental to our CRM's social media management module and cannot be replaced by read-only permissions for our core business functionality. 

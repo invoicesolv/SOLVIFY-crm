@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       'public_profile (default)',
       'email (for user identification)',
       'pages_manage_posts (for posting to Facebook pages)',
-      'instagram_basic (for Instagram integration)',
+      'business_management (for Instagram integration)',
       'instagram_content_publish (for Instagram posting)'
     ],
     common_issues: [

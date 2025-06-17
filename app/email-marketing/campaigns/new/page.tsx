@@ -228,15 +228,30 @@ export default function NewCampaignPage() {
 
       if (error) throw error;
 
-      // Here you would typically trigger the actual email sending process
-      // This could be done via an API route or edge function
-      
-      const message = campaignData.schedule_type === 'now' 
-        ? 'Campaign is being sent!' 
-        : 'Campaign scheduled successfully!';
-      
-      toast.success(message);
-      router.push(`/email-marketing/campaigns/${data.id}`);
+      // Trigger the actual email sending process
+      if (campaignData.schedule_type === 'now') {
+        try {
+          const sendResponse = await fetch('/api/email-marketing/send-campaign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ campaignId: data.id })
+          });
+
+          if (!sendResponse.ok) {
+            throw new Error('Failed to start sending campaign');
+          }
+
+          toast.success('Campaign sending started! 🚀');
+          router.push(`/email-marketing/campaigns/${data.id}?sending=true`);
+        } catch (sendError) {
+          console.error('Error starting campaign send:', sendError);
+          toast.error('Campaign created but failed to start sending');
+          router.push(`/email-marketing/campaigns/${data.id}`);
+        }
+      } else {
+        toast.success('Campaign scheduled successfully! ⏰');
+        router.push(`/email-marketing/campaigns/${data.id}`);
+      }
     } catch (error) {
       console.error('Error creating campaign:', error);
       toast.error('Failed to create campaign');

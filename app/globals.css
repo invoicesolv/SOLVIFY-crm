@@ -459,3 +459,13 @@ body, input, textarea, button {
   padding: 0.5em;
   text-align: left;
 } 
+
+/* Dot pattern background for automation builder */
+.bg-dot-pattern {
+  background-image: radial-gradient(circle, rgba(156, 163, 175, 0.3) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.dark .bg-dot-pattern {
+  background-image: radial-gradient(circle, rgba(75, 85, 99, 0.4) 1px, transparent 1px);
+}

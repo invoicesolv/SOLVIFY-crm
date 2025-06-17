@@ -105,9 +105,16 @@ export function TaskCard({ task, onUpdate, onDelete, onMoveTask, onMoveSubtask, 
         const wasCompleted = task.checklist.filter(item => item.done).length === task.checklist.length;
         const isNowCompleted = completedItems === totalItems;
 
-        // If task is newly completed (wasn't complete before but is now), send notification
+        // Update UI immediately for instant feedback
+        onUpdate(task.id, {
+            ...task,
+            checklist: newChecklist,
+            progress: progress
+        });
+
+        // If task is newly completed (wasn't complete before but is now), send notification in background
         if (!wasCompleted && isNowCompleted && task.assigned_to) {
-            // Send completion notification
+            // Send completion notification (non-blocking)
             fetch('/api/task-notifications', {
                 method: 'POST',
                 headers: {
@@ -123,12 +130,6 @@ export function TaskCard({ task, onUpdate, onDelete, onMoveTask, onMoveSubtask, 
                 // Don't block the UI for notification errors
             });
         }
-
-        onUpdate(task.id, {
-            ...task,
-            checklist: newChecklist,
-            progress: progress
-        });
 
         // If all items are done, collapse the task after a short delay
         if (completedItems === totalItems) {
@@ -159,10 +160,10 @@ export function TaskCard({ task, onUpdate, onDelete, onMoveTask, onMoveSubtask, 
             transition={{
                 layout: {
                     type: "spring",
-                    bounce: 0.2,
-                    duration: 0.6
+                    bounce: 0.1,
+                    duration: 0.3
                 },
-                opacity: { duration: 0.3 }
+                opacity: { duration: 0.15 }
             }}
             className="w-full bg-background border border-border rounded-lg overflow-hidden relative"
         >
@@ -176,8 +177,8 @@ export function TaskCard({ task, onUpdate, onDelete, onMoveTask, onMoveSubtask, 
                         animate={{ rotate: isExpanded ? 90 : 0 }}
                         transition={{
                             type: "spring",
-                            bounce: 0.3,
-                            duration: 0.4
+                            bounce: 0.2,
+                            duration: 0.2
                         }}
                     >
                         <ChevronRight className={cn(

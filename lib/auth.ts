@@ -47,6 +47,8 @@ const authOptions: AuthOptions = {
             'https://www.googleapis.com/auth/drive.file',
             'https://www.googleapis.com/auth/drive.appdata',
             'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/drive.metadata',
             'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.send',
             'https://www.googleapis.com/auth/gmail.compose',
@@ -231,7 +233,7 @@ const authOptions: AuthOptions = {
             
             // Update token configuration
             if (account.access_token) {
-              account.expires_at = Math.floor(Date.now() / 1000) + 3600;
+              account.expires_at = Math.floor(Date.now() / 1000) + (60 * 24 * 60 * 60); // 2 months in seconds
             }
             
             // Create/update mapping in our oauth_provider_mapping table
@@ -258,7 +260,7 @@ const authOptions: AuthOptions = {
         else if (account?.provider === 'credentials') {
           account.access_token = (user as any).access_token;
           account.refresh_token = (user as any).refresh_token;
-          account.expires_at = Math.floor(Date.now() / 1000) + 3600;
+          account.expires_at = Math.floor(Date.now() / 1000) + (60 * 24 * 60 * 60); // 2 months in seconds
         }
 
         // Try to find the user with either the Google-provided ID or the credential ID
@@ -382,7 +384,7 @@ const authOptions: AuthOptions = {
         if (account && account.provider === 'google' && account.access_token) {
           
           const now = new Date();
-          const expiresAt = account.expires_at ? new Date(account.expires_at * 1000) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 1 week
+          const expiresAt = account.expires_at ? new Date(account.expires_at * 1000) : new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000); // 2 months
           const scopes = account.scope?.split(' ') || [];
 
           // Get user's workspace for linking with integrations
@@ -572,7 +574,8 @@ const authOptions: AuthOptions = {
           if (account.provider === 'google' && account.access_token) {
             try {
               const now = new Date();
-              const expiresAt = account.expires_at ? new Date(account.expires_at * 1000) : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 1 week
+              // Set token expiration to 2 months for maximum duration
+              const expiresAt = account.expires_at ? new Date(account.expires_at * 1000) : new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000); // 2 months
               const scopes = account.scope?.split(' ') || [];
               
               // Determine which Google services this token applies to based on scopes
@@ -810,7 +813,13 @@ const authOptions: AuthOptions = {
     }
   },
   session: {
-    strategy: "jwt"
+    strategy: "jwt",
+    // Set session to last 2 months to match token expiration
+    maxAge: 60 * 24 * 60 * 60, // 2 months in seconds
+  },
+  jwt: {
+    // Set JWT to last 2 months to match token expiration
+    maxAge: 60 * 24 * 60 * 60, // 2 months in seconds
   },
   debug: process.env.NODE_ENV === 'development',
   secret: process.env.NEXTAUTH_SECRET,

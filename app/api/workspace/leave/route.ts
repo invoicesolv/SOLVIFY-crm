@@ -3,10 +3,16 @@ import { getServerSession } from 'next-auth/next';
 import authOptions from '@/lib/auth';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing Supabase environment variables');
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -21,6 +27,8 @@ export async function POST(request: NextRequest) {
     if (!workspace_id) {
       return NextResponse.json({ error: 'workspace_id is required' }, { status: 400 });
     }
+
+    const supabase = getSupabaseAdmin();
 
     // Check if user is a member of this workspace
     const { data: membership, error: membershipError } = await supabase
@@ -109,6 +117,8 @@ export async function GET() {
 
   try {
     console.log('[Workspace API] Fetching workspaces for user:', session.user.id);
+    
+    const supabase = getSupabaseAdmin();
     
     // Use team_members table instead of workspace_memberships
     // Filter out the deleted workspace

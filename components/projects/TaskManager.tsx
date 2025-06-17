@@ -216,6 +216,22 @@ export function TaskManager({
     const totalItems = updatedChecklist.length;
     const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
 
+    // OPTIMISTIC UPDATE: Update UI immediately for instant feedback
+    const updatedTasks = tasks.map((t) => {
+      if (t.id === taskId) {
+        return {
+          ...t,
+          checklist: updatedChecklist,
+          progress: progress,
+        };
+      }
+      return t;
+    });
+
+    setTasks(updatedTasks);
+    onChecklistItemUpdate(taskId, itemId, !task.checklist.find(i => i.id === itemId)?.done);
+
+    // Then update database in background (don't block UI)
     try {
       const { error } = await supabase
         .from('project_tasks')
@@ -225,21 +241,22 @@ export function TaskManager({
         })
         .eq('id', taskId);
 
-      if (error) throw error;
-
-      const updatedTasks = tasks.map((t) => {
-        if (t.id === taskId) {
-          return {
-            ...t,
-            checklist: updatedChecklist,
-            progress: progress,
-          };
-        }
-        return t;
-      });
-
-      setTasks(updatedTasks);
-      onChecklistItemUpdate(taskId, itemId, !task.checklist.find(i => i.id === itemId)?.done);
+      if (error) {
+        // If database update fails, revert the optimistic update
+        console.error('Error updating task:', error);
+        toast.error('Failed to update task - reverting changes');
+        
+        // Revert to original state
+        const revertedTasks = tasks.map((t) => {
+          if (t.id === taskId) {
+            return task; // Revert to original task state
+          }
+          return t;
+        });
+        
+        setTasks(revertedTasks);
+        onChecklistItemUpdate(taskId, itemId, task.checklist.find(i => i.id === itemId)?.done || false);
+      }
     } catch (error) {
       console.error('Error updating task:', error);
       toast.error('Failed to update task');
@@ -925,10 +942,10 @@ export function TaskManager({
                           transition={{
                             layout: {
                               type: "spring",
-                              bounce: 0.2,
-                              duration: 0.6
+                              bounce: 0.1,
+                              duration: 0.3
                             },
-                            opacity: { duration: 0.3 }
+                            opacity: { duration: 0.15 }
                           }}
                           style={{ position: "relative" }}
                           className="flex gap-2 items-start ml-6"
@@ -991,10 +1008,10 @@ export function TaskManager({
                     transition={{
                       layout: {
                         type: "spring",
-                        bounce: 0.2,
-                        duration: 0.6
+                        bounce: 0.1,
+                        duration: 0.3
                       },
-                      opacity: { duration: 0.3 }
+                      opacity: { duration: 0.15 }
                     }}
                     style={{ position: "relative" }}
                     className="flex gap-2 items-start"

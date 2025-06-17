@@ -51,11 +51,11 @@ export async function getRefreshedGoogleToken(
       throw new Error('Failed to refresh access token');
     }
 
-    // Calculate new expiry time - set to 1 month for extended operation
-    // Google typically gives 1 hour, but we'll set our DB to 1 month and refresh as needed
+    // Calculate new expiry time - set to 2 months for extended operation
+    // Google typically gives 1 hour, but we'll set our DB to 2 months and refresh as needed
     const newExpiresAt = credentials.expiry_date 
       ? new Date(credentials.expiry_date) 
-      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+      : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 2 months from now
     
     // Update the database with the new token
     const { error: updateError } = await supabase
@@ -149,7 +149,8 @@ export async function proactiveTokenRefresh(userId: string): Promise<void> {
     'google-searchconsole', 
     'google-calendar',
     'google-gmail',
-    'google-drive'
+    'google-drive',
+    'youtube'
   ];
   
   for (const service of services) {
@@ -221,4 +222,97 @@ export async function getValidGoogleToken(
     console.error(`[Get Valid Token] Error getting token for ${serviceName}:`, error);
     return null;
   }
+}
+
+/**
+ * Comprehensive token validation and refresh for all Google services
+ * Ensures all tokens have proper refresh tokens and 2-month expiration
+ */
+export async function validateAndRefreshAllGoogleTokens(userId: string): Promise<{
+  success: boolean;
+  services: string[];
+  errors: string[];
+}> {
+  const allGoogleServices = [
+    'google-analytics',
+    'google-searchconsole', 
+    'google-calendar',
+    'google-gmail',
+    'google-drive',
+    'youtube'
+  ];
+  
+  const results = {
+    success: true,
+    services: [] as string[],
+    errors: [] as string[]
+  };
+  
+  for (const service of allGoogleServices) {
+    try {
+      // Check if user has this integration
+      const { data: integration, error } = await supabase
+        .from('integrations')
+        .select('access_token, refresh_token, expires_at, scopes')
+        .eq('user_id', userId)
+        .eq('service_name', service)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') {
+        results.errors.push(`Error checking ${service}: ${error.message}`);
+        continue;
+      }
+      
+      if (!integration) {
+        // Service not connected, skip
+        continue;
+      }
+      
+      // Check if refresh token exists
+      if (!integration.refresh_token) {
+        results.errors.push(`${service}: Missing refresh token - needs re-authentication`);
+        results.success = false;
+        
+        // Mark as needing re-auth
+        await supabase
+          .from('integrations')
+          .update({ 
+            status: 'needs_reauth',
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', userId)
+          .eq('service_name', service);
+        continue;
+      }
+      
+      // Check token expiration and refresh if needed
+      const token = await getValidGoogleToken(userId, service);
+      if (token) {
+        results.services.push(service);
+        
+        // Ensure token has 2-month expiration
+        const { error: updateError } = await supabase
+          .from('integrations')
+          .update({ 
+            expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 2 months
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', userId)
+          .eq('service_name', service);
+          
+        if (updateError) {
+          results.errors.push(`${service}: Failed to update expiration - ${updateError.message}`);
+        }
+      } else {
+        results.errors.push(`${service}: Failed to get valid token`);
+        results.success = false;
+      }
+      
+    } catch (error) {
+      results.errors.push(`${service}: Unexpected error - ${error instanceof Error ? error.message : 'Unknown error'}`);
+      results.success = false;
+    }
+  }
+  
+  return results;
 } 

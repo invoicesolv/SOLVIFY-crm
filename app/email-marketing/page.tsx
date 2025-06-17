@@ -210,10 +210,10 @@ export default function EmailMarketingPage() {
             <p className="text-muted-foreground">Create, send, and track email campaigns</p>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/email-marketing/settings">
+            <Link href="/email-marketing/automation">
               <Button variant="outline" className="flex items-center gap-2">
                 <Settings className="h-4 w-4" />
-                Settings
+                Automation
               </Button>
             </Link>
             <Link href="/email-marketing/templates">

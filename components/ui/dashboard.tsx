@@ -597,22 +597,22 @@ export function Dashboard() {
             id: w.id,
             name: w.name,
           }));
+
+            if (workspaceData.length > 0) {
+        setWorkspaces(workspaceData);
+              console.log('[Dashboard] Loaded workspaces:', workspaceData);
+        
+              // Set active workspace if none is selected
+              if (!activeWorkspace) {
+          setActiveWorkspace(workspaceData[0].id);
+                console.log('[Dashboard] Set active workspace to:', workspaceData[0].id);
           
-          if (workspaceData.length > 0) {
-            setWorkspaces(workspaceData);
-            console.log('[Dashboard] Loaded workspaces:', workspaceData);
-            
-            // Set active workspace if none is selected
-            if (!activeWorkspace) {
-              setActiveWorkspace(workspaceData[0].id);
-              console.log('[Dashboard] Set active workspace to:', workspaceData[0].id);
-              
-              // Store selection in localStorage
-              localStorage.setItem(`workspace_${consistentId}`, workspaceData[0].id);
-            }
-            
-            return; // Exit if we loaded workspaces successfully
+                // Store selection in localStorage
+            localStorage.setItem(`workspace_${consistentId}`, workspaceData[0].id);
           }
+              
+              return; // Exit if we loaded workspaces successfully
+            }
         }
         
         // If we get here, no workspaces were returned

@@ -4,12 +4,11 @@ import authOptions from '@/lib/auth';
 import { createClient } from '@supabase/supabase-js';
 import { getActiveWorkspaceId } from '@/lib/permission';
 
+export async function GET() {
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-export async function GET() {
   const session = await getServerSession(authOptions);
   
   if (!session?.user?.id) {

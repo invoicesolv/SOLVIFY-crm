@@ -599,7 +599,7 @@ function SettingsContent() {
       
       // For other platforms, use the existing OAuth URLs
       const oauthUrls = {
-        instagram: '/api/oauth/instagram',
+        instagram: '/api/oauth/instagram-business', // Use Instagram Business API (not deprecated Basic Display)
         facebook: '/api/oauth/facebook',
         threads: '/api/oauth/threads',
         tiktok: '/api/oauth/tiktok',
@@ -671,11 +671,34 @@ function SettingsContent() {
     if (!session?.user?.id) return;
     
     try {
-      // Check social_accounts table for most platforms
-      const { data: connections, error } = await supabase
+      // Get workspace ID first
+      let workspaceId = null;
+      try {
+        const response = await fetch('/api/workspace/leave');
+        if (response.ok) {
+          const data = await response.json();
+          const workspaces = data.workspaces || [];
+          if (workspaces.length > 0) {
+            workspaceId = workspaces[0].id;
+          }
+        }
+      } catch (error) {
+        console.error('Error getting workspace ID:', error);
+      }
+
+      // Check social_accounts table for most platforms - use workspace_id if available
+      const query = supabase
         .from('social_accounts')
-        .select('platform, is_connected')
-        .eq('user_id', session.user.id);
+        .select('platform, is_connected');
+      
+      if (workspaceId) {
+        query.eq('workspace_id', workspaceId);
+      } else {
+        // Fallback to user_id if no workspace found
+        query.eq('user_id', session.user.id);
+      }
+      
+      const { data: connections, error } = await query;
 
       if (error) throw error;
 
@@ -691,7 +714,11 @@ function SettingsContent() {
 
       connections?.forEach(conn => {
         if (conn.platform && conn.is_connected) {
-          connectionStatus[conn.platform as keyof typeof connectionStatus] = true;
+          // Map 'x' platform to 'twitter' for UI compatibility
+          const platformKey = conn.platform === 'x' ? 'twitter' : conn.platform;
+          if (platformKey in connectionStatus) {
+            connectionStatus[platformKey as keyof typeof connectionStatus] = true;
+          }
         }
       });
 
@@ -769,6 +796,12 @@ function SettingsContent() {
           break;
         case 'instagram_auth_failed':
           toast.error('Failed to connect Instagram account. Please try again.');
+          break;
+        case 'instagram_save_failed':
+          toast.error('Instagram connection was cancelled or failed to save. Please try again and make sure to grant all required permissions.');
+          break;
+        case 'instagram_cancelled':
+          toast.error('Instagram connection was cancelled. Please try again and grant the required permissions.');
           break;
         case 'instagram_config_missing':
           toast.error('Instagram configuration missing. Please check your environment variables.');

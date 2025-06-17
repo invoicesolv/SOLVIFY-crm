@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
   }
   
   // LinkedIn OAuth 2.0 scopes for posting and profile access
-  const scope = 'r_liteprofile w_member_social';
+  // Note: r_organization_admin requires special LinkedIn approval - removed for now
+  const scope = 'openid profile email w_member_social';
   
   const authUrl = new URL('https://www.linkedin.com/oauth/v2/authorization');
   authUrl.searchParams.set('response_type', 'code');

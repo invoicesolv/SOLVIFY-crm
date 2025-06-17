@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNotifications } from '@/lib/notification-context'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Paperclip, Smile, Calendar, FolderPlus } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { Tables } from '@/lib/database.types'
 
 type ChatMessage = Tables<'chat_messages'> & {
@@ -180,6 +180,64 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
     }
     
     setMessages(prev => [...prev, messageWithUserInfo])
+
+    // Check for chat triggers and potentially trigger chatbot
+    await checkChatTriggers(newMessage, userName)
+  }
+
+  // Function to check for active chat triggers and call chatbot if needed
+  const checkChatTriggers = async (message: ChatMessage, userName: string) => {
+    try {
+      // Skip if this is an AI assistant message to avoid loops
+      if (message.user_id === 'ai-assistant') {
+        return
+      }
+
+      // Get active automation workflows with chat triggers
+      const { data: workflows } = await supabase
+        .from('cron_jobs')
+        .select('*')
+        .eq('status', 'active')
+        .eq('job_type', 'chat_message')
+
+      if (!workflows || workflows.length === 0) {
+        return
+      }
+
+      // Check each workflow for matching triggers
+      for (const workflow of workflows) {
+        const triggerConfig = workflow.settings?.automation_config
+        
+        if (!triggerConfig?.use_ai_chatbot) {
+          continue
+        }
+
+        // Call the chat trigger API
+        const response = await fetch('/api/automation/chat-trigger', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: message.content,
+            platform: 'internal_chat',
+            channel: workspaceId,
+            username: userName,
+            workspaceId: workspaceId,
+            triggerConfig: triggerConfig
+          })
+        })
+
+        const result = await response.json()
+        
+        if (result.triggered && result.chatbot_response) {
+          console.log('[Chat Interface] Chatbot triggered successfully')
+          // The chatbot response will be automatically added via the real-time subscription
+        }
+      }
+    } catch (error) {
+      console.error('[Chat Interface] Error checking chat triggers:', error)
+    }
   }
 
   const fetchMessages = async () => {
@@ -419,6 +477,7 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
 
   const renderMessage = (message: ChatMessage) => {
     const isCurrentUser = message.user_id === currentUserId
+    const isAIAssistant = message.user_id === 'ai-assistant'
 
     if (message.message_type === 'calendar_event') {
       return (
@@ -501,13 +560,16 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
       >
         <div className={`flex gap-2.5 max-w-[75%] ${isCurrentUser ? 'flex-row-reverse' : 'flex-row'}`}>
           <SimpleAvatar 
-            src={message.user_avatar} 
-            alt={message.user_name || 'User'}
+            src={isAIAssistant ? undefined : message.user_avatar} 
+            alt={isAIAssistant ? 'AI Assistant' : (message.user_name || 'User')}
+            className={isAIAssistant ? "bg-gradient-to-br from-blue-500 to-purple-600 text-white" : ""}
           />
           <div className={`flex flex-col ${isCurrentUser ? 'items-end' : 'items-start'}`}>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium text-muted-foreground">
-                {message.user_name}
+              <span className={`text-xs font-medium ${
+                isAIAssistant ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'
+              }`}>
+                {isAIAssistant ? '🤖 AI Assistant' : message.user_name}
               </span>
               <span className="text-xs text-muted-foreground/70">
                 {formatTime(message.created_at!)}
@@ -517,6 +579,8 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
               className={`rounded-2xl px-3.5 py-2.5 shadow-sm ${
                 isCurrentUser
                   ? 'bg-primary text-primary-foreground'
+                  : isAIAssistant
+                  ? 'bg-gradient-to-br from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200/50 dark:border-blue-800/50 text-foreground'
                   : 'bg-muted/80 text-foreground border border-border/50'
               }`}
             >

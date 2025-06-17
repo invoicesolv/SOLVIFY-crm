@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { RefreshCw, Trash2, Edit2, Grid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { CalendarErrorBoundary } from '@/components/ui/calendar-error-boundary';
 import {
   CalendarBody,

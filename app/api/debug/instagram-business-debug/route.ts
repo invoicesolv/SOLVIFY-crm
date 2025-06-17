@@ -221,7 +221,7 @@ export async function GET(request: NextRequest) {
     if (totalInstagram === 0) {
       steps.push("Connect Instagram Business accounts to your Facebook pages in Facebook Business Manager");
       steps.push("Ensure Facebook pages are linked to Instagram Business (not personal) accounts");
-      steps.push("Request instagram_basic_display and instagram_manage_insights permissions");
+      steps.push("Request business_management and pages_manage_posts permissions");
     } else {
       steps.push("Instagram Business accounts found - check why they're not being saved to database");
       steps.push("Review Instagram OAuth callback logic");

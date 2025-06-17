@@ -10,10 +10,12 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const state = searchParams.get('state') || '';
   const forceBusiness = searchParams.get('force_business') === 'true';
+  const forceAccountSelection = searchParams.get('force_account_selection') === 'true';
 
   console.log('🔵 [FACEBOOK OAUTH] Request parameters:', {
     state: state,
     forceBusiness: forceBusiness,
+    forceAccountSelection: forceAccountSelection,
     allParams: Object.fromEntries(searchParams.entries())
   });
 
@@ -35,7 +37,7 @@ export async function GET(request: NextRequest) {
   }
   
   // ALWAYS request business permissions since app is live and approved
-  // Note: instagram_basic is handled through separate Instagram API configuration
+  // Note: Instagram integration is handled through separate Instagram API configuration
   const scope = [
     'public_profile',            // Default permission (always granted)
     'email',                     // User's email address
@@ -65,7 +67,17 @@ export async function GET(request: NextRequest) {
   // Force re-authorization if this is an upgrade from basic to business permissions
   if (forceBusiness) {
     authUrl.searchParams.set('auth_type', 'rerequest');
-    console.log('Facebook OAuth: Forcing business permission rerequest');
+    console.log('🔵 [FACEBOOK OAUTH] Forcing business permission rerequest');
+  }
+
+  // Force account selection - this will log out and show account picker
+  if (forceAccountSelection) {
+    // Method 1: Force logout and reauth
+    authUrl.searchParams.set('auth_type', 'rerequest');
+    // Method 2: Add a logout URL first
+    const logoutUrl = `https://www.facebook.com/logout.php?next=${encodeURIComponent(authUrl.toString())}&access_token=`;
+    console.log('🔵 [FACEBOOK OAUTH] Forcing account selection via logout');
+    return NextResponse.redirect(logoutUrl);
   }
 
   console.log('🔵 [FACEBOOK OAUTH] Generated OAuth URL:', authUrl.toString());

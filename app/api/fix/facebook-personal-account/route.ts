@@ -4,12 +4,11 @@ import authOptions from '@/lib/auth';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
+export async function GET(request: NextRequest) {
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   
   if (!session?.user?.id) {
@@ -77,6 +76,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
   const session = await getServerSession(authOptions);
   
   if (!session?.user?.id) {

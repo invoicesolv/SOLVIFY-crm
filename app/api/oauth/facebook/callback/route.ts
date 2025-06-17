@@ -267,57 +267,57 @@ export async function GET(request: NextRequest) {
         
       console.log('🔵 [FACEBOOK OAUTH] Making pages API request with appsecret_proof');
       
-      // Request pages with access tokens included
+        // Request pages with access tokens included
       const pagesResponse = await fetch(`https://graph.facebook.com/me/accounts?fields=id,name,access_token,category&access_token=${tokenData.access_token}&appsecret_proof=${pagesAppsecretProof}`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
 
       console.log('🔵 [FACEBOOK OAUTH] Pages API response status:', pagesResponse.status);
-      
-      if (pagesResponse.ok) {
-        const pagesData = await pagesResponse.json();
+
+        if (pagesResponse.ok) {
+          const pagesData = await pagesResponse.json();
         console.log('🟢 [FACEBOOK OAUTH] Found', pagesData.data?.length || 0, 'Facebook pages');
         console.log('🔵 [FACEBOOK OAUTH] Pages data:', JSON.stringify(pagesData.data, null, 2));
-        
-        if (pagesData.data && pagesData.data.length > 0) {
-          // Save each page as a separate social account
-          for (const page of pagesData.data) {
+          
+          if (pagesData.data && pagesData.data.length > 0) {
+            // Save each page as a separate social account
+            for (const page of pagesData.data) {
             console.log('🔵 [FACEBOOK OAUTH] Processing page:', {
-              id: page.id,
-              name: page.name,
-              has_access_token: !!page.access_token,
-              access_token_preview: page.access_token ? page.access_token.substring(0, 20) + '...' : 'None',
+                id: page.id,
+                name: page.name,
+                has_access_token: !!page.access_token,
+                access_token_preview: page.access_token ? page.access_token.substring(0, 20) + '...' : 'None',
               category: page.category
-            });
+              });
             const { data: pageInsertData, error: pageError } = await supabaseAdmin
-              .from('social_accounts')
-              .upsert({
-                user_id: session.user.id,
-                workspace_id: workspaceId,
-                platform: 'facebook',
-                access_token: page.access_token || tokenData.access_token, // Use page token if available
-                account_id: page.id,
-                account_name: `${page.name} (Page)`,
-                is_connected: true,
-                token_expires_at: expiresAt,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              }, {
-                onConflict: 'workspace_id,platform,account_id'
+                .from('social_accounts')
+                .upsert({
+                  user_id: session.user.id,
+                  workspace_id: workspaceId,
+                  platform: 'facebook',
+                  access_token: page.access_token || tokenData.access_token, // Use page token if available
+                  account_id: page.id,
+                  account_name: `${page.name} (Page)`,
+                  is_connected: true,
+                  token_expires_at: expiresAt,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                }, {
+                  onConflict: 'workspace_id,platform,account_id'
               })
               .select();
 
-            if (pageError) {
+              if (pageError) {
               console.error('🔴 [FACEBOOK OAUTH] Error saving page:', page.name, pageError);
               console.error('🔴 [FACEBOOK OAUTH] Page error details:', {
                 code: pageError.code,
                 message: pageError.message,
                 details: pageError.details
               });
-            } else {
+              } else {
               console.log('🟢 [FACEBOOK OAUTH] Successfully saved page:', page.name);
               console.log('🔵 [FACEBOOK OAUTH] Page save result:', pageInsertData);
             }
@@ -332,8 +332,8 @@ export async function GET(request: NextRequest) {
         
         // Don't throw error - just log it and continue
         console.log('🟡 [FACEBOOK OAUTH] Continuing without pages due to API error');
-      }
-    } catch (pagesError) {
+        }
+      } catch (pagesError) {
       console.error('🔴 [FACEBOOK OAUTH] Error fetching pages:', pagesError);
       if (pagesError instanceof Error) {
         console.error('🔴 [FACEBOOK OAUTH] Pages error details:', {

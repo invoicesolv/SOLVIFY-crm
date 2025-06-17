@@ -1,53 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getServerSession } from 'next-auth';
+import authOptions from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 import crypto from 'crypto';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const { content, selectedPageId, workspaceId } = await request.json();
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
 
-    console.log('🔍 Threads post API called:', { selectedPageId, workspaceId });
+    const { content, selectedPageId, workspaceId } = await request.json();
 
     if (!content || !selectedPageId || !workspaceId) {
       return NextResponse.json(
-        { error: 'Missing required parameters: content, selectedPageId, or workspaceId' },
+        { error: 'Missing required fields: content, selectedPageId, or workspaceId' },
         { status: 400 }
       );
     }
 
-    // Create Supabase client
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    console.log('🧵 [THREADS POST] Starting post creation:', {
+      userId: session.user.id,
+      workspaceId: workspaceId,
+      selectedPageId: selectedPageId,
+      contentLength: content.length
+    });
 
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Environment variables check:', {
-        NEXT_PUBLIC_SUPABASE_URL: supabaseUrl ? 'present' : 'missing',
-        NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY ? 'present' : 'missing',
-        SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'present' : 'missing'
-      });
-      return NextResponse.json(
-        { error: 'Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' },
-        { status: 500 }
-      );
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Get the selected Threads page's access token from database
+    // Get the Threads account from database
     const { data: threadsPageAccount, error } = await supabase
       .from('social_accounts')
-      .select('access_token, account_id, account_name')
+      .select('*')
       .eq('workspace_id', workspaceId)
       .eq('platform', 'threads')
       .eq('account_id', selectedPageId)
-      .eq('is_connected', true)
       .single();
-
-    console.log('📊 Database query result:', { 
-      error, 
-      found: !!threadsPageAccount,
-      accountName: threadsPageAccount?.account_name 
-    });
 
     if (error || !threadsPageAccount) {
       console.error('❌ Threads page not found. Fetching all Threads accounts for debugging...');
@@ -67,7 +60,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate appsecret_proof for Threads API security requirement
+    // Generate appsecret_proof for Facebook API security requirement (Threads uses Facebook infrastructure)
     const clientSecret = process.env.FACEBOOK_CLIENT_SECRET || 
                          process.env.META_CLIENT_SECRET || 
                          process.env.FACEBOOK_APP_SECRET;
@@ -91,39 +84,98 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Posting to Threads page: ${pageName} (${threadsPageAccount.account_id})`);
 
     // For Threads, we need to create a container first, then publish it
-    const response = await fetch(`https://graph.threads.net/v1.0/${threadsPageAccount.account_id}/threads`, {
+    // Using Facebook Graph API endpoints since Threads is integrated with Facebook
+    const containerParams = new URLSearchParams({
+      media_type: 'TEXT',
+      text: content,
+      access_token: threadsPageAccount.access_token,
+      appsecret_proof: appsecret_proof
+    });
+
+    // Try using Facebook Graph API for Threads (since Threads uses Facebook infrastructure)
+    const response = await fetch(`https://graph.facebook.com/v23.0/${threadsPageAccount.account_id}/threads`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({
-        media_type: 'TEXT',
-        text: content,
-        access_token: threadsPageAccount.access_token,
-        appsecret_proof: appsecret_proof
-      })
+      body: containerParams
     });
 
     if (!response.ok) {
       const errorData = await response.json();
       console.error('❌ Threads API error:', errorData);
-      throw new Error(`Threads API error: ${errorData.error?.message || 'Unknown error'}`);
+      
+      // If Facebook endpoint doesn't work, try the direct Threads endpoint
+      console.log('🔄 Trying direct Threads API endpoint...');
+      
+      const threadsResponse = await fetch(`https://graph.threads.net/v1.0/${threadsPageAccount.account_id}/threads`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          media_type: 'TEXT',
+          text: content,
+          access_token: threadsPageAccount.access_token
+        })
+      });
+
+      if (!threadsResponse.ok) {
+        const threadsErrorData = await threadsResponse.json();
+        console.error('❌ Direct Threads API error:', threadsErrorData);
+        throw new Error(`Threads API error: ${threadsErrorData.error?.message || 'Unknown error'}`);
+      }
+
+      const containerData = await threadsResponse.json();
+      console.log('🧵 Threads container created via direct API:', containerData);
+
+      // Now publish the container using direct Threads API
+      const publishParams = new URLSearchParams({
+        creation_id: containerData.id,
+        access_token: threadsPageAccount.access_token
+      });
+
+      const publishResponse = await fetch(`https://graph.threads.net/v1.0/${threadsPageAccount.account_id}/threads_publish`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: publishParams
+      });
+
+      if (!publishResponse.ok) {
+        const publishErrorData = await publishResponse.json();
+        console.error('❌ Threads publish error:', publishErrorData);
+        throw new Error(`Threads publish error: ${publishErrorData.error?.message || 'Unknown error'}`);
+      }
+
+      const publishResult = await publishResponse.json();
+      console.log('✅ Threads post published successfully via direct API:', publishResult);
+
+      return NextResponse.json({
+        success: true,
+        message: `Posted to Threads page: ${pageName}`,
+        postId: publishResult.id,
+        platform: 'threads'
+      });
     }
 
     const containerData = await response.json();
     console.log('🧵 Threads container created:', containerData);
 
-    // Now publish the container
-    const publishResponse = await fetch(`https://graph.threads.net/v1.0/${threadsPageAccount.account_id}/threads_publish`, {
+    // Now publish the container using Facebook Graph API
+    const publishParams = new URLSearchParams({
+      creation_id: containerData.id,
+      access_token: threadsPageAccount.access_token,
+      appsecret_proof: appsecret_proof
+    });
+
+    const publishResponse = await fetch(`https://graph.facebook.com/v23.0/${threadsPageAccount.account_id}/threads_publish`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: JSON.stringify({
-        creation_id: containerData.id,
-        access_token: threadsPageAccount.access_token,
-        appsecret_proof: appsecret_proof
-      })
+      body: publishParams
     });
 
     if (!publishResponse.ok) {
@@ -142,10 +194,13 @@ export async function POST(request: NextRequest) {
       platform: 'threads'
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('❌ Threads posting error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to post to Threads' },
+      { 
+        error: 'Failed to post to Threads',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

@@ -7,7 +7,7 @@ import { ChatInterface } from '@/components/ui/chat-interface'
 import { CalendarSidebar } from '@/components/ui/calendar-sidebar'
 import { ProjectSidebar } from '@/components/ui/project-sidebar'
 import { SidebarDemo } from '@/components/ui/code.demo'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
 import { Tables } from '@/lib/database.types'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
@@ -45,6 +45,71 @@ export default function ChatPage() {
     }
   }, [status, router])
 
+  // Get active workspace using the same logic as other pages
+  const getActiveWorkspace = async () => {
+    // First try localStorage dashboardSettings
+    const dashboardSettings = localStorage.getItem('dashboardSettings');
+    if (dashboardSettings) {
+      try {
+        const settings = JSON.parse(dashboardSettings);
+        if (settings.activeWorkspace) {
+          console.log('Chat: Found active workspace in dashboardSettings:', settings.activeWorkspace);
+          return settings.activeWorkspace;
+        }
+      } catch (e) {
+        console.error('Chat: Error parsing dashboard settings:', e);
+      }
+    }
+    
+    // Then try localStorage user-specific preference
+    const userData = localStorage.getItem('supabase.auth.token');
+    let userId = null;
+    if (userData) {
+      try {
+        const parsed = JSON.parse(userData);
+        userId = parsed?.currentSession?.user?.id;
+        
+        if (userId) {
+          const workspaceKey = `workspace_${userId}`;
+          const storedWorkspace = localStorage.getItem(workspaceKey);
+          if (storedWorkspace) {
+            console.log('Chat: Found active workspace in localStorage:', storedWorkspace);
+            return storedWorkspace;
+          }
+        }
+      } catch (e) {
+        console.error('Chat: Error getting user ID from localStorage:', e);
+      }
+    }
+    
+    // Last resort: Ask API to determine workspace
+    try {
+      const response = await fetch('/api/user/active-workspace', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.workspaceId) {
+          console.log('Chat: Found active workspace from API:', data.workspaceId);
+          // Save this for future use
+          if (userId) {
+            localStorage.setItem(`workspace_${userId}`, data.workspaceId);
+          }
+          return data.workspaceId;
+        }
+      }
+    } catch (e) {
+      console.error('Chat: Error fetching workspace from API:', e);
+    }
+    
+    return null;
+  };
+
   // Fetch workspace and user data dynamically
   const initializeData = useCallback(async () => {
     try {
@@ -53,37 +118,37 @@ export default function ChatPage() {
       
       console.log('Chat: Initializing data for user:', session?.user?.id)
       
-      // First, get user's workspaces through team_members (like other pages do)
-      const { data: memberships, error: membershipError } = await supabase
-        .from('team_members')
-        .select('workspace_id, workspaces(id, name)')
-        .eq('user_id', session?.user?.id)
-
-      console.log('Chat: Memberships query result:', { memberships, membershipError })
-
-      if (membershipError) {
-        console.error('Error fetching memberships:', membershipError)
-        setError(`Failed to load workspaces: ${membershipError.message}`)
+      // Get active workspace using the same logic as other pages
+      const activeWorkspaceId = await getActiveWorkspace();
+      
+      if (!activeWorkspaceId) {
+        console.error('Chat: No active workspace found')
+        setError('No active workspace found. Please create or join a workspace first.')
         return
       }
 
-      if (!memberships || memberships.length === 0) {
-        console.error('No workspace memberships found')
-        setError('You are not a member of any workspace. Please join a workspace first.')
+      // Get workspace details
+      const { data: workspaceDetails, error: workspaceError } = await supabaseAdmin
+        .from('workspaces')
+        .select('id, name')
+        .eq('id', activeWorkspaceId)
+        .single();
+
+      if (workspaceError || !workspaceDetails) {
+        console.error('Chat: Error fetching workspace details:', workspaceError)
+        setError('Failed to load workspace details.')
         return
       }
 
-      // Get the first workspace (or you could implement workspace selection logic)
-      const firstMembership = memberships[0] as any
-      const workspaceId = firstMembership.workspace_id
-      const workspaceName = firstMembership.workspaces?.name || 'Unknown Workspace'
+      const workspaceId = workspaceDetails.id
+      const workspaceName = workspaceDetails.name
       
       console.log('Chat: Using workspace:', { workspaceId, workspaceName })
       setWorkspaceId(workspaceId)
       setWorkspaceName(workspaceName)
 
       // Now get all team members for this workspace to populate the user list
-      const { data: teamMembers, error: teamError } = await supabase
+      const { data: teamMembers, error: teamError } = await supabaseAdmin
         .from('team_members')
         .select('user_id, name, email, is_admin')
         .eq('workspace_id', workspaceId)

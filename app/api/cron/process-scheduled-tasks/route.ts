@@ -409,6 +409,242 @@ function formatReportAsHTML(reportType: string, data: any, propertyId?: string, 
   }
 }
 
+// Helper function to process email campaigns
+async function processEmailCampaign(job: any) {
+  const config = job.settings.automation_config || {};
+  
+  try {
+    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/email-marketing/send-campaign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        template: config.email_template || 'Automated email campaign',
+        contactListId: config.contact_list_id,
+        userId: job.user_id,
+        isAutomated: true
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Email campaign API responded with status: ${response.status}`);
+    }
+
+    await updateJobSuccess(job.id);
+  } catch (error) {
+    console.error('Error processing email campaign:', error);
+    throw error;
+  }
+}
+
+// Helper function to process invoice creation
+async function processInvoiceCreation(job: any) {
+  const config = job.settings.automation_config || {};
+  
+  try {
+    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/fortnox/invoices/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'user-id': job.user_id
+      },
+      body: JSON.stringify({
+        customerNumber: config.customer_number,
+        comments: config.invoice_template || 'Automated invoice',
+        invoiceRows: [{
+          ArticleNumber: 'AUTO-001',
+          Description: config.invoice_template || 'Automated service',
+          Quantity: 1,
+          Price: 100 // Default price, should be configurable
+        }],
+        invoiceType: config.auto_send ? 'INVOICE' : 'OFFER'
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Invoice creation API responded with status: ${response.status}`);
+    }
+
+    await updateJobSuccess(job.id);
+  } catch (error) {
+    console.error('Error processing invoice creation:', error);
+    throw error;
+  }
+}
+
+// Helper function to process calendar events
+async function processCalendarEvent(job: any) {
+  const config = job.settings.automation_config || {};
+  
+  try {
+    const eventDate = new Date();
+    eventDate.setHours(eventDate.getHours() + 1); // Schedule 1 hour from now
+    const endDate = new Date(eventDate.getTime() + (config.event_duration || 60) * 60000);
+
+    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/calendar`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: config.event_title || 'Automated Event',
+        start: eventDate.toISOString(),
+        end: endDate.toISOString(),
+        event_type: config.event_type || 'reminder',
+        userId: job.user_id
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Calendar API responded with status: ${response.status}`);
+    }
+
+    await updateJobSuccess(job.id);
+  } catch (error) {
+    console.error('Error processing calendar event:', error);
+    throw error;
+  }
+}
+
+// Helper function to process chat messages
+async function processChatMessage(job: any) {
+  const config = job.settings.automation_config || {};
+  
+  try {
+    // This would integrate with your chat system
+    // For now, we'll send it as an email notification
+    await sendEmailReport(
+      [config.chat_channel || job.settings.recipients[0]],
+      'Automated Chat Message',
+      `<p>${config.message_content || 'Automated message'}</p>`
+    );
+
+    await updateJobSuccess(job.id);
+  } catch (error) {
+    console.error('Error processing chat message:', error);
+    throw error;
+  }
+}
+
+// Helper function to process social media posts
+async function processSocialMediaPost(job: any) {
+  const config = job.settings.automation_config || {};
+  
+  try {
+    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/social-media/post`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: config.message_content || 'Automated social media post',
+        platforms: [config.platform || 'facebook'],
+        userId: job.user_id,
+        publishImmediately: true
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Social media API responded with status: ${response.status}`);
+    }
+
+    await updateJobSuccess(job.id);
+  } catch (error) {
+    console.error('Error processing social media post:', error);
+    throw error;
+  }
+}
+
+// Helper function to process project creation
+async function processProjectCreation(job: any) {
+  const config = job.settings.automation_config || {};
+  
+  try {
+    const { data: project, error } = await supabase
+      .from('projects')
+      .insert({
+        name: `Automated Project - ${new Date().toLocaleDateString()}`,
+        description: config.project_template || 'Automatically created project',
+        user_id: config.auto_assign ? job.user_id : null,
+        status: 'active',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Project creation failed: ${error.message}`);
+    }
+
+    await updateJobSuccess(job.id);
+  } catch (error) {
+    console.error('Error processing project creation:', error);
+    throw error;
+  }
+}
+
+// Helper function to process data sync
+async function processDataSync(job: any) {
+  const config = job.settings.automation_config || {};
+  
+  try {
+    let response;
+    
+    switch (config.sync_source) {
+      case 'google_analytics':
+        response = await fetch(`${process.env.NEXTAUTH_URL}/api/ga4/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: job.user_id, target: config.sync_target })
+        });
+        break;
+      case 'search_console':
+        response = await fetch(`${process.env.NEXTAUTH_URL}/api/search-console/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: job.user_id, target: config.sync_target })
+        });
+        break;
+      case 'calendar':
+        response = await fetch(`${process.env.NEXTAUTH_URL}/api/calendar/sync-workspace`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: job.user_id })
+        });
+        break;
+      default:
+        throw new Error(`Unknown sync source: ${config.sync_source}`);
+    }
+
+    if (!response?.ok) {
+      throw new Error(`Data sync API responded with status: ${response?.status}`);
+    }
+
+    await updateJobSuccess(job.id);
+  } catch (error) {
+    console.error('Error processing data sync:', error);
+    throw error;
+  }
+}
+
+// Helper function to update job success status
+async function updateJobSuccess(jobId: string) {
+  const nextRun = new Date();
+  nextRun.setDate(nextRun.getDate() + 1); // Default to next day
+
+  await supabase
+    .from('cron_jobs')
+    .update({
+      last_run: new Date().toISOString(),
+      next_run: nextRun.toISOString(),
+      execution_status: 'success',
+      error_message: null,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', jobId);
+}
+
 // Main function to process a single cron job
 async function processCronJob(job: any) {
   console.log(`[Process Cron Job] Processing job ${job.id} of type ${job.job_type}`);
@@ -441,6 +677,34 @@ async function processCronJob(job: any) {
         reportData = await generateProjectReport(job.user_id, job.property_id);
         subject = `Project Report - ${reportData.project?.name || 'Unknown'} - ${new Date().toLocaleDateString()}`;
         break;
+
+      case 'email_campaign':
+        await processEmailCampaign(job);
+        return { success: true, jobId: job.id }; // Early return for email campaigns
+
+      case 'invoice_creation':
+        await processInvoiceCreation(job);
+        return { success: true, jobId: job.id }; // Early return for invoice creation
+
+      case 'calendar_event':
+        await processCalendarEvent(job);
+        return { success: true, jobId: job.id }; // Early return for calendar events
+
+      case 'chat_message':
+        await processChatMessage(job);
+        return { success: true, jobId: job.id }; // Early return for chat messages
+
+      case 'social_media_post':
+        await processSocialMediaPost(job);
+        return { success: true, jobId: job.id }; // Early return for social media posts
+
+      case 'project_creation':
+        await processProjectCreation(job);
+        return { success: true, jobId: job.id }; // Early return for project creation
+
+      case 'data_sync':
+        await processDataSync(job);
+        return { success: true, jobId: job.id }; // Early return for data sync
         
       default:
         throw new Error(`Unknown job type: ${job.job_type}`);

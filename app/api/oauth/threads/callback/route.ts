@@ -43,22 +43,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=threads_auth_failed`));
     }
 
-    // Exchange authorization code for access token (using Facebook token endpoint)
-    const tokenUrl = new URL('https://graph.facebook.com/v18.0/oauth/access_token');
+    // Exchange authorization code for access token (using Facebook token endpoint for Threads)
+    const baseUrl = process.env.NEXTAUTH_URL || 'https://crm.solvify.se';
+    const redirectUri = `${baseUrl}/api/oauth/threads/callback`;
     
-    const tokenParams = new URLSearchParams({
-      client_id: process.env.FACEBOOK_APP_ID!,
-      client_secret: process.env.FACEBOOK_APP_SECRET!,
-      grant_type: 'authorization_code',
-      redirect_uri: `${process.env.NEXTAUTH_URL}/api/oauth/threads/callback`,
-      code: code,
-    });
-
-    const tokenResponse = await fetch(`${tokenUrl.toString()}?${tokenParams.toString()}`, {
-      method: 'GET',
+    const tokenResponse = await fetch('https://graph.facebook.com/v23.0/oauth/access_token', {
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
       },
+      body: new URLSearchParams({
+        client_id: process.env.FACEBOOK_APP_ID!,
+        client_secret: process.env.FACEBOOK_APP_SECRET!,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+        code: code,
+      }),
     });
 
     if (!tokenResponse.ok) {
@@ -88,9 +89,9 @@ export async function GET(request: NextRequest) {
 
     const appsecret_proof = crypto.createHmac('sha256', clientSecret).update(tokenData.access_token).digest('hex');
 
-    // Get user information from Facebook Graph API (Threads data comes through Facebook)
-    console.log('Threads OAuth: Fetching user profile from Facebook Graph API');
-    const userResponse = await fetch(`https://graph.facebook.com/me?fields=id,name&access_token=${tokenData.access_token}&appsecret_proof=${appsecret_proof}`, {
+    // Get user information from Facebook API (Threads uses Facebook infrastructure)
+    console.log('Threads OAuth: Fetching user profile from Facebook API');
+    const userResponse = await fetch(`https://graph.facebook.com/me?fields=id,name,email&access_token=${tokenData.access_token}&appsecret_proof=${appsecret_proof}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -138,10 +139,11 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('Threads OAuth: Success! Redirecting...');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?success=threads_connected`));
+    return NextResponse.redirect(new URL(`${baseUrl}/settings?success=threads_connected`));
 
   } catch (error) {
     console.error('Threads OAuth callback error:', error);
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=threads_auth_failed`));
+    const baseUrl = process.env.NEXTAUTH_URL || 'https://crm.solvify.se';
+    return NextResponse.redirect(new URL(`${baseUrl}/settings?error=threads_auth_failed`));
   }
 } 

@@ -136,16 +136,16 @@ export default function LeadsPage() {
           throw new Error('Failed to fetch workspaces');
         }
         const data = await response.json();
-        
+              
         if (!data.success || !data.workspaces || data.workspaces.length === 0) {
           console.log('[Leads] No workspaces found for user');
           setWorkspaces([]);
           return;
         }
-        
+
         console.log('[Leads] Found workspaces:', data.workspaces);
         setWorkspaces(data.workspaces);
-        
+          
         if (data.workspaces.length > 0) {
           setWorkspace(data.workspaces[0].id);
           console.log('[Leads] Set workspace to:', data.workspaces[0].id);

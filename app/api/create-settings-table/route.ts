@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
           user_id: session.user.id,
           access_token: 'test_token',
           refresh_token: 'test_refresh_token',
-          expires_at: new Date(Date.now() + 3600 * 1000).toISOString()
+          expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() // 2 months
         })
         .select();
         

@@ -68,7 +68,22 @@ export async function GET(request: NextRequest) {
         // The state parameter might be URL encoded, so decode it first
         const decodedState = decodeURIComponent(state);
         console.log('X OAuth callback: Decoded state:', decodedState);
+        
+        // Try to parse as JSON first
+        try {
         stateData = JSON.parse(decodedState);
+        } catch (jsonError) {
+          // If JSON parsing fails, try to extract codeVerifier manually
+          console.log('X OAuth callback: JSON parsing failed, trying manual extraction...');
+          const codeVerifierMatch = decodedState.match(/codeVerifier:([^}]+)/);
+          if (codeVerifierMatch) {
+            stateData = { codeVerifier: codeVerifierMatch[1] };
+            console.log('X OAuth callback: Extracted codeVerifier manually:', stateData.codeVerifier);
+          } else {
+            throw new Error('Could not extract codeVerifier from state parameter');
+          }
+        }
+        
         console.log('X OAuth callback: Parsed state data:', stateData);
       }
     } catch (parseError) {
@@ -87,17 +102,41 @@ export async function GET(request: NextRequest) {
 
     // Exchange authorization code for access token
     console.log('X OAuth callback: Exchanging code for token...');
+    
+    // Check environment variables
+    const clientId = process.env.TWITTER_CLIENT_ID;
+    const clientSecret = process.env.TWITTER_CLIENT_SECRET;
+    
+    console.log('X OAuth callback: Environment check:', {
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+      clientIdLength: clientId?.length,
+      clientSecretLength: clientSecret?.length
+    });
+    
+    if (!clientId || !clientSecret) {
+      throw new Error('Missing Twitter OAuth credentials');
+    }
+    
+    // Create Basic auth header - Twitter API v2 requires BOTH auth header AND body params
+    const credentials = `${clientId}:${clientSecret}`;
+    const encodedCredentials = Buffer.from(credentials).toString('base64');
+    console.log('X OAuth callback: Using Twitter API v2 format with both auth header and body params');
+    
     const tokenResponse = await fetch('https://api.twitter.com/2/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${process.env.TWITTER_CLIENT_ID}:${process.env.TWITTER_CLIENT_SECRET}`).toString('base64')}`,
+        'Authorization': `Basic ${encodedCredentials}`,
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
         redirect_uri: `${baseUrl}/api/oauth/twitter/callback`,
         code_verifier: codeVerifier,
+        client_id: clientId,
+        client_secret: clientSecret,
+        client_type: 'third_party_app',
       }),
     });
 
@@ -141,6 +180,8 @@ export async function GET(request: NextRequest) {
 
     // Save to Supabase
     console.log('X OAuth callback: Saving to database...');
+    
+    // Create admin client for database operations
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -152,10 +193,37 @@ export async function GET(request: NextRequest) {
     console.log('- account_id:', userData.data.id);
     console.log('- account_name:', userData.data.username);
 
+    // Get workspace ID for the user using admin client
+    console.log('X OAuth callback: Looking up workspace for user:', userId);
+    
+    // First try to get a workspace where user is admin, then fallback to any workspace
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from('team_members')
+      .select('workspace_id, is_admin')
+      .eq('user_id', userId)
+      .order('is_admin', { ascending: false }) // Prioritize admin workspaces
+      .order('created_at', { ascending: false }) // Then most recent
+      .limit(1)
+      .single();
+
+    if (workspaceError) {
+      console.error('X OAuth callback: Workspace lookup error:', workspaceError);
+      throw new Error(`Failed to find workspace for user: ${workspaceError.message}`);
+    }
+
+    const workspaceId = workspaceData?.workspace_id;
+    console.log('X OAuth callback: Workspace ID found:', workspaceId, '(admin:', workspaceData?.is_admin, ')');
+
+    if (!workspaceId) {
+      console.error('X OAuth callback: No workspace found for user:', userId);
+      throw new Error('User is not a member of any workspace');
+    }
+
     const { data, error: dbError } = await supabase
       .from('social_accounts')
       .upsert({
         user_id: userId,
+        workspace_id: workspaceId,
         platform: 'x', // Changed from 'twitter' to 'x' to match frontend
         account_id: userData.data.id,
         account_name: userData.data.username,

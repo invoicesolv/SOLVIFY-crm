@@ -37,7 +37,7 @@ async function getRefreshedToken(userId: string): Promise<string | null> {
       throw new Error('Failed to refresh access token');
     }
 
-    const newExpiresAt = credentials.expiry_date ? new Date(credentials.expiry_date) : new Date(Date.now() + 3600 * 1000);
+    const newExpiresAt = credentials.expiry_date ? new Date(credentials.expiry_date) : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 2 months
     const { error: updateError } = await supabase
       .from('integrations')
       .update({ 

@@ -8,36 +8,38 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const state = searchParams.get('state') || '';
 
-  // Threads uses Facebook App credentials
+  // Threads uses Facebook App credentials but has its own API endpoints
   const clientId = process.env.FACEBOOK_APP_ID;
-  const redirectUri = `${process.env.NEXTAUTH_URL}/api/oauth/threads/callback`;
+  const baseUrl = process.env.NEXTAUTH_URL || 'https://crm.solvify.se';
+  const redirectUri = `${baseUrl}/api/oauth/threads/callback`;
   
   if (!clientId) {
     console.error('Threads OAuth error: Missing FACEBOOK_APP_ID');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=threads_config_missing`));
+    return NextResponse.redirect(new URL(`${baseUrl}/settings?error=threads_config_missing`));
   }
   
-  // Threads permissions - using approved Facebook permissions since Threads uses Facebook infrastructure
-  const scope = [
-    'public_profile',
-    'email',
-    'pages_manage_posts',
-    'pages_read_engagement', 
-    'pages_manage_engagement',
-    'pages_show_list',
-    'read_insights',
-    'business_management'
-  ].join(',');
+  console.log('🧵 [THREADS OAUTH] Starting Threads OAuth flow:', {
+    clientId: clientId ? `${clientId.substring(0, 8)}***` : 'NOT SET',
+    redirectUri: redirectUri,
+    state: state
+  });
   
-  // For now, Threads OAuth goes through Facebook since Threads API is limited
-  // This may need to be updated when Threads API becomes more mature
-  const authUrl = new URL('https://www.facebook.com/v18.0/dialog/oauth');
+  // Use the same approach as Instagram Business - use a configuration ID instead of scope
+  // This avoids permission issues and uses your existing Facebook App configuration
+  const authUrl = new URL('https://www.facebook.com/v23.0/dialog/oauth');
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
-  authUrl.searchParams.set('scope', scope);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('state', state);
-  authUrl.searchParams.set('config_id', 'threads'); // Additional parameter for Threads
+  
+  // Use your existing General Configuration ID (same as Instagram Business)
+  // This should have the required permissions already approved
+  authUrl.searchParams.set('config_id', '2197969850643897');
+
+  console.log('🧵 [THREADS OAUTH] Redirecting to Threads OAuth:', {
+    url: authUrl.toString(),
+    configId: '2197969850643897'
+  });
 
   return NextResponse.redirect(authUrl.toString());
 } 

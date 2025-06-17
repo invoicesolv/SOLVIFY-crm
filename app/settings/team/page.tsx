@@ -331,7 +331,7 @@ export default function TeamPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-      });
+        });
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -345,29 +345,29 @@ export default function TeamPage() {
 
       if (data.success && data.workspaces) {
         setWorkspaces(data.workspaces);
+      
+      // Check for stored workspace preference in localStorage
+      let storedWorkspaceId: string | null = null;
+      if (typeof window !== 'undefined' && session?.user?.id) {
+        storedWorkspaceId = localStorage.getItem(`workspace_${session.user.id}`);
+        console.log(`[Workspace] Found stored workspace preference: ${storedWorkspaceId}`);
         
-        // Check for stored workspace preference in localStorage
-        let storedWorkspaceId: string | null = null;
-        if (typeof window !== 'undefined' && session?.user?.id) {
-          storedWorkspaceId = localStorage.getItem(`workspace_${session.user.id}`);
-          console.log(`[Workspace] Found stored workspace preference: ${storedWorkspaceId}`);
-          
-          // Verify the stored workspace is in the list of accessible workspaces
+        // Verify the stored workspace is in the list of accessible workspaces
           if (storedWorkspaceId && data.workspaces.some((w: any) => w.id === storedWorkspaceId)) {
-            console.log(`[Workspace] Using stored workspace preference: ${storedWorkspaceId}`);
-            setActiveWorkspace(storedWorkspaceId);
+          console.log(`[Workspace] Using stored workspace preference: ${storedWorkspaceId}`);
+          setActiveWorkspace(storedWorkspaceId);
           } else if (data.workspaces.length > 0 && !activeWorkspace) {
-            // Fall back to first workspace if no valid stored preference
+          // Fall back to first workspace if no valid stored preference
             console.log(`[Workspace] No valid stored preference, using first workspace: ${data.workspaces[0].id}`);
             setActiveWorkspace(data.workspaces[0].id);
-            
-            // Store this preference for future use
-            if (session?.user?.id) {
+          
+          // Store this preference for future use
+          if (session?.user?.id) {
               localStorage.setItem(`workspace_${session.user.id}`, data.workspaces[0].id);
-            }
           }
+        }
         } else if (data.workspaces.length > 0 && !activeWorkspace) {
-          // Fall back to first workspace if localStorage not available
+        // Fall back to first workspace if localStorage not available
           setActiveWorkspace(data.workspaces[0].id);
         }
       } else {

@@ -10,24 +10,34 @@ const isBrowser = typeof window !== 'undefined'
 const customStorage = {
   getItem: (key: string) => {
     if (!isBrowser) return null
+    if (process.env.SUPABASE_DEBUG === 'true') {
     console.log('[SUPABASE DEBUG] Getting item from localStorage:', key);
+    }
     const value = localStorage.getItem(key);
+    if (process.env.SUPABASE_DEBUG === 'true') {
     console.log('[SUPABASE DEBUG] Value presence for', key, ':', value ? 'Present' : 'Missing');
+    }
     return value;
   },
   setItem: (key: string, value: string) => {
     if (!isBrowser) return
+    if (process.env.SUPABASE_DEBUG === 'true') {
     console.log('[SUPABASE DEBUG] Setting item in localStorage:', key);
+    }
     try {
       localStorage.setItem(key, value);
+      if (process.env.SUPABASE_DEBUG === 'true') {
       console.log('[SUPABASE DEBUG] Successfully set', key, 'in localStorage');
+      }
     } catch (err) {
       console.error('[SUPABASE DEBUG] Error setting localStorage item:', err);
     }
   },
   removeItem: (key: string) => {
     if (!isBrowser) return
+    if (process.env.SUPABASE_DEBUG === 'true') {
     console.log('[SUPABASE DEBUG] Removing item from localStorage:', key);
+    }
     localStorage.removeItem(key);
   }
 }
@@ -45,7 +55,7 @@ function getSupabaseClient() {
         autoRefreshToken: true,
         detectSessionInUrl: true,
         storage: customStorage,
-        debug: process.env.NODE_ENV === 'development',
+        debug: process.env.SUPABASE_DEBUG === 'true',
         // Prevent automatic redirects - let our app handle the flow
         flowType: 'pkce'
       }
@@ -75,15 +85,13 @@ export const supabaseAdmin = getSupabaseAdmin();
 // Function to sync NextAuth session with Supabase
 export const syncSupabaseSession = async (accessToken: string) => {
   try {
-    console.log("=============== SUPABASE SESSION SYNC DEBUG ===============");
-    console.log("[Supabase] Starting session sync with token length:", accessToken?.length || 0);
+    // Disabled debugging for cleaner logs
     
     if (!accessToken) {
-      console.error("[Supabase] Cannot sync session: No access token provided");
       return null;
     }
 
-    console.log("[Supabase] Syncing session with token");
+    // console.log("[Supabase] Syncing session with token");
     
     // Instead of using setSession which expects a Supabase token,
     // we'll use signInWithPassword which creates a proper Supabase session
@@ -92,31 +100,24 @@ export const syncSupabaseSession = async (accessToken: string) => {
       const baseUrl = typeof window !== 'undefined' 
         ? window.location.origin 
         : process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
-      console.log("[Supabase] Fetching session from:", `${baseUrl}/api/auth/session`);
+      // console.log("[Supabase] Fetching session from:", `${baseUrl}/api/auth/session`);
       
       const sessionResponse = await fetch(`${baseUrl}/api/auth/session`);
       if (!sessionResponse.ok) {
-        console.error("[Supabase] Failed to fetch session:", sessionResponse.status, sessionResponse.statusText);
-        try {
-          const errorText = await sessionResponse.text();
-          console.error("[Supabase] Session error response:", errorText);
-        } catch (e) {
-          console.error("[Supabase] Couldn't read error response");
-        }
         return null;
       }
       
       const sessionData = await sessionResponse.json();
-      console.log("[Supabase] Session data received:", {
-        hasUser: !!sessionData?.user,
-        userEmail: sessionData?.user?.email,
-        userId: sessionData?.user?.id
-      });
+      // console.log("[Supabase] Session data received:", {
+      //   hasUser: !!sessionData?.user,
+      //   userEmail: sessionData?.user?.email,
+      //   userId: sessionData?.user?.id
+      // });
       
       const { user } = sessionData;
       
       if (!user?.email) {
-        console.error("[Supabase] No user email found in NextAuth session");
+        console.error("[AUTH DEBUG] Failed to sync with Supabase session");
         return null;
       }
 

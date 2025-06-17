@@ -105,14 +105,14 @@ export function useCustomers() {
         throw new Error('Failed to fetch workspaces');
       }
       const data = await response.json();
-      
+            
       if (!data.success || !data.workspaces || data.workspaces.length === 0) {
         console.log('[Customers] No workspaces found for user');
-        setCustomers([]);
+          setCustomers([]);
         setIsLoading(false);
         return;
       }
-      
+
       console.log('[Customers] Found workspaces:', data.workspaces);
       
       // Get workspace IDs

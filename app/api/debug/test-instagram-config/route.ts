@@ -116,7 +116,9 @@ export async function GET(request: NextRequest) {
       analysis: {
         instagram_accounts_found: (directData?.data || []).filter((page: any) => page.instagram_business_account).length,
         permissions_granted: permissionsData?.data?.filter((p: any) => p.status === 'granted')?.map((p: any) => p.permission) || [],
-        instagram_basic_granted: permissionsData?.data?.some((p: any) => p.permission === 'instagram_basic' && p.status === 'granted'),
+        business_management_granted: permissionsData?.data?.some((p: any) => p.permission === 'business_management' && p.status === 'granted'),
+        pages_show_list_granted: permissionsData?.data?.some((p: any) => p.permission === 'pages_show_list' && p.status === 'granted'),
+        pages_manage_posts_granted: permissionsData?.data?.some((p: any) => p.permission === 'pages_manage_posts' && p.status === 'granted'),
         next_steps: directData?.error ? [
           'Instagram configuration permissions may not be active',
           'Try reconnecting Facebook with Instagram Business permissions',

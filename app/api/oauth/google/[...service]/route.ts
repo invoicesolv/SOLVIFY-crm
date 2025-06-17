@@ -16,6 +16,8 @@ const SCOPE_TO_SERVICE = {
   'https://www.googleapis.com/auth/drive.file': 'google-drive',
   'https://www.googleapis.com/auth/drive.appdata': 'google-drive',
   'https://www.googleapis.com/auth/drive.readonly': 'google-drive',
+  'https://www.googleapis.com/auth/drive': 'google-drive',
+  'https://www.googleapis.com/auth/drive.metadata': 'google-drive',
   'https://www.googleapis.com/auth/youtube': 'youtube',
   'https://www.googleapis.com/auth/youtube.upload': 'youtube',
   'https://www.googleapis.com/auth/youtube.readonly': 'youtube',
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
     authUrl.searchParams.append('scope', scope);
     authUrl.searchParams.append('access_type', 'offline');
     authUrl.searchParams.append('prompt', 'consent');
+    authUrl.searchParams.append('include_granted_scopes', 'true');
     if (state) {
       authUrl.searchParams.append('state', state);
     }
@@ -122,7 +125,8 @@ export async function GET(request: NextRequest) {
 
       // Save tokens to Supabase for each authenticated service
       const now = new Date();
-      const expiresAt = new Date(now.getTime() + tokenData.expires_in * 1000);
+      // Set expiration to 2 months for maximum duration
+      const expiresAt = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000); // 2 months
 
       for (const service of Array.from(authenticatedServices)) {
         const { error } = await supabase

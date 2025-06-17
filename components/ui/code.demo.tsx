@@ -159,7 +159,7 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
         },
         {
           label: "Search Console",
-          href: "/search-console",
+          href: "/marketing",
           icon: <Search className="text-foreground h-4 w-4 flex-shrink-0" />
         },
         {
