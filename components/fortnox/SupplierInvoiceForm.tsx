@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
@@ -31,7 +31,7 @@ interface Supplier {
 }
 
 export default function SupplierInvoiceForm({ projectId, projectNumber }: SupplierInvoiceFormProps) {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const { toast } = useToast();
   const supabase = createClientComponentClient();
   const [isOpen, setIsOpen] = useState(false);
@@ -188,7 +188,7 @@ export default function SupplierInvoiceForm({ projectId, projectNumber }: Suppli
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'user-id': session?.user?.id || ''
+          'user-id': user?.id || ''
         },
         body: JSON.stringify(payload)
       });

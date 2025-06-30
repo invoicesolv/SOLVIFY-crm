@@ -1,14 +1,35 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import authOptions from "@/lib/auth";
-import nodemailer from "nodemailer";
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
+import nodemailer from 'nodemailer';
 
-export async function POST() {
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json(
-        { error: "No authenticated user found" },
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
@@ -25,7 +46,7 @@ export async function POST() {
     // Email content
     const mailOptions = {
       from: "Solvify <info@solvify.se>",
-      to: session.user.email,
+      to: user.email,
       subject: "Welcome to Solvify Premium! 🎉",
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

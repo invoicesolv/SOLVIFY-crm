@@ -28,7 +28,10 @@ import {
   Share2,
   Search,
   BarChart,
-  Activity
+  Activity,
+  Bell,
+  RefreshCw,
+  CheckSquare
 } from "lucide-react";
 import type { LucideIcon } from 'lucide-react';
 import Link from "next/link";
@@ -37,9 +40,11 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { Dashboard } from "./dashboard";
 import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { signOut, useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useNotifications } from '@/lib/notification-context';
+import { NotificationsSidebar } from './notifications-sidebar';
+import { NotificationPopup } from './notification-popup';
 
 interface SidebarDemoProps {
   children?: ReactNode;
@@ -56,9 +61,9 @@ interface Links {
 
 export function SidebarDemo({ children }: SidebarDemoProps) {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { user, signOut } = useAuth();
   const { totalUnread } = useNotifications();
-  const userRole = session?.user ? (session.user as unknown as { role?: string }).role : undefined;
+  const userRole = user ? (user as any)?.app_metadata?.role : undefined;
   const isAdmin = userRole === "admin" || userRole === "Administrator";
 
   // Debug log for notifications
@@ -67,16 +72,32 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
   }, [totalUnread]);
 
   const handleLogout = async () => {
-    await signOut({ 
-      redirect: true,
-      callbackUrl: "/login"
-    });
+    try {
+      // Clear all auth-related cookies
+      document.cookie = 'sb-jbspiufukrifntnwlrts-auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'sb-jbspiufukrifntnwlrts-auth-token-code-verifier=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'next-auth.session-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      
+      // Also try Supabase signOut if available
+      try {
+        await signOut();
+      } catch (error) {
+        console.log('Supabase signOut failed, but continuing with logout:', error);
+      }
+      
+      // Force redirect to login
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Force redirect even if logout fails
+      window.location.href = '/login';
+    }
   };
 
   // Define menu sections with submenus
   const menuSections = [
     {
-      label: session?.user?.name ? `Dashboard (${session.user.name.split(' ')[0]})` : "Dashboard",
+      label: user?.user_metadata?.full_name ? `Dashboard (${user.user_metadata.full_name.split(' ')[0]})` : "Dashboard",
       icon: <LayoutDashboard className="text-foreground h-5 w-5 flex-shrink-0" />,
       items: [
         {
@@ -118,6 +139,30 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
       ]
     },
     {
+      label: "Finance",
+      icon: <CreditCard className="text-foreground h-5 w-5 flex-shrink-0" />,
+      items: [
+
+        {
+          label: "Invoices",
+          href: "/invoices",
+          icon: <Receipt className="text-foreground h-4 w-4 flex-shrink-0" />
+        },
+        {
+          label: "Recurring Invoices",
+          href: "/invoices/recurring",
+          icon: <RefreshCw className="text-foreground h-4 w-4 flex-shrink-0" />
+        },
+        {
+          label: "Invoice Reminders",
+          href: "/invoices/reminders",
+          icon: <Bell className="text-foreground h-4 w-4 flex-shrink-0" />
+        },
+
+
+      ]
+    },
+    {
       label: "Project Management",
       icon: <FolderOpen className="text-foreground h-5 w-5 flex-shrink-0" />,
       items: [
@@ -125,11 +170,6 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
           label: "Projects",
           href: "/projects",
           icon: <FolderOpen className="text-foreground h-4 w-4 flex-shrink-0" />
-        },
-        {
-          label: "Invoices",
-          href: "/invoices",
-          icon: <Receipt className="text-foreground h-4 w-4 flex-shrink-0" />
         }
       ]
     },
@@ -195,6 +235,12 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
       icon: <Calendar className="text-foreground h-5 w-5 flex-shrink-0" />,
     },
     {
+      label: "Analytics & Notifications",
+      href: "/notifications",
+      icon: <Bell className="text-foreground h-5 w-5 flex-shrink-0" />,
+      notificationCount: totalUnread > 0 ? totalUnread : undefined,
+    },
+    {
       label: "Chat",
       href: "/chat",
       icon: <MessageCircle className="text-foreground h-5 w-5 flex-shrink-0" />,
@@ -233,20 +279,14 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
           icon: <FolderOpen className="text-foreground h-4 w-4 flex-shrink-0" />
         },
         {
-          label: "System Status",
-          href: "/status",
-          icon: <Activity className="text-foreground h-4 w-4 flex-shrink-0" />
-        }
-      ]
-    },
-    {
-      label: "Billing",
-      icon: <CreditCard className="text-foreground h-5 w-5 flex-shrink-0" />,
-      items: [
-        {
           label: "Billing & Subscription",
           href: "/settings/billing",
           icon: <CreditCard className="text-foreground h-4 w-4 flex-shrink-0" />
+        },
+        {
+          label: "System Status",
+          href: "/status",
+          icon: <Activity className="text-foreground h-4 w-4 flex-shrink-0" />
         }
       ]
     },
@@ -306,11 +346,12 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
             <SidebarLink link={logoutLink} />
             
             <div className="flex items-center justify-start gap-2 py-2 cursor-pointer">
+              <NotificationsSidebar />
               <ThemeToggle />
             </div>
             <SidebarLink
               link={{
-                label: session?.user?.name || "User",
+                label: user?.user_metadata?.full_name || "User",
                 href: "/profile",
                 icon: (
                   <div className="h-7 w-7 flex-shrink-0 rounded-full bg-background flex items-center justify-center">
@@ -336,6 +377,7 @@ export function SidebarDemo({ children }: SidebarDemoProps) {
             </div>
           </div>
         )}
+        <NotificationPopup />
       </main>
     </div>
   );
@@ -379,4 +421,4 @@ export const LogoIcon = () => {
       </div>
     </Link>
   );
-}; 
+};

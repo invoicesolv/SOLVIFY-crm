@@ -1,22 +1,40 @@
 "use client";
 
-import { SidebarDemo } from "@/components/ui/code.demo";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AnimatedBorderCard } from "@/components/ui/animated-border-card";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function TermsOfServicePage() {
   return (
-    <div className="min-h-screen bg-white py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-white dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Terms of Service</h1>
-          <p className="text-lg text-gray-600">CRM Publish - Effective Date: {new Date().toLocaleDateString()}</p>
+        {/* Navigation Header */}
+        <div className="flex items-center justify-between mb-8">
+          <Link href="/landing">
+            <Button variant="ghost" className="flex items-center gap-2 text-blue-600 hover:text-blue-800">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Solvify
+            </Button>
+          </Link>
+          <div className="flex gap-4">
+            <Link href="/login">
+              <Button variant="outline">Login</Button>
+            </Link>
+            <Link href="/register">
+              <Button>Sign Up</Button>
+            </Link>
+          </div>
         </div>
 
-        <div className="prose prose-lg max-w-none">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Terms of Service</h1>
+          <p className="text-lg text-gray-600 dark:text-gray-300">Solvify CRM - Effective Date: {new Date().toLocaleDateString()}</p>
+        </div>
+
+        <div className="prose prose-lg max-w-none dark:prose-invert">
           <section className="mb-8">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">1. Acceptance of Terms</h2>
-            <p className="text-gray-700 mb-4">
+            <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-4">1. Acceptance of Terms</h2>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
               By accessing and using CRM Publish ("the Service"), you accept and agree to be bound by the terms 
               and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
             </p>
@@ -25,10 +43,10 @@ export default function TermsOfServicePage() {
           <section className="mb-8">
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">2. Description of Service</h2>
             <p className="text-gray-700 mb-4">
-              CRM Publish is a customer relationship management platform that helps businesses manage their 
-              social media presence across multiple platforms including Facebook, Instagram, and other social networks.
+              Solvify CRM is a comprehensive customer relationship management platform that helps businesses manage their 
+              operations, projects, customers, and integrations across multiple platforms.
             </p>
-            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+            <ul className="list-disc pl-6 text-gray-700 dark:text-gray-300 space-y-2">
               <li>Social media account integration and management</li>
               <li>Content scheduling and publishing</li>
               <li>Analytics and insights reporting</li>
@@ -154,9 +172,9 @@ export default function TermsOfServicePage() {
             <p className="text-gray-700 mb-4">
               If you have any questions about these Terms of Service, please contact us:
             </p>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <p className="text-gray-700"><strong>Email:</strong> kevin@solvify.se</p>
-              <p className="text-gray-700"><strong>Address:</strong> Plaza Cavalleria 1, B, 1b, Palma de Mallorca, Baleares 07012, Spain</p>
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+              <p className="text-gray-700 dark:text-gray-300"><strong>Email:</strong> kevin@solvify.se</p>
+              <p className="text-gray-700 dark:text-gray-300"><strong>Address:</strong> Plaza Cavalleria 1, B, 1b, Palma de Mallorca, Baleares 07012, Spain</p>
             </div>
           </section>
         </div>

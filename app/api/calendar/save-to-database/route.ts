@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   console.log('[POST /api/calendar/save-to-database] Received request');
   try {
-    // Get authenticated user
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-    
-    if (!userId) {
-      console.log('[POST /api/calendar/save-to-database] No authenticated user found');
-      return NextResponse.json({ error: 'User not authenticated' }, { status: 401 });
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     // Parse request body

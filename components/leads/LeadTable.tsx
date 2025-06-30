@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from '@/lib/auth-client';
 import { MoveRight, Star, Calendar, Link2, Trash2, MoreHorizontal, Folder, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { ExportLeadsButton } from "@/components/leads/ExportLeadsButton";
@@ -64,7 +65,7 @@ interface Lead {
   converted_to_deal?: boolean;
   deal_id?: string;
   folder_id?: string;
-  folders?: {
+  lead_folders?: {
     id: string;
     name: string;
   };
@@ -85,6 +86,7 @@ interface LeadTableProps {
 
 export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTableProps>(
   ({ workspaceId, userId, onMetricsChange, onManageFolders, selectedFolder }, ref) => {
+  const { session } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -93,19 +95,24 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
   const [loadingFolders, setLoadingFolders] = useState(true);
 
   const loadFolders = async () => {
-    if (!workspaceId) return;
+    if (!workspaceId || !session) return;
     
     try {
       setLoadingFolders(true);
-      const { data, error } = await supabase
-        .from("lead_folders")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("name", { ascending: true });
+      
+      // Use API endpoint instead of direct Supabase query
+      const response = await fetch(`/api/lead-folders?workspace_id=${workspaceId}`, {
+        credentials: 'include',
+      });
 
-      if (error) throw error;
-      console.log("Loaded folders:", data);
-      setFolders(data || []);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch folders');
+      }
+
+      const data = await response.json();
+      console.log("Loaded folders:", data.folders);
+      setFolders(data.folders || []);
     } catch (error) {
       console.error("Error loading folders:", error);
       toast.error("Failed to load folders");
@@ -115,8 +122,8 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
   };
 
   const loadLeads = async () => {
-    if (!workspaceId) {
-      console.log('[LeadTable] No workspaceId provided');
+    if (!workspaceId || !session) {
+      console.log('[LeadTable] Missing workspace ID or session');
       return;
     }
 
@@ -124,35 +131,33 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
       setLoading(true);
       console.log(`[LeadTable] Loading leads for workspace: ${workspaceId}`);
       
-      let query = supabase
-        .from("leads")
-        .select(`
-          *,
-          folders:folder_id (
-            id,
-            name
-          )
-        `)
-        .eq("workspace_id", workspaceId);
+      // Build API URL with query parameters
+      const params = new URLSearchParams({
+        workspace_id: workspaceId
+      });
       
       // Apply folder filter if selected
       if (selectedFolder) {
+        params.append('folder_id', selectedFolder);
         if (selectedFolder === 'unassigned') {
-          // More explicit null check for folder_id
-          query = query.is("folder_id", null);
-          console.log("[LeadTable] Filtering for unassigned leads (folder_id is null)");
+          console.log("[LeadTable] Filtering for unassigned leads");
         } else {
-          query = query.eq("folder_id", selectedFolder);
           console.log(`[LeadTable] Filtering for folder_id = ${selectedFolder}`);
         }
       }
       
-      const { data, error } = await query.order("created_at", { ascending: false });
+      // Use API endpoint instead of direct Supabase query
+      const response = await fetch(`/api/leads?${params.toString()}`, {
+        credentials: 'include',
+      });
 
-      if (error) {
-        console.error('[LeadTable] Error loading leads:', error);
-        throw error;
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[LeadTable] API error:', errorData);
+        throw new Error(errorData.error || 'Failed to load leads');
       }
+
+      const { leads: data } = await response.json();
       
       console.log(`[LeadTable] Loaded ${data?.length || 0} leads for workspace ${workspaceId}`);
       setLeads(data || []);
@@ -190,9 +195,11 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
   }));
 
   useEffect(() => {
-    loadFolders();
-    loadLeads();
-  }, [workspaceId, selectedFolder]);
+    if (session) {
+      loadFolders();
+      loadLeads();
+    }
+  }, [workspaceId, selectedFolder, session]);
 
   const convertToDeal = async (leadId: string) => {
     const lead = leads.find(l => l.id === leadId);
@@ -332,7 +339,7 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
               <DropdownMenuContent className="bg-background border-border dark:border-border">
                 <DropdownMenuItem 
                   onClick={() => assignSelectedToFolder(null)}
-                  className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                  className="cursor-pointer text-foreground hover:bg-gray-200 dark:hover:bg-muted focus:bg-gray-200 dark:focus:bg-muted"
                 >
                   Unassign
                 </DropdownMenuItem>
@@ -340,7 +347,7 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
                   <DropdownMenuItem 
                     key={folder.id} 
                     onClick={() => assignSelectedToFolder(folder.id)}
-                    className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                    className="cursor-pointer text-foreground hover:bg-gray-200 dark:hover:bg-muted focus:bg-gray-200 dark:focus:bg-muted"
                   >
                     {folder.name}
                   </DropdownMenuItem>
@@ -435,9 +442,9 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
               </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {lead.folders ? (
+                      {lead.lead_folders ? (
                         <Badge className="bg-blue-500/10 text-blue-400">
-                          {lead.folders.name}
+                          {lead.lead_folders.name}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-muted-foreground border-border dark:border-border">
@@ -461,7 +468,7 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
                           </div>
                           <DropdownMenuItem 
                             onClick={() => assignToFolder(lead.id, null)}
-                            className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                            className="cursor-pointer text-foreground hover:bg-gray-200 dark:hover:bg-muted focus:bg-gray-200 dark:focus:bg-muted"
                           >
                             <span className="text-muted-foreground mr-2">⦸</span>
                             Unassign
@@ -470,7 +477,7 @@ export const LeadTable = forwardRef<{ loadLeads: () => Promise<void> }, LeadTabl
                             <DropdownMenuItem 
                               key={folder.id} 
                               onClick={() => assignToFolder(lead.id, folder.id)}
-                              className="cursor-pointer text-foreground hover:bg-gray-200 dark:bg-muted focus:bg-gray-200 dark:bg-muted"
+                              className="cursor-pointer text-foreground hover:bg-gray-200 dark:hover:bg-muted focus:bg-gray-200 dark:focus:bg-muted"
                             >
                               <Folder className="h-4 w-4 mr-2 text-blue-400" />
                               {folder.name}

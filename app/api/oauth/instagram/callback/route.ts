@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getActiveWorkspaceId } from '@/lib/permission';
 import crypto from 'crypto';
 
@@ -12,20 +10,20 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   console.log('🔵 [INSTAGRAM OAUTH] Callback starting...');
   
-  const session = await getServerSession(authOptions);
+  const user = await getUserFromToken(request);
   
   // Use localhost for development
   const baseUrl = process.env.NODE_ENV === 'development' 
     ? 'http://localhost:3000' 
-    : (process.env.NEXTAUTH_URL || 'https://crm.solvify.se');
+    : (process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se');
   
   console.log('🔵 [INSTAGRAM OAUTH] Environment check:', {
-    hasSession: !!session,
-    userId: session?.user?.id,
+    hasSession: !!user,
+    userId: user?.id,
     baseUrl: baseUrl
   });
   
-  if (!session?.user?.id) {
+  if (!user?.id) {
     console.error('🔴 [INSTAGRAM OAUTH] No user session found');
     return NextResponse.redirect(new URL(`${baseUrl}/login`));
   }
@@ -168,7 +166,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get workspace ID
-    const workspaceId = await getActiveWorkspaceId(session.user.id);
+    const workspaceId = await getActiveWorkspaceId(user.id);
     if (!workspaceId) {
       console.error('🔴 [INSTAGRAM OAUTH] No workspace found for user');
       return NextResponse.redirect(new URL(`${baseUrl}/settings?error=no_workspace`));
@@ -181,10 +179,10 @@ export async function GET(request: NextRequest) {
       ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
       : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(); // 60 days if no expiry provided
 
-    const { error: socialAccountError } = await supabase
+    const { error: socialAccountError } = await supabaseAdmin
       .from('social_accounts')
         .upsert({
-          user_id: session.user.id,
+          user_id: user.id,
           workspace_id: workspaceId,
         platform: 'instagram',
         access_token: tokenData.access_token,
@@ -209,5 +207,26 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('🔴 [INSTAGRAM OAUTH] Unexpected error:', error);
     return NextResponse.redirect(new URL(`${baseUrl}/settings?error=instagram_unexpected_error`));
+  }
+}
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
   }
 } 

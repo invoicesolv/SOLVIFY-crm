@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { FolderOpen, Plus, Clock, Users, CheckCircle, AlertCircle, Calendar } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { Tables } from '@/lib/database.types';
 
 type Project = Tables<'projects'> & {

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 import { createClient } from '@supabase/supabase-js';
 
 // Create Supabase admin client with service role key
@@ -38,16 +37,15 @@ function getAuthenticatedSupabaseClient(accessToken: string) {
   return client;
 }
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
   try {
-    // Get the user session
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Get the request body
-    const body = await req.json();
+    const body = await request.json();
     const { workspaceId, batchId, title = 'Content Generation' } = body;
 
     if (!workspaceId) {
@@ -59,7 +57,7 @@ export async function POST(req: Request) {
     }
 
     console.log(`Initializing content generation batch ${batchId} for workspace ${workspaceId}`);
-    console.log(`User ID: ${session.user.id}`);
+    console.log(`User ID: ${user.id}`);
     
     // First try with admin client
     const supabaseAdmin = getSupabaseAdmin();
@@ -95,7 +93,7 @@ export async function POST(req: Request) {
       .from('generated_content')
       .insert({
         workspace_id: workspaceId,
-        user_id: session.user.id,
+        user_id: user.id,
         title: title,
         content: '',
         status: 'generating',
@@ -116,7 +114,7 @@ export async function POST(req: Request) {
         .from('generated_content')
         .insert({
           workspace_id: workspaceId,
-          user_id: session.user.id,
+          user_id: user.id,
           title: title,
           content: '',
           status: 'generating',

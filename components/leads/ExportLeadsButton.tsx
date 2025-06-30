@@ -34,7 +34,7 @@ interface Lead {
   converted_to_deal?: boolean;
   deal_id?: string;
   folder_id?: string;
-  folders?: {
+  lead_folders?: {
     id: string;
     name: string;
   };
@@ -66,7 +66,7 @@ export function ExportLeadsButton({ leads, selectedLeads, clearSelection, worksp
       "Phone": lead.phone,
       "Source": lead.source,
       "Service Category": lead.service_category,
-      "Folder": lead.folders ? lead.folders.name : "Unassigned",
+      "Folder": lead.lead_folders ? lead.lead_folders.name : "Unassigned",
       "Website URL": lead.website_url,
       "Monthly Traffic": lead.monthly_traffic,
       "Current Rank": lead.current_rank,

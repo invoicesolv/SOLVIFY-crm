@@ -83,18 +83,23 @@ export function ProjectFolderManagementDialog({
 
     try {
       setCreating(true);
-      const { data, error } = await supabase
-        .from("project_folders")
-        .insert([
-          {
-            name: newFolderName,
-            workspace_id: workspaceId,
-            user_id: userId,
-          },
-        ])
-        .select();
+      
+      const response = await fetch('/api/project-folders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: newFolderName,
+          workspace_id: workspaceId,
+        }),
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create project folder');
+      }
 
       toast.success("Project folder created successfully");
       setNewFolderName("");

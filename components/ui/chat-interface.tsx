@@ -4,8 +4,9 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNotifications } from '@/lib/notification-context'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Paperclip, Smile, Calendar, FolderPlus } from 'lucide-react'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { Tables } from '@/lib/database.types'
+import { useAuth } from '@/lib/auth-client'
 
 type ChatMessage = Tables<'chat_messages'> & {
   user_name?: string
@@ -40,6 +41,7 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
   const [isLoading, setIsLoading] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const { markAsRead, unreadMessages } = useNotifications()
+  const { session } = useAuth()
 
   // Debug log for notifications
   useEffect(() => {
@@ -244,117 +246,28 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
     try {
       setIsLoading(true)
       
-      let messagesQuery = supabase.from('chat_messages').select('*')
-      
-      if (isPrivateChat && otherUserId) {
-        // For private chats, we need to find messages between the two users
-        // Get messages where:
-        // 1. Current user sent to other user, OR
-        // 2. Other user sent to current user
-        messagesQuery = messagesQuery
-          .eq('workspace_id', workspaceId)
-          .eq('message_type', 'private')
-          .or(`and(user_id.eq.${currentUserId},metadata->>private_chat_with.eq.${otherUserId}),and(user_id.eq.${otherUserId},metadata->>private_chat_with.eq.${currentUserId})`)
-      } else {
-        // Regular workspace chat
-        messagesQuery = messagesQuery
-          .eq('workspace_id', workspaceId)
-          .neq('message_type', 'private')
-      }
-      
-      const { data: messages, error: messagesError } = await messagesQuery
-        .order('created_at', { ascending: true })
-
-      if (messagesError) {
-        console.error('Error fetching messages:', messagesError)
-        return
-      }
-
-      if (!messages || messages.length === 0) {
-        setMessages([])
-        return
-      }
-
-      // Get unique user IDs from messages
-      const userIds = [...new Set(messages.map(msg => msg.user_id))]
-      
-      // Fetch profiles for these users
-      console.log('Chat: Fetching profiles for user IDs:', userIds)
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('user_id, name, avatar_url')
-        .in('user_id', userIds)
-
-      console.log('Chat: Profiles fetched:', profiles)
-      if (profilesError) {
-        console.error('Error fetching profiles:', profilesError)
-      }
-
-      // Also try to get user info from team_members as fallback
-      const { data: teamMembers, error: teamError } = await supabase
-        .from('team_members')
-        .select('user_id, name, email')
-        .in('user_id', userIds)
-        .order('created_at', { ascending: false }) // Get the most recent entry first
-
-      if (teamError) {
-        console.error('Error fetching team members:', teamError)
-      }
-
-      // Create a map of user_id to profile info
-      const profileMap = new Map()
-      const teamMemberMap = new Map()
-      
-      if (profiles) {
-        profiles.forEach(profile => {
-          // Only add if name exists and is not empty
-          if (profile.name && profile.name.trim()) {
-            profileMap.set(profile.user_id, profile)
-          }
-        })
-      }
-      
-      if (teamMembers) {
-        teamMembers.forEach(member => {
-          // Only add if we don't already have this user and name exists and is valid
-          if (!teamMemberMap.has(member.user_id) && 
-              member.name && 
-              member.name.trim() && 
-              !member.name.includes('Empty - No Data')) {
-            teamMemberMap.set(member.user_id, member)
-          }
-        })
-      }
-
-      // Combine messages with profile info
-      const messagesWithUserInfo = messages.map(msg => {
-        const profile = profileMap.get(msg.user_id)
-        const teamMember = teamMemberMap.get(msg.user_id)
-        
-        // Prioritize profile name, then clean team member name, then email as last resort
-        let userName = 'Unknown User'
-        
-        if (profile?.name && profile.name.trim()) {
-          userName = profile.name.trim()
-        } else if (teamMember?.name && teamMember.name.trim() && !teamMember.name.includes('Empty - No Data')) {
-          userName = teamMember.name.trim()
-        } else if (teamMember?.email && teamMember.email.trim()) {
-          // Extract name from email if possible (before @)
-          const emailName = teamMember.email.split('@')[0]
-          userName = emailName.charAt(0).toUpperCase() + emailName.slice(1)
-        }
-        
-        console.log(`Chat: User ${msg.user_id} mapped to name: ${userName}`, { profile, teamMember })
-        
-        return {
-          ...msg,
-          user_name: userName,
-          user_avatar: profile?.avatar_url || null,
-          profiles: profile || null
-        }
+      const params = new URLSearchParams({
+        workspace_id: workspaceId,
+        is_private_chat: isPrivateChat.toString(),
+        ...(otherUserId && { other_user_id: otherUserId })
       })
 
-      setMessages(messagesWithUserInfo)
+      const response = await fetch(`/api/chat/messages?${params}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+      })
+
+      if (!response.ok) {
+        console.error('Error fetching messages:', response.statusText)
+        return
+      }
+
+      const data = await response.json()
+      setMessages(data.messages || [])
+      
     } catch (error) {
       console.error('Error fetching messages:', error)
     } finally {
@@ -369,14 +282,6 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
     setNewMessage('') // Clear input immediately for better UX
 
     try {
-      const messageData = {
-        content: messageContent,
-        user_id: currentUserId,
-        workspace_id: workspaceId,
-        message_type: isPrivateChat ? 'private' : 'text',
-        metadata: isPrivateChat && otherUserId ? { private_chat_with: otherUserId } : {}
-      }
-
       // Create a timestamp for the message
       const messageTimestamp = new Date().toISOString()
       
@@ -387,12 +292,12 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
         user_id: currentUserId,
         workspace_id: workspaceId,
         message_type: isPrivateChat ? 'private' : 'text',
-        metadata: messageData.metadata,
+        metadata: isPrivateChat && otherUserId ? { private_chat_with: otherUserId } : {},
         created_at: messageTimestamp,
         updated_at: messageTimestamp,
         reply_to: null,
         edited_at: null,
-        user_name: 'Kevin Negash', // Your name
+        user_name: 'You', // Current user
         user_avatar: undefined
       }
 
@@ -408,29 +313,41 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
         return isDuplicate ? prev : [...prev, tempMessage]
       })
 
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .insert(messageData)
-        .select()
-        .single()
+      // Send via API
+      const response = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          content: messageContent,
+          workspaceId: workspaceId,
+          messageType: isPrivateChat ? 'private' : 'text',
+          metadata: isPrivateChat && otherUserId ? { private_chat_with: otherUserId } : {},
+          otherUserId: otherUserId
+        })
+      })
 
-      if (error) {
-        console.error('Error sending message:', error)
+      if (!response.ok) {
+        console.error('Error sending message:', response.statusText)
         // Remove the optimistic message on error
         setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
         setNewMessage(messageContent) // Restore the message content
         return
       }
 
-      // Only replace if the temporary message still exists
-      if (data) {
+      const data = await response.json()
+      
+      // Replace temp message with real one
+      if (data.message) {
         setMessages(prev => {
           const tempExists = prev.some(msg => msg.id === tempMessage.id)
           if (!tempExists) return prev // If temp message is gone, don't update
           
           return prev.map(msg => 
             msg.id === tempMessage.id 
-              ? { ...data, user_name: 'Kevin Negash', user_avatar: undefined }
+              ? data.message
               : msg
           )
         })
@@ -443,18 +360,22 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
 
   const sendSpecialMessage = async (type: 'calendar_event' | 'project_update', content: string, metadata: any) => {
     try {
-      const { error } = await supabase
-        .from('chat_messages')
-        .insert({
+      const response = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
           content,
-          user_id: currentUserId,
-          workspace_id: workspaceId,
-          message_type: type,
+          workspaceId: workspaceId,
+          messageType: type,
           metadata
         })
+      })
 
-      if (error) {
-        console.error('Error sending special message:', error)
+      if (!response.ok) {
+        console.error('Error sending special message:', response.statusText)
       }
     } catch (error) {
       console.error('Error sending special message:', error)
@@ -584,7 +505,28 @@ export function ChatInterface({ workspaceId, currentUserId, isPrivateChat = fals
                   : 'bg-muted/80 text-foreground border border-border/50'
               }`}
             >
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+              {(message.content.includes('<table>') || message.content.includes('<tr>') || message.content.includes('<td>')) ? (
+                <div 
+                  className="text-sm leading-relaxed prose prose-invert max-w-none"
+                  style={{
+                    '--tw-prose-body': '#e5e7eb',
+                    '--tw-prose-headings': '#f9fafb',
+                    '--tw-prose-bold': '#f9fafb',
+                    '--tw-prose-links': '#60a5fa',
+                    '--tw-prose-th-borders': '#374151',
+                    '--tw-prose-td-borders': '#374151',
+                  } as React.CSSProperties}
+                  dangerouslySetInnerHTML={{ 
+                    __html: message.content
+                      // Add table styling classes
+                      .replace(/<table>/g, '<table class="w-full border-collapse border border-gray-600 my-4">')
+                      .replace(/<th>/g, '<th class="border border-gray-600 px-3 py-2 bg-gray-700 text-left font-medium">')
+                      .replace(/<td>/g, '<td class="border border-gray-600 px-3 py-2">')
+                  }}
+                />
+              ) : (
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+              )}
             </div>
           </div>
         </div>

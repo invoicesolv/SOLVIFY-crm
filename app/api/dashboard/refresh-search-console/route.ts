@@ -1,31 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * API endpoint to refresh Search Console data
  */
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    console.log('Starting Search Console refresh');
-    // Get user from session
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-
-    if (!userId) {
-      console.error('Search Console refresh - Authentication error: No user ID in session');
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    console.log('Starting Search Console refresh');
     // Get user settings to find the default Search Console site
     console.log('Fetching user settings');
     const { data: userSettings, error: settingsError } = await supabase
       .from('user_settings')
       .select('default_search_console_site')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .maybeSingle();
 
     if (settingsError && settingsError.code !== 'PGRST116') {
@@ -49,7 +44,7 @@ export async function POST(req: NextRequest) {
       .from('integrations')
       .select('access_token, refresh_token, expires_at')
       .eq('service_name', 'google-searchconsole')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(1);
 

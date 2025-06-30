@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
+import { NextResponse, NextRequest } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 
 // Create Supabase admin client with service role key
@@ -303,18 +304,18 @@ async function publishToBlog(
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
   try {
     console.log('POST /api/publish-to-blog - Request received');
     
     // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       console.log('POST /api/publish-to-blog - No authenticated session found');
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('POST /api/publish-to-blog - User authenticated:', session.user.id);
+    console.log('POST /api/publish-to-blog - User authenticated:', user.id);
 
     // Initialize Supabase admin client
     const supabaseAdmin = getSupabaseAdmin();
@@ -324,7 +325,7 @@ export async function POST(req: Request) {
     }
     
     // Parse request body
-    const body = await req.json();
+    const body = await request.json();
     const { 
       contentId, 
       workspaceId,

@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   // Threads uses Facebook App credentials but has its own API endpoints
   const clientId = process.env.FACEBOOK_APP_ID;
-  const baseUrl = process.env.NEXTAUTH_URL || 'https://crm.solvify.se';
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
   const redirectUri = `${baseUrl}/api/oauth/threads/callback`;
   
   if (!clientId) {

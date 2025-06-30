@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -31,7 +31,7 @@ interface EmailSettings {
 }
 
 export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [emailSettings, setEmailSettings] = useState<EmailSettings>({
@@ -42,10 +42,10 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
   });
 
   useEffect(() => {
-    if (session?.user?.id) {
+    if (user?.id) {
       loadCronJobs();
     }
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   const loadCronJobs = async () => {
     try {
@@ -78,7 +78,7 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
   };
 
   const handleSaveSettings = async () => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error('You must be logged in to save settings');
       return;
     }
@@ -88,7 +88,7 @@ export function EmailSettings({ projectId, onClose }: EmailSettingsProps) {
         .from('cron_jobs')
         .upsert({
           property_id: projectId,
-          user_id: session.user.id,
+          user_id: user.id,
           job_type: 'project_report',
           status: emailSettings.enabled ? 'active' : 'disabled',
           settings: {

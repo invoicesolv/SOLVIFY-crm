@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { createClient } from '@supabase/supabase-js';
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
   
   if (!supabaseUrl || !supabaseKey) {
     throw new Error('Missing Supabase environment variables');
@@ -15,9 +16,9 @@ function getSupabaseAdmin() {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
@@ -32,9 +33,9 @@ export async function POST(request: NextRequest) {
 
     // Check if user is a member of this workspace
     const { data: membership, error: membershipError } = await supabase
-      .from('workspace_memberships')
+      .from('team_members')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('workspace_id', workspace_id)
       .single();
 
@@ -44,25 +45,25 @@ export async function POST(request: NextRequest) {
 
     // Check if this is the last admin in the workspace
     const { data: adminCount, error: adminCountError } = await supabase
-      .from('workspace_memberships')
+      .from('team_members')
       .select('*')
       .eq('workspace_id', workspace_id)
-      .eq('role', 'admin');
+      .eq('is_admin', true);
 
     if (adminCountError) {
       return NextResponse.json({ error: 'Failed to check admin status' }, { status: 500 });
     }
 
     // If user is admin and the only admin, warn them
-    const isLastAdmin = membership.role === 'admin' && adminCount.length === 1;
+    const isLastAdmin = membership.is_admin && adminCount.length === 1;
     
     if (isLastAdmin) {
       // Check if there are other members
       const { data: otherMembers, error: membersError } = await supabase
-        .from('workspace_memberships')
+        .from('team_members')
         .select('*')
         .eq('workspace_id', workspace_id)
-        .neq('user_id', session.user.id);
+        .neq('user_id', user.id);
 
       if (membersError) {
         return NextResponse.json({ error: 'Failed to check workspace members' }, { status: 500 });
@@ -79,9 +80,9 @@ export async function POST(request: NextRequest) {
 
     // Remove user from workspace
     const { error: removeError } = await supabase
-      .from('workspace_memberships')
+      .from('team_members')
       .delete()
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('workspace_id', workspace_id);
 
     if (removeError) {
@@ -108,15 +109,25 @@ export async function POST(request: NextRequest) {
 }
 
 // GET endpoint to list current user's workspaces
-export async function GET() {
-  const session = await getServerSession(authOptions);
+export async function GET(request: NextRequest) {
+  // Try Supabase token first
+  let user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  // If no Supabase user, try NextAuth session
+  if (!user?.id) {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.id) {
+      user = { id: session.user.id, email: session.user.email };
+      console.log('[Workspace API] Using NextAuth session for user:', user.id);
+    }
+  }
+  
+  if (!user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
   try {
-    console.log('[Workspace API] Fetching workspaces for user:', session.user.id);
+    console.log('[Workspace API] Fetching workspaces for user:', user.id);
     
     const supabase = getSupabaseAdmin();
     
@@ -130,10 +141,11 @@ export async function GET() {
         workspaces!inner (
           id,
           name,
+          owner_id,
           created_at
         )
       `)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .neq('workspace_id', '4251bc40-5a36-493a-9f85-eb728c4d86fa') // Exclude deleted workspace
       .not('user_id', 'is', null); // Exclude corrupted records
 
@@ -145,8 +157,8 @@ export async function GET() {
     // Also check for workspaces the user owns directly
     const { data: ownedWorkspaces, error: ownedError } = await supabase
       .from('workspaces')
-      .select('id, name, created_at')
-      .eq('owner_id', session.user.id)
+      .select('id, name, owner_id, created_at')
+      .eq('owner_id', user.id)
       .neq('id', '4251bc40-5a36-493a-9f85-eb728c4d86fa'); // Exclude deleted workspace
 
     if (ownedError) {
@@ -162,6 +174,7 @@ export async function GET() {
         allWorkspaces.set(m.workspace_id, {
           id: m.workspace_id,
           name: m.workspaces.name,
+          owner_id: m.workspaces.owner_id,
           role: m.is_admin ? 'admin' : 'member',
           created_at: m.workspaces.created_at
         });
@@ -174,6 +187,7 @@ export async function GET() {
         allWorkspaces.set(w.id, {
           id: w.id,
           name: w.name,
+          owner_id: w.owner_id,
           role: 'owner',
           created_at: w.created_at
         });

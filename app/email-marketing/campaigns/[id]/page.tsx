@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { useParams, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { 
   ArrowLeft, 
   Send, 
@@ -59,6 +59,7 @@ interface Campaign {
   from_email: string;
   html_content: string;
   plain_content: string;
+  error_message?: string;
 }
 
 interface SendProgress {
@@ -79,7 +80,7 @@ interface AnalyticsData {
 }
 
 export default function CampaignDetailsPage() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const params = useParams();
   const searchParams = useSearchParams();
   const campaignId = params.id as string;
@@ -89,6 +90,7 @@ export default function CampaignDetailsPage() {
   const [sendProgress, setSendProgress] = useState<SendProgress | null>(null);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sendingLoading, setSendingLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
@@ -126,6 +128,39 @@ export default function CampaignDetailsPage() {
       toast.error('Failed to load campaign data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendCampaign = async () => {
+    if (!campaign) return;
+
+    setSendingLoading(true);
+    try {
+      const response = await fetch('/api/email-marketing/send-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: campaign.id })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to send campaign');
+      }
+
+      toast.success('Campaign sending started! 🚀');
+      
+      // Start polling for progress
+      const interval = setInterval(fetchSendProgress, 2000);
+      
+      // Refresh campaign data
+      await fetchCampaignData();
+      
+    } catch (error) {
+      console.error('Error sending campaign:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to send campaign');
+    } finally {
+      setSendingLoading(false);
     }
   };
 
@@ -329,12 +364,13 @@ export default function CampaignDetailsPage() {
             </div>
             
             <div className="flex items-center gap-3">
-              {campaign.status === 'draft' && (
-                <Button>
-                  <Send className="h-4 w-4 mr-2" />
-                  Send Campaign
-                </Button>
-              )}
+              <Button onClick={handleSendCampaign} disabled={sendingLoading}>
+                <Send className="h-4 w-4 mr-2" />
+                {sendingLoading ? 'Sending...' : 
+                 campaign.status === 'sent' ? 'Resend Campaign' :
+                 campaign.status === 'sending' ? 'Retry Campaign' :
+                 campaign.status === 'failed' ? 'Retry Campaign' : 'Send Campaign'}
+              </Button>
               <Button variant="outline">
                 <Copy className="h-4 w-4 mr-2" />
                 Duplicate
@@ -391,8 +427,51 @@ export default function CampaignDetailsPage() {
                         <div className="text-sm text-muted-foreground">Complete</div>
                       </div>
                     </div>
+
+                    {/* Error Messages */}
+                    {sendProgress.errors && sendProgress.errors.length > 0 && (
+                      <div className="mt-4">
+                        <h4 className="text-sm font-medium text-red-600 mb-2">Errors:</h4>
+                        <div className="bg-red-50 dark:bg-red-950 rounded-lg p-3 max-h-32 overflow-y-auto">
+                          {sendProgress.errors.map((error, index) => (
+                            <div key={index} className="text-xs text-red-700 dark:text-red-300 mb-1">
+                              {error}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
+              </CardContent>
+            </AnimatedBorderCard>
+          </div>
+        )}
+
+        {/* Campaign Error Display */}
+        {campaign.status === 'failed' && campaign.error_message && (
+          <div className="p-6 border-b bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-950 dark:to-orange-950">
+            <AnimatedBorderCard className="bg-background/90 backdrop-blur-sm border-red-200 dark:border-red-800">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <XCircle className="h-6 w-6 text-red-500" />
+                  <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Campaign Failed</h3>
+                </div>
+                <div className="bg-red-50 dark:bg-red-950/50 rounded-lg p-4">
+                  <p className="text-sm text-red-700 dark:text-red-300 font-mono">
+                    {campaign.error_message}
+                  </p>
+                </div>
+                <div className="mt-4 flex gap-3">
+                  <Button variant="outline" size="sm">
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    View Debug Info
+                  </Button>
+                  <Button variant="outline" size="sm">
+                    <Send className="h-4 w-4 mr-2" />
+                    Retry Campaign
+                  </Button>
+                </div>
               </CardContent>
             </AnimatedBorderCard>
           </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -161,6 +161,27 @@ async function storeCustomerData(customerData: any) {
   }
 }
 
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
 // Find Fortnox customers by name
 export async function GET(request: NextRequest) {
   try {
@@ -175,15 +196,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user ID from session or headers
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id || request.headers.get('user-id');
-    
-    if (!userId) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
     }
 
     // Get Fortnox token
-    const tokenData = await loadTokenFromSupabase(userId as string);
+    const tokenData = await loadTokenFromSupabase(user.id);
     if (!tokenData || !tokenData.access_token) {
       return NextResponse.json({ error: 'Failed to get Fortnox token' }, { status: 500 });
     }

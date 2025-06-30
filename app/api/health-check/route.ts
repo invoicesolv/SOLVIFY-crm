@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
         node_env: process.env.NODE_ENV,
         hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
         hasSupabaseAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        hasNextAuthSecret: !!process.env.NEXTAUTH_SECRET,
+        hasSiteUrl: !!process.env.NEXT_PUBLIC_SITE_URL,
       },
       apiKeys: {
         status: 'unknown',

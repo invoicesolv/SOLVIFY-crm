@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { getServerSession } from 'next-auth/next'; // Import getServerSession
-import authOptions from '@/lib/auth'; // Import your authOptions
-import { createClient } from '@supabase/supabase-js'; // Import Supabase client
-import { Session } from 'next-auth'; // Import Session type
+import { supabaseClient } from '@/lib/supabase-client'; // Import Supabase client
 import { getActiveWorkspaceId } from '@/lib/permission'; // Import workspace helper
 import { supabase, supabaseAdmin } from '@/lib/supabase'; // Import supabase clients
 
@@ -20,70 +17,49 @@ if (!supabaseUrl || !supabaseKey) {
   // Optionally throw an error or handle this case appropriately
 }
 
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
-  // Get session from NextAuth
-  const session = await getServerSession(authOptions);
+  // Get user from Supabase JWT token
+  const user = await getUserFromToken(req);
   
   console.log('[Chat API] Session check', {
-    hasSession: !!session,
-    hasUser: !!session?.user,
-    userId: session?.user?.id,
-    userEmail: session?.user?.email,
+    hasUser: !!user,
+    userId: user?.id,
+    userEmail: user?.email,
   });
   
-  if (!session || !session.user) {
+  if (!user) {
     console.error('[Chat API] No session or user');
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  // IMPORTANT: Sync NextAuth session with Supabase
-  // This ensures RLS policies work correctly
-  try {
-    // Create server supabase client with admin rights to get all workspace settings
-    const adminSettings = await supabaseAdmin
-      .from('workspace_settings')
-      .select('id, openai_api_key, workspace_id')
-      .maybeSingle();
-      
-    if ((session as any).access_token) {
-      // Authenticate with Supabase using the token from NextAuth
-      const { error: authError } = await supabase.auth.setSession({
-        access_token: (session as any).access_token,
-        refresh_token: (session as any).refresh_token || "",
-      });
-      
-      if (authError) {
-        console.error('[Chat API] Failed to sync Supabase session:', authError);
-        
-        // If token is invalid, try getting user by email as fallback
-        if (authError.message?.includes('Invalid JWT') || authError.message?.includes('JWT expired')) {
-          console.log('[Chat API] JWT invalid, using email-based fallback');
-        }
-      } else {
-        console.log('[Chat API] Successfully synced Supabase session');
-  
-        // Verify session sync worked by checking user
-        const { data: { user } } = await supabase.auth.getUser();
-        console.log('[Chat API] Auth user check:', {
-          hasUser: !!user,
-          authUserId: user?.id,
-          matchesSession: user?.id === session.user.id
-        });
-      }
-    } else {
-      console.log('[Chat API] No access token in session, using alternative authentication');
-    }
-  } catch (syncError) {
-    console.error('[Chat API] Error syncing session:', syncError);
-  }
-  
-  // Get active workspace ID (potentially modified from original code)
+  // Get active workspace ID
   let workspaceId: string | null = null;
   try {
-  if (session.user.id) {
-      workspaceId = await getActiveWorkspaceId(session.user.id);
+    if (user.id) {
+      workspaceId = await getActiveWorkspaceId(user.id);
     } else {
-      console.log('[Chat API] No user ID available in session');
+      console.log('[Chat API] No user ID available');
     }
   } catch (error) {
     console.error('[Chat API] Error getting active workspace ID:', error);
@@ -95,11 +71,11 @@ export async function POST(req: NextRequest) {
   const activeWsId = workspaceId; // Keep original for logging
   
   // Fallback to looking up workspace by email if no active workspace found
-  if (!workspaceId && session.user.email) {
+  if (!workspaceId && user.email) {
     const { data: emailMemberships } = await supabase
       .from('team_members')
       .select('workspace_id')
-      .eq('email', session.user.email)
+      .eq('email', user.email)
       .limit(1);
     console.log(`[API Chat] Result from email lookup: ${emailMemberships?.[0]?.workspace_id}`);
     
@@ -113,8 +89,8 @@ export async function POST(req: NextRequest) {
   // If still no workspace found, return error
   if (!workspaceId) {
     console.error('[Chat API] No active workspace found', {
-      userId: session.user.id,
-      userEmail: session.user.email,
+      userId: user.id,
+      userEmail: user.email,
       activeWorkspaceResult: activeWsId 
     });
     return NextResponse.json({ error: 'No active workspace found. Please create or join a workspace first.' }, { status: 403 });
@@ -135,6 +111,102 @@ export async function POST(req: NextRequest) {
     
     if (isApiKeyCheckOnly) {
       console.log('[Chat API] Processing API key check only request');
+    }
+
+    // Check for active chatbot automations
+    console.log('🔍 Checking for active chatbot automations...');
+    const { data: activeWorkflows, error: workflowError } = await supabaseAdmin
+      .from('cron_jobs')
+      .select('*')
+      .eq('status', 'active')
+      .eq('job_type', 'workflow');
+
+    console.log('🔍 Found active workflows:', activeWorkflows?.length || 0);
+
+    // Filter workflows that have chatbot integration nodes
+    const activeChatbotWorkflows = activeWorkflows?.filter(workflow => {
+      const nodes = workflow.settings?.automation_config?.nodes || workflow.settings?.workflow_data?.nodes || [];
+      const hasChatbotNode = nodes.some((node: any) => node.subtype === 'chatbot_integration');
+      if (hasChatbotNode) {
+        console.log(`✅ Found chatbot workflow: ${workflow.id} - ${workflow.settings?.workflow_data?.name || 'Unnamed'}`);
+      }
+      return hasChatbotNode;
+    }) || [];
+
+    console.log('🤖 Found active chatbot workflows:', activeChatbotWorkflows?.length || 0);
+
+    // If we have active chatbot automations and this isn't just an API key check, use automation
+    if (activeChatbotWorkflows && activeChatbotWorkflows.length > 0 && !isApiKeyCheckOnly) {
+      console.log('🚀 Using automation workflow for chat response');
+      
+      // Use the first active chatbot workflow
+      const workflow = activeChatbotWorkflows[0];
+      const userMessage = messages[messages.length - 1]?.content || '';
+      
+      try {
+        // Call the automation chat trigger
+        const automationResponse = await fetch(`${req.nextUrl.origin}/api/automation/chat-trigger`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: userMessage,
+            workflowId: workflow.id,
+            userId: user.id,
+            context: { 
+              platform: 'chat_window',
+              trigger_type: 'user_message',
+              automated: true
+            }
+          }),
+        });
+
+        if (automationResponse.ok) {
+          const automationResult = await automationResponse.json();
+          console.log('✅ Automation response received:', {
+            success: automationResult.success,
+            hasResponse: !!automationResult.response,
+            responseLength: automationResult.response?.length || 0,
+            fullResult: automationResult
+          });
+          
+          if (automationResult.success && automationResult.response) {
+            console.log('🎉 Automation response successful, returning automated response');
+            return NextResponse.json({
+              message: automationResult.response,
+              automated: true,
+              workflowUsed: workflow.id,
+              workflowName: workflow.settings?.workflow_data?.name || 'Chatbot Automation',
+              reasoning: automationResult.reasoning || null,
+              thinking_process: automationResult.thinking_process || null,
+              model: automationResult.model || 'claude-automation',
+              context: automationResult.context || {},
+              claude_stats: automationResult.reasoning ? {
+                tokens: automationResult.reasoning.total_tokens,
+                model: automationResult.reasoning.model,
+                context_analysis: automationResult.reasoning.context_analysis,
+                has_thinking: automationResult.reasoning.has_thinking_process
+              } : null
+            });
+          } else {
+            console.warn('⚠️ Automation response invalid:', {
+              success: automationResult.success,
+              hasResponse: !!automationResult.response,
+              error: automationResult.error
+            });
+          }
+        } else {
+          const errorText = await automationResponse.text();
+          console.warn('⚠️ Automation HTTP failed:', {
+            status: automationResponse.status,
+            statusText: automationResponse.statusText,
+            error: errorText
+          });
+        }
+      } catch (automationError) {
+        console.error('❌ Automation error, falling back to regular chat:', automationError);
+      }
     }
     
     // --- Fetch API key from Database ---
@@ -247,7 +319,7 @@ export async function POST(req: NextRequest) {
         // Add a greeting message if this is the start of a conversation
         ...(messages.length === 1 && messages[0].role === 'user' ? [{
           role: 'assistant',
-          content: `Hello ${session.user.name || 'there'}! I'm Axel, your CRM assistant. How can I help you today?`
+          content: `Hello ${user.name || 'there'}! I'm Axel, your CRM assistant. How can I help you today?`
         }] : []),
         ...messages,
       ],
@@ -775,12 +847,7 @@ export async function POST(req: NextRequest) {
                           }
                         }
                         
-                        // Also check for specific projects
-                        if (!projectName) {
-                          if (lastUserMsg.includes('Solvify')) {
-                            projectName = 'Solvify';
-                          }
-                        }
+                        // No hardcoded project references - let the system find projects dynamically
                       }
                     } catch (e) {
                       console.error('[Chat API] Error checking user messages:', e);

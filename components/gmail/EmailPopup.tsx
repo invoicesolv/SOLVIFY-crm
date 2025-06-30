@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Send, Save, Loader2, MessageSquare } from 'lucide-react';
+import { X, Send, Save, Loader2, MessageSquare, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -18,10 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { useAuth } from '@/lib/auth-client';
 import { toast } from 'sonner';
 import React from 'react';
-import { useSession } from 'next-auth/react';
 import styles from '@/styles/email-content.module.css';
 
 interface Email {
@@ -54,7 +54,7 @@ interface EmailPopupProps {
 }
 
 export function EmailPopup({ email, open, onOpenChange, workspaceId, userId }: EmailPopupProps) {
-  const { data: session } = useSession();
+  const { session } = useAuth();
   const [responseText, setResponseText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -69,6 +69,7 @@ export function EmailPopup({ email, open, onOpenChange, workspaceId, userId }: E
   const [displayFormat, setDisplayFormat] = useState<'plain' | 'html'>('html');
   const [isEditing, setIsEditing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [emailBodyFetched, setEmailBodyFetched] = useState(false);
   const [signature, setSignature] = useState('');
   const [additionalContext, setAdditionalContext] = useState('');
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
@@ -80,26 +81,27 @@ export function EmailPopup({ email, open, onOpenChange, workspaceId, userId }: E
   useEffect(() => {
     // Get user signature from profile or use a default one
     const fetchSignature = async () => {
+      if (!userId) return; // Wait for userId
       try {
-        const { data, error } = await supabase
+        const { data: profile, error } = await supabase
           .from('profiles')
-          .select('signature')
+          .select('signature, full_name, email, title, company') // Fetch all needed fields
           .eq('id', userId)
           .single();
           
         if (error) throw error;
         
-        if (data?.signature) {
-          setSignature(data.signature);
+        if (profile?.signature) {
+          setSignature(profile.signature);
         } else {
-          // Set default signature using user info from session
+          // Set default signature using user info from profile
           const defaultSignature = `
           
 --
-${session?.user?.name || 'Your Name'}
-${(session as any)?.user?.title || ''}
-${(session as any)?.user?.company || ''}
-${session?.user?.email || ''}
+${profile?.full_name || 'Your Name'}
+${profile?.title || ''}
+${profile?.company || ''}
+${profile?.email || ''}
 `;
           setSignature(defaultSignature);
           
@@ -111,17 +113,16 @@ ${session?.user?.email || ''}
         }
       } catch (error) {
         console.error("Error fetching signature:", error);
-        // Use a minimal fallback signature
+        // Use a minimal fallback signature in case of an error
         setSignature(`
         
 --
-${session?.user?.name || ''}
 `);
       }
     };
     
     fetchSignature();
-  }, [userId, session]);
+  }, [userId]);
 
   useEffect(() => {
     if (open && email) {
@@ -133,27 +134,26 @@ ${session?.user?.name || ''}
       setDisplayFormat('html');
       setIsEditing(false);
       setErrorMessage(null);
+      setEmailBodyFetched(false);
       
       // Fetch email body if not already available
       if (!email.body) {
         fetchEmailBody(email.id);
       } else {
         setEmailBody(email.body);
+        setEmailBodyFetched(true);
         if (email.htmlBody) {
           setEmailHtmlBody(email.htmlBody);
         }
       }
-      
-      // Fetch response templates
-      fetchResponseTemplates();
     }
   }, [open, email]);
 
   useEffect(() => {
-    if (email && email.id && !emailBody && !isLoadingBody) {
+    if (email && email.id && !emailBodyFetched && !isLoadingBody) {
       fetchEmailBody(email.id);
     }
-  }, [email]);
+  }, [email?.id, emailBodyFetched, isLoadingBody]); // Only depend on email.id, not the entire email object
 
   // Add debug logging for email body content
   useEffect(() => {
@@ -197,364 +197,49 @@ ${session?.user?.name || ''}
   const fetchEmailBody = async (emailId: string) => {
     setIsLoadingBody(true);
     try {
-      const response = await fetch(`/api/gmail/message?id=${emailId}`);
+      const response = await fetch(`/api/gmail/message?id=${emailId}`, {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+      });
       if (!response.ok) {
-        throw new Error('Failed to fetch email body');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Gmail API error:', response.status, errorData);
+        
+        // Handle insufficient Gmail scopes
+        if (response.status === 403 && errorData.code === 'INSUFFICIENT_GMAIL_SCOPES') {
+          setErrorMessage('Gmail permissions are insufficient. Please reconnect your Gmail account with full permissions.');
+          
+          return; // Don't throw, just return to avoid further error handling
+        }
+        
+        throw new Error(`Failed to fetch email body: ${response.status} ${errorData.error || 'Unknown error'}`);
       }
       const data = await response.json();
       setEmailBody(data.body || email?.snippet || '');
       setEmailHtmlBody(data.htmlBody || '');
+      setEmailBodyFetched(true);
     } catch (error) {
       console.error('Error fetching email body:', error);
       toast.error('Failed to load email content');
       setEmailBody(email?.snippet || '');
+      setEmailBodyFetched(true); // Mark as fetched even on error to prevent infinite retries
     } finally {
       setIsLoadingBody(false);
     }
   };
 
-  const fetchResponseTemplates = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('email_responses')
-        .select('*')
-        .eq('workspace_id', workspaceId);
-      
-      if (error) throw error;
-      
-      console.log("Retrieved templates:", data);
-      
-      if (data && data.length > 0) {
-        // Check if we have all required templates
-        const hasEnglishProfessional = data.some(t => t.language === 'English' && t.type === 'professional');
-        const hasEnglishStrategic = data.some(t => t.language === 'English' && t.type === 'strategic');
-        const hasSpanishProfessional = data.some(t => t.language === 'Spanish' && t.type === 'professional');
-        const hasSpanishStrategic = data.some(t => t.language === 'Spanish' && t.type === 'strategic');
-        const hasSwedishProfessional = data.some(t => t.language === 'Swedish' && t.type === 'professional');
-        const hasSwedishStrategic = data.some(t => t.language === 'Swedish' && t.type === 'strategic');
-        
-        const hasAllTemplates = hasEnglishProfessional && hasEnglishStrategic && 
-                               hasSpanishProfessional && hasSpanishStrategic && 
-                               hasSwedishProfessional && hasSwedishStrategic;
-        
-        console.log("Template check:", { 
-          hasEnglishProfessional, hasEnglishStrategic, 
-          hasSpanishProfessional, hasSpanishStrategic,
-          hasSwedishProfessional, hasSwedishStrategic,
-          hasAllTemplates
-        });
-        
-        if (hasAllTemplates) {
-          setResponseTemplates(data);
-        } else {
-          // Force recreate the missing templates
-          console.log("Missing some templates, recreating...");
-          await recreateTemplates(data);
-        }
-      } else {
-        // If no templates exist, create default ones
-        console.log("No templates found, creating defaults...");
-        await createDefaultTemplates();
-        // Then fetch again
-        const { data: newData, error: newError } = await supabase
-          .from('email_responses')
-          .select('*')
-          .eq('workspace_id', workspaceId);
-          
-        if (newError) throw newError;
-        if (newData) {
-          console.log("Newly created templates:", newData);
-          setResponseTemplates(newData);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching response templates:', error);
-      toast.error('Failed to load response templates');
-    }
-  };
-  
-  // Helper function to recreate missing templates
-  const recreateTemplates = async (existingTemplates: ResponseTemplate[]) => {
-    try {
-      // Create array of missing templates
-      const missingTemplates: Array<{
-        user_id: string;
-        workspace_id: string;
-        name: string;
-        prompt: string;
-        language: string;
-        type: string;
-        content: null;
-      }> = [];
-      
-      // Check English Professional
-      if (!existingTemplates.some(t => t.language === 'English' && t.type === 'professional')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Professional Response',
-          prompt: 'Write a professional and detailed response to this email. Be concise but thorough.',
-          language: 'English',
-          type: 'professional',
-          content: null
-        });
-      }
-      
-      // Check English Strategic
-      if (!existingTemplates.some(t => t.language === 'English' && t.type === 'strategic')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Strategic Response',
-          prompt: 'Write a strategic response focusing on business value and partnership opportunities.',
-          language: 'English',
-          type: 'strategic',
-          content: null
-        });
-      }
-      
-      // Check English Grammar
-      if (!existingTemplates.some(t => t.language === 'English' && t.type === 'grammar')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Grammar Check',
-          prompt: 'Proofread and improve this text. Fix grammar, spelling, and style issues while preserving the meaning.',
-          language: 'English',
-          type: 'grammar',
-          content: null
-        });
-      }
-      
-      // Check Spanish Professional
-      if (!existingTemplates.some(t => t.language === 'Spanish' && t.type === 'professional')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Respuesta Profesional',
-          prompt: 'Escribe una respuesta profesional y detallada a este correo electrónico. Sé conciso pero minucioso.',
-          language: 'Spanish',
-          type: 'professional',
-          content: null
-        });
-      }
-      
-      // Check Spanish Strategic
-      if (!existingTemplates.some(t => t.language === 'Spanish' && t.type === 'strategic')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Respuesta Estratégica',
-          prompt: 'Escribe una respuesta estratégica enfocada en el valor comercial y las oportunidades de colaboración.',
-          language: 'Spanish',
-          type: 'strategic',
-          content: null
-        });
-      }
-      
-      // Check Spanish Grammar
-      if (!existingTemplates.some(t => t.language === 'Spanish' && t.type === 'grammar')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Revisión Gramatical',
-          prompt: 'Revisa y mejora este texto. Corrige errores gramaticales, ortográficos y estilísticos manteniendo el significado original.',
-          language: 'Spanish',
-          type: 'grammar',
-          content: null
-        });
-      }
-      
-      // Check Swedish Professional
-      if (!existingTemplates.some(t => t.language === 'Swedish' && t.type === 'professional')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Professionellt Svar',
-          prompt: 'Skriv ett professionellt och detaljerat svar på detta e-postmeddelande. Var koncis men grundlig.',
-          language: 'Swedish',
-          type: 'professional',
-          content: null
-        });
-      }
-      
-      // Check Swedish Strategic
-      if (!existingTemplates.some(t => t.language === 'Swedish' && t.type === 'strategic')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Strategiskt Svar',
-          prompt: 'Skriv ett strategiskt svar med fokus på affärsvärde och samarbetsmöjligheter.',
-          language: 'Swedish',
-          type: 'strategic',
-          content: null
-        });
-      }
-      
-      // Check Swedish Grammar
-      if (!existingTemplates.some(t => t.language === 'Swedish' && t.type === 'grammar')) {
-        missingTemplates.push({
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Grammatikkontroll',
-          prompt: 'Korrekturläs och förbättra denna text. Åtgärda grammatiska fel, stavfel och stilistiska problem samtidigt som du behåller betydelsen.',
-          language: 'Swedish',
-          type: 'grammar',
-          content: null
-        });
-      }
-      
-      console.log("Missing templates to create:", missingTemplates);
-      
-      if (missingTemplates.length > 0) {
-        const { data, error } = await supabase
-          .from('email_responses')
-          .insert(missingTemplates)
-          .select();
-          
-        if (error) throw error;
-        
-        console.log("Created new templates:", data);
-        
-        // Fetch all templates again to make sure we have the latest data
-        const { data: allTemplates, error: fetchError } = await supabase
-          .from('email_responses')
-          .select('*')
-          .eq('workspace_id', workspaceId);
-        
-        if (fetchError) throw fetchError;
-        if (allTemplates) {
-          console.log("All templates after recreation:", allTemplates);
-          setResponseTemplates(allTemplates);
-        } else {
-          // Just use the merged templates as fallback
-          const mergedTemplates = [...existingTemplates];
-          if (data) {
-            mergedTemplates.push(...data);
-          }
-          setResponseTemplates(mergedTemplates);
-        }
-      } else {
-        setResponseTemplates(existingTemplates);
-      }
-    } catch (error) {
-      console.error('Error recreating templates:', error);
-      toast.error('Failed to create missing templates');
-    }
-  };
 
-  const createDefaultTemplates = async () => {
-    try {
-      const defaultTemplates = [
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Professional Response',
-          prompt: 'Write a professional and detailed response to this email. Be concise but thorough.',
-          language: 'English',
-          type: 'professional',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Strategic Response',
-          prompt: 'Write a strategic response focusing on business value and partnership opportunities.',
-          language: 'English',
-          type: 'strategic',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Grammar Check',
-          prompt: 'Proofread and improve this text. Fix grammar, spelling, and style issues while preserving the meaning.',
-          language: 'English',
-          type: 'grammar',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Respuesta Profesional',
-          prompt: 'Escribe una respuesta profesional y detallada a este correo electrónico. Sé conciso pero minucioso.',
-          language: 'Spanish',
-          type: 'professional',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Respuesta Estratégica',
-          prompt: 'Escribe una respuesta estratégica enfocada en el valor comercial y las oportunidades de colaboración.',
-          language: 'Spanish',
-          type: 'strategic',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Revisión Gramatical',
-          prompt: 'Revisa y mejora este texto. Corrige errores gramaticales, ortográficos y estilísticos manteniendo el significado original.',
-          language: 'Spanish',
-          type: 'grammar',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Professionellt Svar',
-          prompt: 'Skriv ett professionellt och detaljerat svar på detta e-postmeddelande. Var koncis men grundlig.',
-          language: 'Swedish',
-          type: 'professional',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Strategiskt Svar',
-          prompt: 'Skriv ett strategiskt svar med fokus på affärsvärde och samarbetsmöjligheter.',
-          language: 'Swedish',
-          type: 'strategic',
-          content: null
-        },
-        {
-          user_id: userId,
-          workspace_id: workspaceId,
-          name: 'Grammatikkontroll',
-          prompt: 'Korrekturläs och förbättra denna text. Åtgärda grammatiska fel, stavfel och stilistiska problem samtidigt som du behåller betydelsen.',
-          language: 'Swedish',
-          type: 'grammar',
-          content: null
-        }
-      ];
-      
-      const { error } = await supabase
-        .from('email_responses')
-        .insert(defaultTemplates);
-        
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error creating default templates:', error);
-      toast.error('Failed to create response templates');
-    }
-  };
+
 
   const generateAIResponse = async () => {
-    // Debug the selected values
-    console.log('Selected type:', selectedResponseType, 'Selected language:', selectedLanguage);
-    console.log('Selected template:', selectedTemplate);
-    console.log('All available templates:', responseTemplates);
-    console.log('Additional context:', additionalContext);
-    
-    // Check if template is found
     if (!email) {
       toast.error('No email loaded');
       return;
     }
     
     if (!selectedResponseType) {
-      toast.error('Please select a response type');
+      toast.error('Please select a tone');
       return;
     }
     
@@ -563,100 +248,11 @@ ${session?.user?.name || ''}
       return;
     }
     
-    // Normalize type to lowercase for case-insensitive matching
-    const normalizedType = selectedResponseType.toLowerCase();
-    
-    // Convert display language to database language
-    const databaseLanguageMap: Record<string, string> = {
-      'English': 'English',
-      'Spanish': 'Spanish',
-      'Svenska': 'Swedish'
-    };
-    
-    const dbLanguage = databaseLanguageMap[selectedLanguage] || selectedLanguage;
-    
-    // Log what we're searching for
-    console.log(`Looking for template with type=${normalizedType} and language=${dbLanguage}`);
-    
-    // Log all templates with their types and languages
-    responseTemplates.forEach(t => {
-      console.log(`Template: ${t.name}, type=${t.type}, language=${t.language}`);
-    });
-    
-    // Look up the template directly with case-insensitive matching for type
-    const template = responseTemplates.find(t => 
-      t.type.toLowerCase() === normalizedType && 
-      t.language.toLowerCase() === dbLanguage.toLowerCase()
-    );
-    
-    if (!template) {
-      console.error('Template not found for:', normalizedType, dbLanguage);
-      
-      // Check if we have any template for this language at all
-      const anyTemplateForLanguage = responseTemplates.some(t => t.language.toLowerCase() === dbLanguage.toLowerCase());
-      if (!anyTemplateForLanguage) {
-        console.error(`No templates found for language: ${dbLanguage}`);
-        
-        // Try to recreate templates and try again
-        toast.loading('Recreating templates...');
-        try {
-          await createDefaultTemplates();
-          // Fetch templates again
-          const { data: newTemplates } = await supabase
-            .from('email_responses')
-            .select('*')
-            .eq('workspace_id', workspaceId);
-            
-          if (newTemplates && newTemplates.length > 0) {
-            setResponseTemplates(newTemplates);
-            // Try to find the template again
-            const refreshedTemplate = newTemplates.find(t => 
-              t.type.toLowerCase() === normalizedType && 
-              t.language.toLowerCase() === dbLanguage.toLowerCase()
-            );
-            
-            if (refreshedTemplate) {
-              toast.dismiss();
-              toast.success('Templates refreshed successfully');
-              setSelectedTemplate(refreshedTemplate);
-              // Continue with generation
-              // ... rest of the code
-            } else {
-              toast.dismiss();
-              toast.error(`No templates found for ${selectedLanguage} after refresh. Please try again.`);
-            }
-          } else {
-            toast.dismiss();
-            toast.error(`Failed to recreate templates for ${selectedLanguage}. Please try refreshing the page.`);
-          }
-        } catch (error) {
-          toast.dismiss();
-          toast.error(`Failed to recreate templates. Please try again.`);
-          console.error('Error recreating templates:', error);
-        }
-        return;
-      } else {
-        // Check if we have this type in any language
-        const templateWithTypeInOtherLanguage = responseTemplates.find(t => t.type.toLowerCase() === normalizedType);
-        if (templateWithTypeInOtherLanguage) {
-          console.error(`Found template with type ${normalizedType} but in language ${templateWithTypeInOtherLanguage.language}, not ${dbLanguage}`);
-        }
-        
-        toast.error(`No template found for ${selectedResponseType} in ${selectedLanguage}`);
-      }
-      
-      return;
-    }
-    
-    console.log("Found template:", template);
-    
-    // Use the found template instead of selectedTemplate
-    setSelectedTemplate(template);
-    
     setIsGenerating(true);
     setErrorMessage(null);
+    
     try {
-      // First check if we need to fetch the workspace OpenAI API key
+      // Get workspace API key
       const { data: settings, error: settingsError } = await supabase
         .from('workspace_settings')
         .select('openai_api_key')
@@ -673,11 +269,26 @@ ${session?.user?.name || ''}
         throw new Error('OpenAI API key not found. Please add one in workspace settings.');
       }
       
-      // Truncate email body if it's too long to prevent token limit issues
-      const truncatedBody = truncateEmailBody(emailBody);
-      
-      // Prepare the prompt with language instructions
-      // Map display language name to actual language for AI
+      // Define tone-based prompts
+      const tonePrompts = {
+        professional: {
+          English: 'Write a professional, formal response. Be concise, respectful, and clear.',
+          Spanish: 'Escribe una respuesta profesional y formal. Sé conciso, respetuoso y claro.',
+          Swedish: 'Skriv ett professionellt, formellt svar. Var koncis, respektfull och tydlig.'
+        },
+        casual: {
+          English: 'Write a relaxed, conversational response. Be friendly and approachable.',
+          Spanish: 'Escribe una respuesta relajada y conversacional. Sé amigable y accesible.',
+          Swedish: 'Skriv ett avslappnat, konversationellt svar. Var vänlig och tillgänglig.'
+        },
+        friendly: {
+          English: 'Write a warm, personal response. Be enthusiastic and positive.',
+          Spanish: 'Escribe una respuesta cálida y personal. Sé entusiasta y positivo.',
+          Swedish: 'Skriv ett varmt, personligt svar. Var entusiastisk och positiv.'
+        }
+      };
+
+      // Map display language to actual language for AI
       const languageMap: Record<string, string> = {
         'English': 'English',
         'Spanish': 'Spanish',
@@ -685,6 +296,11 @@ ${session?.user?.name || ''}
       };
       
       const aiLanguage = languageMap[selectedLanguage] || selectedLanguage;
+      const tonePrompt = tonePrompts[selectedResponseType as keyof typeof tonePrompts]?.[aiLanguage as keyof typeof tonePrompts.professional];
+      
+      if (!tonePrompt) {
+        throw new Error(`Unsupported tone/language combination: ${selectedResponseType}/${selectedLanguage}`);
+      }
       
       // Special handling for Swedish to ensure it generates proper Swedish text
       let languageInstruction = `Write the response in ${aiLanguage}. `;
@@ -695,36 +311,21 @@ ${session?.user?.name || ''}
       // Add instruction to include signature
       const signatureInstruction = `End your email with this signature: "${signature}". Do not modify the signature.`;
       
-      // Check if user has entered text to rewrite
-      const userText = responseText.trim();
-      let prompt;
+      // Truncate email body if it's too long to prevent token limit issues
+      const truncatedBody = truncateEmailBody(emailBody);
       
-      if (userText) {
-        // User has entered text they want rewritten in the specified style
-        prompt = `${languageInstruction}This is a sample email that I want to rewrite in a ${template.type.toLowerCase()} tone/style.
+      // Create prompt
+      const prompt = `${languageInstruction}${tonePrompt}
 
-IMPORTANT: Write the email in a completely natural human voice. Avoid any AI-sounding language, formulaic phrases, or overly formal structures. Write as a real person would write an email to a colleague or business partner.
+IMPORTANT: Write the email in a completely natural human voice. Avoid any AI-sounding language, formulaic phrases, or overly formal structures. Write as a real person would write an email to a colleague or business partner. Be concise and direct. Use natural transitions and conversational language.
 
-Analyze the content and create a fresh response that captures the same intent but with a ${template.type.toLowerCase()} voice. Be concise and direct. Use natural transitions and conversational language.
+Original Email:
+Subject: ${email.subject}
+From: ${email.from}
 
-${template.prompt}\n\n`;
-        prompt += `Here is the email to analyze and rewrite with a completely fresh perspective: 
-${userText}\n\n${signatureInstruction}`;
-      } else {
-        // Standard generation based on original email
-        prompt = `${languageInstruction}${template.prompt}\n\nIMPORTANT: Write the email in a completely natural human voice. Avoid any AI-sounding language, formulaic phrases, or overly formal structures. Write as a real person would write an email to a colleague or business partner. Be concise and direct. Use natural transitions and conversational language.\n\n`;
-        
-        // Add additional context if provided
-        if (additionalContext.trim()) {
-          prompt += `Additional context: ${additionalContext.trim()}\n\n`;
-        }
-        
-        // Add the original email
-        prompt += `Original Email:\nSubject: ${email.subject}\nFrom: ${email.from}\n\n${truncatedBody}\n\n${signatureInstruction}`;
-      }
-      
-      console.log('Using template:', template);
-      console.log('Prompt with language:', languageInstruction);
+${truncatedBody}
+
+${signatureInstruction}`;
       
       try {
         // Call OpenAI API
@@ -732,6 +333,7 @@ ${userText}\n\n${signatureInstruction}`;
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
           },
           body: JSON.stringify({
             prompt,
@@ -757,18 +359,7 @@ ${userText}\n\n${signatureInstruction}`;
         setResponseText(responseData.text);
         setIsEditing(true); // Enable editing after generation
         
-        // Save the generated response to the template
-        const { error: updateError } = await supabase
-          .from('email_responses')
-          .update({ content: responseData.text, updated_at: new Date().toISOString() })
-          .eq('id', template.id);
-          
-        if (updateError) {
-          console.error('Error saving template:', updateError);
-          toast.error('Generated response but failed to save template');
-        } else {
-          toast.success('Response generated successfully');
-        }
+        toast.success('Response generated successfully');
       } catch (apiError: any) {
         console.error('API call error:', apiError);
         throw new Error(`API error: ${apiError.message}`);
@@ -777,6 +368,155 @@ ${userText}\n\n${signatureInstruction}`;
       console.error('Error generating AI response:', error);
       toast.error(error.message || 'Failed to generate AI response');
       setErrorMessage(error.message || 'Failed to generate AI response');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Function to rewrite user's response with selected tone
+  const rewriteUserResponse = async () => {
+    if (!responseText.trim()) {
+      toast.error('Please write a response first');
+      return;
+    }
+    
+    if (!selectedResponseType) {
+      toast.error('Please select a tone');
+      return;
+    }
+    
+    if (!selectedLanguage) {
+      toast.error('Please select a language');
+      return;
+    }
+
+    setIsGenerating(true);
+    setErrorMessage(null);
+    
+    try {
+      // Get workspace API key
+      const { data: settings, error: settingsError } = await supabase
+        .from('workspace_settings')
+        .select('openai_api_key')
+        .eq('workspace_id', workspaceId)
+        .single();
+      
+      if (settingsError) {
+        console.error('Settings error:', settingsError);
+        throw new Error(`Could not fetch API key: ${settingsError.message}`);
+      }
+      
+      const apiKey = settings?.openai_api_key;
+      if (!apiKey) {
+        throw new Error('OpenAI API key not found. Please add one in workspace settings.');
+      }
+
+      // Map display language to actual language for AI
+      const languageMap: Record<string, string> = {
+        'English': 'English',
+        'Spanish': 'Spanish',
+        'Svenska': 'Swedish'
+      };
+      
+      const aiLanguage = languageMap[selectedLanguage] || selectedLanguage;
+      
+      // Create language instruction
+      let languageInstruction = `Rewrite this email response in ${aiLanguage}. `;
+      if (aiLanguage === 'Swedish') {
+        languageInstruction = `Rewrite this email response in Swedish (Svenska). The entire response must be in Swedish language. `;
+      }
+      
+      // Create tone-specific instructions
+      let toneInstruction = '';
+      switch (selectedResponseType.toLowerCase()) {
+        case 'professional':
+          toneInstruction = aiLanguage === 'Swedish' ? 
+            'Använd en professionell, formell och respektfull ton. Var tydlig och koncis.' : 
+            aiLanguage === 'Spanish' ? 
+            'Usa un tono profesional, formal y respetuoso. Sé claro y conciso.' :
+            'Use a professional, formal, and respectful tone. Be clear and concise.';
+          break;
+        case 'casual':
+          toneInstruction = aiLanguage === 'Swedish' ? 
+            'Använd en avslappnad, konversationsartad och vänlig ton. Var naturlig och lättillgänglig.' : 
+            aiLanguage === 'Spanish' ? 
+            'Usa un tono relajado, conversacional y amigable. Sé natural y accesible.' :
+            'Use a relaxed, conversational, and friendly tone. Be natural and approachable.';
+          break;
+        case 'friendly':
+          toneInstruction = aiLanguage === 'Swedish' ? 
+            'Använd en varm, vänlig och personlig ton. Var entusiastisk och positiv.' : 
+            aiLanguage === 'Spanish' ? 
+            'Usa un tono cálido, amigable y personal. Sé entusiasta y positivo.' :
+            'Use a warm, friendly, and personal tone. Be enthusiastic and positive.';
+          break;
+        default:
+          toneInstruction = aiLanguage === 'Swedish' ? 
+            'Förbättra tonen och gör den mer naturlig.' : 
+            aiLanguage === 'Spanish' ? 
+            'Mejora el tono y hazlo más natural.' :
+            'Improve the tone and make it more natural.';
+      }
+      
+      // Create simple prompt to rewrite the text with the selected tone
+      const prompt = `${languageInstruction}${toneInstruction}
+
+INSTRUCTIONS:
+1. Keep the exact same meaning and core message
+2. Rewrite it with the specified tone while preserving all important details
+3. Fix any grammar, spelling, or punctuation errors
+4. Make it sound natural and human
+5. Don't add new information or change the intent
+6. Keep it concise and appropriate for email communication
+
+Original email response:
+"${responseText.trim()}"
+
+Please rewrite this email response with the specified tone and language.
+
+End with this signature: "${signature}"`;
+
+      console.log('Rewriting user response with prompt:', prompt);
+      
+      // Call OpenAI API
+      const response = await fetch('/api/openai/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          prompt,
+          apiKey,
+          model: 'gpt-3.5-turbo',
+          max_tokens: 800
+        }),
+      });
+      
+      const responseData = await response.json();
+      
+      if (!response.ok) {
+        console.error('API error response:', responseData);
+        throw new Error(responseData.error || `API error: ${response.status}`);
+      }
+      
+      if (!responseData.text) {
+        throw new Error('No response text received from API');
+      }
+      
+      // Store original text for potential undo
+      setOriginalText(responseText);
+      
+      // Update response text with rewritten version
+      setResponseText(responseData.text);
+      setIsEditing(true);
+      
+      toast.success(`Response rewritten in ${selectedResponseType.toLowerCase()} tone`);
+      
+    } catch (error: any) {
+      console.error('Error rewriting response:', error);
+      toast.error(error.message || 'Failed to rewrite response');
+      setErrorMessage(error.message || 'Failed to rewrite response');
     } finally {
       setIsGenerating(false);
     }
@@ -801,6 +541,11 @@ ${userText}\n\n${signatureInstruction}`;
       return;
     }
     
+    if (!session?.access_token) {
+      toast.error('Please sign in to send emails');
+      return;
+    }
+    
     setIsSending(true);
     setErrorMessage(null);
     try {
@@ -808,6 +553,7 @@ ${userText}\n\n${signatureInstruction}`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           threadId: email.threadId,
@@ -831,8 +577,32 @@ ${userText}\n\n${signatureInstruction}`;
           );
           
           if (confirmReconnect) {
-            // Force a new consent screen with prompt=consent
-            window.open('/api/auth/signin/google?callbackUrl=/gmail-hub&prompt=consent', '_blank');
+            // Use the Supabase OAuth flow for Gmail authentication
+            try {
+              // Create state parameter with user ID and services
+              const stateData = {
+                userId: userId,
+                services: ['google-gmail'],
+                returnTo: '/gmail-hub'
+              };
+              const state = btoa(JSON.stringify(stateData));
+              
+              // Define Gmail-specific scopes - ONLY the broad scope to avoid metadata conflicts
+              const gmailScopes = [
+                'https://mail.google.com/' // ONLY this scope - it includes everything we need without metadata restrictions
+                // REMOVED: All other Gmail scopes because they trigger Google to add gmail.metadata automatically
+              ];
+              
+              // Redirect to OAuth with Google for Gmail scopes
+              const scopeParam = encodeURIComponent(gmailScopes.join(' '));
+              const authUrl = `/api/oauth/google?scopes=${scopeParam}&state=${state}&prompt=consent`;
+              
+              window.open(authUrl, '_blank');
+            } catch (error) {
+              console.error("Gmail reconnection error:", error);
+              // Fallback to current page redirect if popup fails
+              window.location.href = '/settings';
+            }
           }
           
           throw new Error('Insufficient Permission: Please reconnect your Gmail account');
@@ -849,33 +619,6 @@ ${userText}\n\n${signatureInstruction}`;
       setErrorMessage(error.message || 'Failed to send email');
     } finally {
       setIsSending(false);
-    }
-  };
-
-  const saveResponseTemplate = async () => {
-    if (!selectedTemplate || !responseText.trim()) {
-      toast.error('Please generate a response first');
-      return;
-    }
-    
-    setIsSaving(true);
-    try {
-      const { error } = await supabase
-        .from('email_responses')
-        .update({ 
-          content: responseText, 
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedTemplate.id);
-        
-      if (error) throw error;
-      
-      toast.success('Response template saved');
-    } catch (error: any) {
-      console.error('Error saving template:', error);
-      toast.error(error.message || 'Failed to save template');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -911,14 +654,9 @@ ${userText}\n\n${signatureInstruction}`;
     
     setSelectedTemplate(template || null);
     
-    // If template has saved content, use it
-    if (template?.content) {
-      setResponseText(template.content);
-      setIsEditing(true);
-    } else {
-      setResponseText('');
-      setIsEditing(false);
-    }
+    // Don't load any saved content - user writes their own response
+    // setResponseText('');
+    // setIsEditing(false);
   };
 
   // Toggle edit mode
@@ -1125,6 +863,7 @@ ${userText}\n\n${signatureInstruction}`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
         },
         body: JSON.stringify({
           prompt,
@@ -1368,95 +1107,147 @@ ${userText}\n\n${signatureInstruction}`;
                 </div>
                 
                 <TabsContent value="manual" className="mt-1">
-                  <div className="relative">
-                    <Textarea 
-                      placeholder="Type your response here..."
-                      className="w-full bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800 font-sans resize-none h-[200px]"
-                      value={responseText}
-                      onChange={(e) => setResponseText(e.target.value)}
-                                             onFocus={() => {
-                         const replyArea = document.querySelector('.email-reply-area');
-                         if (replyArea) {
-                           (replyArea as HTMLElement).style.height = '300px';
-                           replyArea.setAttribute('data-expanded', 'true');
-                         }
-                       }}
-                    />
-                    <div className="absolute top-2 right-2 flex items-center gap-2">
-                      <Button
-                        onClick={openGrammarCheck}
-                        disabled={!responseText.trim()}
-                        className="h-7 px-2 text-xs bg-background hover:bg-gray-200 dark:bg-muted text-foreground"
-                        title="Proofread and correct your text"
-                      >
-                        Improve Text
-                      </Button>
+                  <div className="space-y-3">
+                    {/* Step 1: Write your response */}
+                    <div className="relative">
+                      <Textarea 
+                        placeholder="Write your email response here in your own words..."
+                        className="w-full bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800 font-sans resize-none h-[180px]"
+                        value={responseText}
+                        onChange={(e) => setResponseText(e.target.value)}
+                        onFocus={() => {
+                          const replyArea = document.querySelector('.email-reply-area');
+                          if (replyArea) {
+                            (replyArea as HTMLElement).style.height = '300px';
+                            replyArea.setAttribute('data-expanded', 'true');
+                          }
+                        }}
+                      />
                     </div>
+                    
+                    {/* Step 2 & 3: Choose tone and rewrite */}
+                    {responseText.trim() && (
+                      <div className="border-t border-border/30 pt-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs text-muted-foreground font-medium">Polish your response:</span>
+                          
+                          <Select onValueChange={handleResponseTypeChange} value={selectedResponseType}>
+                            <SelectTrigger className="h-8 w-32 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
+                              <SelectValue placeholder="Tone" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
+                              <SelectItem value="professional">Professional</SelectItem>
+                              <SelectItem value="casual">Casual</SelectItem>
+                              <SelectItem value="friendly">Friendly</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          
+                          <Select onValueChange={handleLanguageChange} value={selectedLanguage}>
+                            <SelectTrigger className="h-8 w-28 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
+                              <SelectValue placeholder="Language" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
+                              <SelectItem value="English">English</SelectItem>
+                              <SelectItem value="Spanish">Spanish</SelectItem>
+                              <SelectItem value="Swedish">Svenska</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          
+                          <Button 
+                            onClick={rewriteUserResponse}
+                            disabled={isGenerating || !selectedResponseType || !selectedLanguage || !responseText.trim()}
+                            className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                          >
+                            {isGenerating ? (
+                              <>
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                Rewriting...
+                              </>
+                            ) : (
+                              <>
+                                <Wand2 className="h-3 w-3 mr-1" />
+                                Rewrite
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                        
+                        <div className="text-xs text-muted-foreground">
+                          I'll rewrite your response using a {selectedResponseType || 'selected'} tone while keeping your original intent.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
                 
                 <TabsContent value="ai" className="mt-1">
-                  <div className="flex gap-2 mb-2">
-                    <Select onValueChange={handleResponseTypeChange} value={selectedResponseType}>
-                      <SelectTrigger className="h-8 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
-                        <SelectValue placeholder="Response Type" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
-                        <SelectItem value="professional">Professional</SelectItem>
-                        <SelectItem value="strategic">Strategic</SelectItem>
-                        <SelectItem value="grammar">Grammar Check</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-3">
+                    <div className="text-xs text-muted-foreground">
+                      Generate a fresh response from scratch based on the original email:
+                    </div>
                     
-                    <Select onValueChange={handleLanguageChange} value={selectedLanguage}>
-                      <SelectTrigger className="h-8 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
-                        <SelectValue placeholder="Language" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
-                        <SelectItem value="English">English</SelectItem>
-                        <SelectItem value="Spanish">Spanish</SelectItem>
-                        <SelectItem value="Swedish">Svenska</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    
-                    <Button 
-                      onClick={generateAIResponse}
-                      disabled={isGenerating || !selectedResponseType || !selectedLanguage}
-                      className="h-8 bg-background hover:bg-gray-200 dark:bg-muted text-foreground text-xs"
-                    >
-                      {isGenerating ? (
-                        <>
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          Generating...
-                        </>
-                      ) : (
-                        <>
-                          <MessageSquare className="h-3 w-3 mr-1" />
-                          Generate
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  
-                  <Textarea 
-                    placeholder="Paste a sample email here that you want to transform into a new email with the selected style. The AI will understand the context and create a fresh response that matches your intent."
-                    className="w-full bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800 font-sans resize-none h-[140px]"
-                    value={responseText}
-                    onChange={(e) => setResponseText(e.target.value)}
-                    readOnly={false}
-                  />
-                  
-                  {responseText && (
-                    <div className="flex justify-end mt-2">
+                    <div className="flex gap-2 mb-2">
+                      <Select onValueChange={handleResponseTypeChange} value={selectedResponseType}>
+                        <SelectTrigger className="h-8 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
+                          <SelectValue placeholder="Response Type" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
+                          <SelectItem value="professional">Professional</SelectItem>
+                          <SelectItem value="casual">Casual</SelectItem>
+                          <SelectItem value="friendly">Friendly</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      <Select onValueChange={handleLanguageChange} value={selectedLanguage}>
+                        <SelectTrigger className="h-8 text-xs bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800">
+                          <SelectValue placeholder="Language" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background border-border text-foreground z-[11000]" position="popper">
+                          <SelectItem value="English">English</SelectItem>
+                          <SelectItem value="Spanish">Spanish</SelectItem>
+                          <SelectItem value="Swedish">Svenska</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
                       <Button 
-                        onClick={toggleEditMode}
-                        className="h-6 px-2 text-xs bg-background/80 hover:bg-gray-200 dark:bg-muted"
-                        title={isEditing ? "Lock editing" : "Edit response"}
+                        onClick={generateAIResponse}
+                        disabled={isGenerating || !selectedResponseType || !selectedLanguage}
+                        className="h-8 bg-background hover:bg-gray-200 dark:bg-muted text-foreground text-xs"
                       >
-                        {isEditing ? "Lock" : "Edit"}
+                        {isGenerating ? (
+                          <>
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <MessageSquare className="h-3 w-3 mr-1" />
+                            Generate
+                          </>
+                        )}
                       </Button>
                     </div>
-                  )}
+                    
+                    <Textarea 
+                      placeholder="Generated response will appear here..."
+                      className="w-full bg-transparent border-border/50 text-foreground focus:border-border dark:border-border focus:ring-neutral-800 font-sans resize-none h-[140px]"
+                      value={responseText}
+                      onChange={(e) => setResponseText(e.target.value)}
+                      readOnly={false}
+                    />
+                    
+                    {responseText && (
+                      <div className="flex justify-end mt-2">
+                        <Button 
+                          onClick={toggleEditMode}
+                          className="h-6 px-2 text-xs bg-background/80 hover:bg-gray-200 dark:bg-muted"
+                          title={isEditing ? "Lock editing" : "Edit response"}
+                        >
+                          {isEditing ? "Lock" : "Edit"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </TabsContent>
               </Tabs>
             </div>

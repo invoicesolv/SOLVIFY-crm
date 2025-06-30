@@ -10,24 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface ChecklistItem {
-  id: number;
-  text: string;
-  done: boolean;
-  deadline?: string;
-  assigned_to?: string;
-}
-
-interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  checklist: ChecklistItem[];
-  progress: number;
-  assigned_to?: string;
-  deadline?: string;
-  project_id?: string;
-}
+import type { ChecklistItem, Task } from "@/types/project";
 
 interface TaskExpandedProps {
   task: Task;

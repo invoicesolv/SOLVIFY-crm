@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Folder, FolderOpen, Plus, Tag } from "lucide-react";
-import { supabase } from "@/lib/supabase";
+// Removed direct supabase import - using API endpoints instead
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,14 +47,20 @@ export function ProjectFolderSidebar({
     
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("project_folders")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("name", { ascending: true });
-
-      if (error) throw error;
-      setFolders(data || []);
+      
+      // Use API endpoint instead of direct Supabase call
+      const response = await fetch(`/api/project-folders?workspace_id=${workspaceId}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch project folders');
+      }
+      
+      const data = await response.json();
+      setFolders(data.folders || []);
       
       // If we have displayedProjects, use them for counting (more accurate)
       if (displayedProjects && displayedProjects.length > 0) {
@@ -84,79 +90,58 @@ export function ProjectFolderSidebar({
         return;
       }
       
-      // Fallback to database query if no displayedProjects provided
+      // Fallback to API endpoint query if no displayedProjects provided
+      console.log('[ProjectFolderSidebar] No displayedProjects provided, fetching project counts via API');
       
-      // Get all projects from ALL workspaces the user has access to (not just current workspace)
-      // First get all workspace IDs the user has access to
-      const { data: userWorkspaces, error: workspaceError } = await supabase
-        .from('team_members')
-        .select('workspace_id')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id);
-      
-      if (workspaceError) {
-        console.warn('Could not fetch user workspaces, falling back to current workspace only');
-        // Fallback to current workspace only
-        const { data: workspaceProjects, error: countsError } = await supabase
-          .from('projects')
-          .select('folder_id')
-          .eq('workspace_id', workspaceId);
+      try {
+        // Use the projects API endpoint to get all projects with folder information
+        const projectsResponse = await fetch('/api/projects', {
+          method: 'GET',
+          credentials: 'include',
+        });
         
-        if (countsError) throw countsError;
+        if (!projectsResponse.ok) {
+          throw new Error('Failed to fetch projects for counting');
+        }
         
-        // Calculate counts from current workspace only
+        const projectsData = await projectsResponse.json();
+        
+        if (!projectsData.success || !projectsData.projects) {
+          throw new Error('Invalid projects response');
+        }
+        
+        // Calculate counts manually from the API results
         const countMap: Record<string, number> = {};
-        let totalProjects = workspaceProjects?.length || 0;
+        let totalProjects = projectsData.projects.length;
         let nullCount = 0;
         
-        workspaceProjects?.forEach(project => {
-          if (project.folder_id === null) {
+        // Count projects by folder
+        projectsData.projects.forEach((project: any) => {
+          if (project.folder_id === null || project.folder_id === undefined) {
             nullCount++;
           } else {
             countMap[project.folder_id] = (countMap[project.folder_id] || 0) + 1;
           }
         });
         
+        console.log('[ProjectFolderSidebar] Project counts (from API):', {
+          totalProjects,
+          nullCount,
+          countMap,
+          projectsCount: projectsData.projects.length
+        });
+        
         setFolderCounts(countMap);
         setUnassignedCount(nullCount);
         setTotalCount(totalProjects);
-        return;
+        
+      } catch (apiError) {
+        console.error('[ProjectFolderSidebar] Failed to fetch project counts via API:', apiError);
+        // Set empty counts if API fails
+        setFolderCounts({});
+        setUnassignedCount(0);
+        setTotalCount(0);
       }
-      
-      const workspaceIds = userWorkspaces?.map(w => w.workspace_id) || [workspaceId];
-      
-      // Get all projects from all user's workspaces
-      const { data: allProjects, error: countsError } = await supabase
-        .from('projects')
-        .select('folder_id')
-        .in('workspace_id', workspaceIds);
-      
-      if (countsError) throw countsError;
-      
-      // Calculate counts manually from the results
-      const countMap: Record<string, number> = {};
-      let totalProjects = allProjects?.length || 0;
-      let nullCount = 0;
-      
-      // Count projects by folder
-      allProjects?.forEach(project => {
-        if (project.folder_id === null) {
-          nullCount++;
-        } else {
-          countMap[project.folder_id] = (countMap[project.folder_id] || 0) + 1;
-        }
-      });
-      
-      console.log('[ProjectFolderSidebar] Project counts (all workspaces):', {
-        totalProjects,
-        nullCount,
-        countMap,
-        allProjects,
-        workspaceIds
-      });
-      
-      setFolderCounts(countMap);
-      setUnassignedCount(nullCount);
-      setTotalCount(totalProjects);
       
     } catch (error) {
       console.error("Error loading project folders:", error);

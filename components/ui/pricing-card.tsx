@@ -4,7 +4,7 @@ import { Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useState } from "react"
 import { loadStripe } from "@stripe/stripe-js"
-import { useSession } from 'next-auth/react'
+import { useAuth } from '@/lib/auth-client';
 
 // Initialize Stripe
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
@@ -37,7 +37,7 @@ interface PricingCardProps {
 }
 
 export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
-  const { data: session, status } = useSession()
+  const { user, session } = useAuth()
   const [loading, setLoading] = useState(false)
   const isMonthly = paymentFrequency?.toLowerCase().includes("month") || paymentFrequency?.toLowerCase().includes("månad")
   const frequency = isMonthly ? "monthly" : "yearly"
@@ -58,9 +58,15 @@ export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
         return;
       }
 
-      if (status === "unauthenticated") {
+      if (!user) {
         // Redirect to register page with plan parameter instead of login
         window.location.href = `/register?plan=${tier.id}`;
+        return;
+      }
+
+      if (!session?.access_token) {
+        // Redirect to login if no valid session
+        window.location.href = `/login?plan=${tier.id}`;
         return;
       }
 
@@ -75,6 +81,7 @@ export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           priceId,
@@ -146,7 +153,7 @@ export function PricingCard({ tier, paymentFrequency }: PricingCardProps) {
         <div className="p-6">
           <button
             onClick={handleSubscribe}
-            disabled={loading || status === "loading"}
+            disabled={loading}
             className={cn(
               "w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors",
               tier.highlighted

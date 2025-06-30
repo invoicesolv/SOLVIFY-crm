@@ -10,8 +10,8 @@ export async function GET(request: NextRequest) {
 
   // Use development URL when in development mode
   const baseUrl = process.env.NODE_ENV === 'development' 
-    ? 'http://localhost:3000' 
-    : process.env.NEXTAUTH_URL;
+    ? process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'
+    : process.env.NEXT_PUBLIC_SITE_URL;
 
   // X (Twitter) App credentials - use OAuth 2.0 Client ID for OAuth flow
   const clientId = process.env.TWITTER_CLIENT_ID;

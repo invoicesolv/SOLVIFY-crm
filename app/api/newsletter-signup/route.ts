@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
 import { Resend } from 'resend';
+import { createClient } from '@supabase/supabase-js';
 
 // Initialize Resend email client with more robust error handling
 let resend: any = null;

@@ -1,36 +1,35 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getStripeInstance } from '@/lib/stripe';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
+import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 
-// Define the Session user type with expected properties
-interface SessionUser {
-  id?: string;
-  name?: string;
-  email?: string;
-  image?: string;
-}
+// Using Supabase authentication - no NextAuth types needed
 
-// Extend the Session type
-declare module "next-auth" {
-  interface Session {
-    user: SessionUser;
-    access_token: string;
-    refresh_token: string;
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
   }
+  
+  return createClient(supabaseUrl, supabaseKey);
 }
 
-export async function POST(req: Request) {
+// Using imported getUserFromToken from auth-utils
+
+export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { amount, currency = 'sek', plan } = await req.json();
+    const { amount, currency = 'sek', plan } = await request.json();
 
     if (!amount || amount <= 0) {
       return NextResponse.json(
@@ -47,9 +46,9 @@ export async function POST(req: Request) {
       currency,
       metadata: {
         plan,
-        userId: session.user.id || 'guest', // Provide a fallback for undefined
+        userId: user.id || 'guest', // Provide a fallback for undefined
       },
-      receipt_email: session.user.email || undefined,
+      receipt_email: user.email || undefined,
     });
 
     return NextResponse.json({

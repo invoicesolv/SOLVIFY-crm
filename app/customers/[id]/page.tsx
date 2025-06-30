@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Edit2, Trash2, AlertOctagon, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -41,7 +41,7 @@ interface CustomerDetails {
 
 export default function CustomerPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [customer, setCustomer] = useState<CustomerDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -54,7 +54,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
 
   // Define fetchCustomerDetails at component scope so it can be accessed by other functions
   const fetchCustomerDetails = async () => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
 
     try {
       setLoading(true);
@@ -122,8 +122,10 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
   };
 
   useEffect(() => {
-    fetchCustomerDetails();
-  }, [params.id, session]);
+    if (user?.id) {
+      fetchCustomerDetails();
+    }
+  }, [params.id, user?.id]);
 
   const handleEdit = () => {
     setEditForm({
@@ -133,7 +135,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
   };
 
   const handleSave = async () => {
-    if (!session?.user?.id || !customer) return;
+    if (!user?.id || !customer) return;
 
     try {
       const { error: updateError } = await supabase
@@ -142,7 +144,7 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
           name: editForm.name
         })
         .eq('id', customer.id)
-        .eq('user_id', session.user.id);
+        .eq('user_id', user.id);
 
       if (updateError) throw updateError;
 
@@ -165,14 +167,15 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
   };
 
   const confirmDelete = async () => {
-    if (!session?.user?.id || !customer) return;
+    if (!user?.id || !customer || !session?.access_token) return;
     
     setIsDeleting(true);
     try {
       const response = await fetch(`/api/customers/delete?id=${customer.id}`, {
         method: 'DELETE',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         }
       });
 
@@ -195,13 +198,14 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
 
   // Add function to fetch email from Fortnox
   const fetchEmailFromFortnox = async () => {
-    if (!customer?.CustomerNumber || !session?.user?.id) return;
+    if (!customer?.CustomerNumber || !user?.id || !session?.access_token) return;
     
     try {
       setIsUpdatingEmail(true);
       const response = await fetch(`/api/fortnox/customers/${customer.CustomerNumber}`, {
         headers: {
-          'user-id': session.user.id
+          'user-id': user.id,
+          'Authorization': `Bearer ${session.access_token}`,
         },
       });
       
@@ -230,14 +234,15 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
 
   // Add function to search by name and update the mapping
   const findCustomerByName = async () => {
-    if (!customer?.CustomerName || !session?.user?.id) return;
+    if (!customer?.CustomerName || !user?.id || !session?.access_token) return;
     
     try {
       setIsFindingByName(true);
       const encodedName = encodeURIComponent(customer.CustomerName);
       const response = await fetch(`/api/fortnox/customers/search?name=${encodedName}&id=${params.id}`, {
         headers: {
-          'user-id': session.user.id
+          'user-id': user.id,
+          'Authorization': `Bearer ${session.access_token}`,
         },
       });
       

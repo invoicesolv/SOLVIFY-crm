@@ -2,11 +2,11 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { Card } from '@/components/ui/card'
 import { BarChart, Users, DollarSign, ArrowUpRight, ArrowDownRight, Calendar, Clock, AlertCircle, Settings, X, Eye, EyeOff, Globe, Grid, TrendingUp, Inbox, LineChart, RefreshCw, CheckCircle, Square, CheckSquare, CreditCard, PieChart, Crown, HelpCircle, Search, Move } from 'lucide-react'
 import { MessageLoading } from '@/components/ui/message-loading'
-import { supabase } from '@/lib/supabase'
-import { useSession } from 'next-auth/react'
+import { supabaseClient as supabase } from '@/lib/supabase-client'
+import { useAuth } from '@/lib/auth-client';
 import { useSearchParams, useRouter } from "next/navigation";
 import { useDashboardStats } from '@/hooks/useDashboardStats';
-import { handleFetchError } from '@/lib/fetch-util'
+import { handleFetchError, authenticatedFetch } from '@/lib/fetch-util'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
@@ -17,7 +17,6 @@ import { GlowingEffect } from "@/components/ui/glowing-effect";
 import { RecentLeads } from "@/components/leads/RecentLeads";
 import { format, addDays, isToday, parseISO, differenceInDays } from 'date-fns';
 import { motion } from 'framer-motion';
-import { useConsistentUserId } from '@/hooks/useConsistentUserId';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -211,6 +210,9 @@ interface Sale {
   stage: string
   created_at: string
   updated_at: string
+  deal_type?: "one_time" | "retainer"
+  retainer_duration_months?: number
+  retainer_start_date?: string
 }
 
 interface EmailThread {
@@ -282,8 +284,7 @@ const CACHE_KEYS = {
 };
 
 export function Dashboard() {
-  const { data: session } = useSession()
-  const { consistentId: hookConsistentId, isLoading: isLoadingUserId } = useConsistentUserId();
+  const { user, session } = useAuth()
   const [consistentId, setConsistentId] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
@@ -400,21 +401,18 @@ export function Dashboard() {
   
   // Ensure we have a consistent user ID even if the hook fails
   useEffect(() => {
-    console.log('[Dashboard] Session status:', session ? 'active' : 'none');
-    console.log('[Dashboard] Hook consistentId:', hookConsistentId);
+    console.log('[Dashboard] Session status:', user ? 'active' : 'none');
     
-    if (hookConsistentId) {
-      setConsistentId(hookConsistentId);
-    } else if (session?.user?.id) {
+    if (user?.id) {
       // Fallback to using session ID directly
-      console.log('[Dashboard] Falling back to session user ID:', session.user.id);
-      setConsistentId(session.user.id);
-    } else if (!isLoadingUserId) {
+      console.log('[Dashboard] Falling back to session user ID:', user.id);
+      setConsistentId(user.id);
+    } else if (!loading) {
       // If we're not still loading but have no ID, don't use any workspace
       console.log('[Dashboard] No user ID available, not using any workspace');
       setActiveWorkspace(null); 
     }
-  }, [hookConsistentId, session, isLoadingUserId]);
+  }, [user, loading]);
   
   // Use our dashboard stats hook after activeWorkspace is set
   const { 
@@ -586,7 +584,11 @@ export function Dashboard() {
           try {
             console.log('[Dashboard] Loading workspaces for user ID:', consistentId);
         // Use the API endpoint instead of direct database query to avoid RLS issues
-        const response = await fetch('/api/workspace/leave');
+        const response = await fetch('/api/workspace/leave', {
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`
+          }
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch workspaces');
         }
@@ -643,11 +645,11 @@ export function Dashboard() {
       }
     }
 
-    // Only load workspaces if we're not still loading the user ID
-    if (!isLoadingUserId) {
-    loadWorkspaces();
+    // Load workspaces when we have a consistent user ID
+    if (consistentId) {
+      loadWorkspaces();
     }
-  }, [consistentId, isLoadingUserId, activeWorkspace]);
+  }, [consistentId]); // Removed activeWorkspace from dependencies to prevent infinite loops
 
   // Handle workspace selection
   const handleWorkspaceChange = (workspaceId: string) => {
@@ -814,20 +816,16 @@ export function Dashboard() {
         console.log('Dashboard already initialized in this session');
       setLoading(false);
     }
-    } else if (!isLoadingUserId) {
+    } else if (consistentId && !activeWorkspace) {
       setLoading(false);
     }
-  }, [consistentId, activeWorkspace, isLoadingUserId]);
+  }, [consistentId, activeWorkspace]);
 
   // Function to fetch data from various sources
   const fetchData = useCallback(async () => {
     if (!consistentId) {
-      console.error('No consistent user ID found');
+      console.log('No user ID found - user may not be logged in yet');
       setLoading(false);
-      setDebugInfo({
-        message: 'No valid user ID found. Please log in again or visit /debug/user-id.',
-        type: 'error'
-      });
       return;
     }
     
@@ -1119,6 +1117,7 @@ export function Dashboard() {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
           },
         });
         if (response.ok) {
@@ -1139,6 +1138,24 @@ export function Dashboard() {
             console.log('No emails returned from Gmail API');
             setEmails([]);
           }
+        } else if (response.status === 401) {
+          console.log('Gmail integration not configured, using mock data');
+          setEmails([
+            {
+              id: 'mock-1',
+              subject: 'Welcome to Vibe CRM',
+              from: 'Admin <admin@vibe.com>',
+              date: new Date().toISOString(),
+              unread: false
+            },
+            {
+              id: 'mock-2', 
+              subject: 'System Status Update',
+              from: 'System <system@vibe.com>',
+              date: new Date(Date.now() - 86400000).toISOString(),
+              unread: true
+            }
+          ]);
         } else {
           console.error('Failed to fetch emails from Gmail API:', response.status);
           setEmails([]);
@@ -1212,13 +1229,11 @@ export function Dashboard() {
         }
         
         const response = await fetch('/api/analytics/overview', {
-          method: 'POST',
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            workspaceId: activeWorkspace
-          })
+            'Authorization': `Bearer ${session?.access_token}`,
+          }
         });
         if (response.ok) {
           const data = await response.json();
@@ -1258,7 +1273,7 @@ export function Dashboard() {
       if (activeWorkspace) {
         try {
           console.log('Triggering stats recalculation for workspace:', activeWorkspace);
-          const recalcResponse = await fetch(`/api/cron/refresh-stats?workspaceId=${activeWorkspace}`);
+          const recalcResponse = await authenticatedFetch(`/api/cron/refresh-stats?workspaceId=${activeWorkspace}`, {}, session);
           
           if (!recalcResponse.ok) {
             console.warn('Stats recalculation may have failed, but continuing with refresh');
@@ -1317,7 +1332,7 @@ export function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, activeWorkspace, fetchData, setStats, toast]);
+  }, [refreshing, activeWorkspace, fetchData, setStats, toast, session]);
 
   // Function to force a manual refresh of dashboard data
   const forceRefresh = useCallback(async () => {
@@ -1399,7 +1414,7 @@ export function Dashboard() {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, activeWorkspace, fetchData, supabase, updateInvoices, toast]);
+  }, [refreshing, activeWorkspace, fetchData, supabase, updateInvoices, toast, session]);
 
   // Use effect for auto-refresh
   useEffect(() => {
@@ -1501,7 +1516,7 @@ export function Dashboard() {
 
   const getGreeting = () => {
     const hour = new Date().getHours()
-    const name = session?.user?.name || 'there' // Use session user's name or fallback to 'there'
+    const name = user?.user_metadata?.name || user?.email?.split('@')[0] || 'there' // Use user's name or email prefix or fallback to 'there'
     
     if (hour < 12) return `Good morning, ${name}`
     if (hour < 17) return `Good afternoon, ${name}`
@@ -1578,7 +1593,7 @@ export function Dashboard() {
   }
 
   const handleTaskComplete = async (taskId: string) => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       console.log('No user session found, cannot complete task');
       toast({
         title: "Authentication required",
@@ -1678,7 +1693,20 @@ export function Dashboard() {
 
   // Add function to calculate total pipeline sales
   const calculateTotalPipeline = (salesData: Sale[]) => {
-    return salesData.reduce((total, sale) => total + Number(sale.value), 0);
+    return salesData.reduce((total, sale) => {
+      // Handle retainer deals vs one-time deals
+      if (sale.deal_type === 'retainer' && sale.retainer_duration_months) {
+        return total + (Number(sale.value) * sale.retainer_duration_months);
+      }
+      return total + Number(sale.value);
+    }, 0);
+  };
+
+  // Calculate monthly recurring revenue for retainer deals
+  const calculateMonthlyRecurringRevenue = (salesData: Sale[]) => {
+    return salesData
+      .filter(sale => sale.deal_type === 'retainer' && sale.stage !== 'closed_lost')
+      .reduce((total, sale) => total + Number(sale.value), 0);
   };
 
   // Create state variables for top websites
@@ -1813,6 +1841,7 @@ export function Dashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
         },
         body: JSON.stringify({
           workspaceId: activeWorkspace,
@@ -1881,6 +1910,7 @@ export function Dashboard() {
             headers: {
               'Content-Type': 'application/json',
               'Cache-Control': 'no-cache',
+              'Authorization': `Bearer ${session?.access_token}`,
             },
             body: JSON.stringify({
               workspaceId: activeWorkspace,
@@ -2013,14 +2043,14 @@ export function Dashboard() {
   const fetchSearchConsoleData = async () => {
     console.log('[Dashboard] Starting Search Console data fetch...');
     
-    if (!session?.user?.id || !activeWorkspace) {
+    if (!user?.id || !activeWorkspace) {
       console.log('[Dashboard] No user session or workspace for Search Console data');
         return;
       }
       
     try {
       // Check for cached data first
-      const cacheKey = `search_console_dashboard_cache_${session.user.id}`;
+      const cacheKey = `search_console_dashboard_cache_${user.id}`;
       const now = Date.now();
       const cacheExpiry = 4 * 60 * 60 * 1000; // 4 hours cache
       
@@ -2030,7 +2060,7 @@ export function Dashboard() {
           const parsed = JSON.parse(cachedData);
           
           // Only use cache if not expired and from same user
-          if (parsed.expiresAt > now && parsed.user_id === session.user.id) {
+          if (parsed.expiresAt > now && parsed.user_id === user.id) {
             console.log('[Dashboard] Using cached Search Console data');
             setSearchConsoleData(parsed.searchData?.overview || null);
         return;
@@ -2047,7 +2077,7 @@ export function Dashboard() {
       const { data: userSettings } = await supabase
         .from('user_settings')
         .select('default_search_console_site')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .maybeSingle();
       
       // Default to a site if none found in settings
@@ -2058,6 +2088,7 @@ export function Dashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
         },
         body: JSON.stringify({
           startDate: '28days', // Using relative date format
@@ -2079,7 +2110,7 @@ export function Dashboard() {
             searchData: data.searchConsole,
             timestamp: now,
             expiresAt: now + cacheExpiry,
-            user_id: session.user.id
+            user_id: user.id
           }));
         } catch (setCacheError) {
           console.warn('[Dashboard] Error setting cache:', setCacheError);
@@ -2096,7 +2127,7 @@ export function Dashboard() {
 
   // Add an effect to fetch Search Console data separately on component mount
   useEffect(() => {
-    if (session?.user?.id && activeWorkspace) {
+    if (user?.id && activeWorkspace) {
       console.log('[Dashboard] Auto-loading Search Console data on mount');
       fetchSearchConsoleData();
       
@@ -2110,7 +2141,7 @@ export function Dashboard() {
         clearInterval(searchConsoleInterval);
       };
     }
-  }, [session?.user?.id, activeWorkspace]);
+  }, [user?.id, activeWorkspace]);
 
   // Add effect to track Search Console rendering
   useEffect(() => {
@@ -2174,23 +2205,16 @@ export function Dashboard() {
     return () => clearTimeout(fetchTimer);
   }, [activeWorkspace, fetchData]);
 
-  // Add debugging tools for user ID
+  // Simplified user ID logic - just use session user ID
   useEffect(() => {
-    console.log('[DEBUG] Session data:', session);
-    console.log('[DEBUG] Hook consistentId:', hookConsistentId);
-    
-    if (hookConsistentId) {
-      setConsistentId(hookConsistentId);
-    } else if (session?.user?.id) {
-      // Fallback to using session ID directly
-      console.log('[DEBUG] Falling back to session user ID:', session.user.id);
-      setConsistentId(session.user.id);
-    } else if (!isLoadingUserId) {
-      // Don't set a hardcoded ID - notify console this is an error condition
-      console.error('[DEBUG] Could not determine user ID - data may be limited');
+    if (user?.id) {
+      console.log('[DEBUG] Using session user ID:', user.id);
+      setConsistentId(user.id);
+    } else {
+      console.log('[DEBUG] No user session found');
       setConsistentId(null);
     }
-  }, [hookConsistentId, session, isLoadingUserId]);
+  }, [user]);
 
   // Fetch tasks with workspace filtering for security
   const fetchUrgentTasks = useCallback(async () => {
@@ -2694,7 +2718,7 @@ export function Dashboard() {
                           domain.status === 'active' ? 'bg-green-500/20 text-green-400' :
                           domain.status === 'expiring' ? 'bg-yellow-500/20 text-yellow-400' :
                           domain.status === 'expired' ? 'bg-red-500/20 text-red-400' :
-                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                          'bg-neutral-500/20 text-muted-foreground'
                         }`}>
                           {domain.status || 'pending'}
                         </div>
@@ -2726,7 +2750,7 @@ export function Dashboard() {
                           lead.status === 'contacted' ? 'bg-yellow-500/20 text-yellow-400' :
                           lead.status === 'qualified' ? 'bg-green-500/20 text-green-400' :
                           lead.status === 'lost' ? 'bg-red-500/20 text-red-400' :
-                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                          'bg-neutral-500/20 text-muted-foreground'
                         }`}>
                           {lead.status || 'new'}
                         </div>
@@ -2788,7 +2812,7 @@ export function Dashboard() {
                     emails.map((email) => (
                       <div key={email.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
                         <div className="flex-1 overflow-hidden">
-                          <p className={`text-sm font-medium ${email.unread ? 'text-foreground' : 'text-foreground text-muted-foreground'}`}>
+                          <p className={`text-sm font-medium ${email.unread ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {email.subject.length > 30 ? email.subject.substring(0, 30) + '...' : email.subject}
                           </p>
                           <p className="text-xs text-muted-foreground truncate">{email.from}</p>
@@ -3232,7 +3256,7 @@ export function Dashboard() {
                           domain.status === 'active' ? 'bg-green-500/20 text-green-400' :
                           domain.status === 'expiring' ? 'bg-yellow-500/20 text-yellow-400' :
                           domain.status === 'expired' ? 'bg-red-500/20 text-red-400' :
-                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                          'bg-neutral-500/20 text-muted-foreground'
                         }`}>
                           {domain.status || 'pending'}
                         </div>
@@ -3268,7 +3292,7 @@ export function Dashboard() {
                           lead.status === 'contacted' ? 'bg-yellow-500/20 text-yellow-400' :
                           lead.status === 'qualified' ? 'bg-green-500/20 text-green-400' :
                           lead.status === 'lost' ? 'bg-red-500/20 text-red-400' :
-                          'bg-neutral-500/20 text-foreground text-muted-foreground'
+                          'bg-neutral-500/20 text-muted-foreground'
                         }`}>
                           {lead.status || 'new'}
                         </div>
@@ -3335,7 +3359,7 @@ export function Dashboard() {
                     emails.map((email) => (
                       <div key={email.id} className="flex justify-between items-center p-2 rounded-md hover:bg-muted/50">
                         <div className="flex-1 overflow-hidden">
-                          <p className={`text-sm font-medium ${email.unread ? 'text-foreground' : 'text-foreground text-muted-foreground'}`}>
+                          <p className={`text-sm font-medium ${email.unread ? 'text-foreground' : 'text-muted-foreground'}`}>
                             {email.subject.length > 30 ? email.subject.substring(0, 30) + '...' : email.subject}
                           </p>
                           <p className="text-xs text-muted-foreground truncate">{email.from}</p>
@@ -3503,7 +3527,7 @@ export function Dashboard() {
             <AlertCircle className="h-5 w-5" />
             <h3 className="font-medium">Workspace Not Found</h3>
           </div>
-          <p className="text-foreground text-muted-foreground text-sm">
+                          <p className="text-muted-foreground text-sm">
             No workspace is selected, so showing all available data. 
             To filter data by workspace, please create a workspace or ask your administrator to invite you to one.
           </p>
@@ -3634,15 +3658,15 @@ export function Dashboard() {
           
           <div className="mb-4 bg-blue-200 dark:bg-blue-900/30 border border-blue-600/30 p-4 rounded-lg">
             <h4 className="font-medium text-blue-300 mb-2">Dashboard Customization</h4>
-            <p className="text-sm text-foreground text-muted-foreground mb-2">
+                            <p className="text-sm text-muted-foreground mb-2">
               Make your dashboard your own by customizing it:
             </p>
-            <ul className="text-sm text-foreground text-muted-foreground list-disc pl-5 space-y-1 mb-2">
+                            <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1 mb-2">
               <li><span className="text-blue-300 font-medium">Drag and drop</span> widgets to rearrange them using the top-right handle</li>
               <li><span className="text-blue-300 font-medium">Resize widgets</span> by dragging from the bottom-right corner</li>
               <li><span className="text-blue-300 font-medium">Toggle visibility</span> of widgets using the buttons below</li>
             </ul>
-            <p className="text-sm text-foreground text-muted-foreground">
+                          <p className="text-sm text-muted-foreground">
               Once you're happy with your layout, click <span className="text-blue-300 font-medium">Save Changes</span> to apply.
             </p>
           </div>
@@ -3657,7 +3681,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.revenueStats ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Revenue Stats</span>
+                              <span className="text-sm text-muted-foreground">Revenue Stats</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3669,7 +3693,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.invoiceStats ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Invoice Count</span>
+                              <span className="text-sm text-muted-foreground">Invoice Count</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3681,7 +3705,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.averageInvoice ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Average Invoice</span>
+                              <span className="text-sm text-muted-foreground">Average Invoice</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3693,7 +3717,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.recentInvoices ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Recent Invoices</span>
+                              <span className="text-sm text-muted-foreground">Recent Invoices</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3705,7 +3729,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.invoiceTypes ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Invoice Types</span>
+                              <span className="text-sm text-muted-foreground">Invoice Types</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3717,7 +3741,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.upcomingEvents ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Upcoming Events</span>
+                              <span className="text-sm text-muted-foreground">Upcoming Events</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3729,7 +3753,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.upcomingDeadlines ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Upcoming Deadlines</span>
+                              <span className="text-sm text-muted-foreground">Upcoming Deadlines</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3741,7 +3765,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.urgentTasks ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Urgent Tasks</span>
+                              <span className="text-sm text-muted-foreground">Urgent Tasks</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3753,7 +3777,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.domains ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Domains</span>
+                              <span className="text-sm text-muted-foreground">Domains</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3765,7 +3789,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.leads ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Leads</span>
+                              <span className="text-sm text-muted-foreground">Leads</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3777,7 +3801,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.sales ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Sales</span>
+                              <span className="text-sm text-muted-foreground">Sales</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3789,7 +3813,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.gmailHub ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Gmail Hub</span>
+                              <span className="text-sm text-muted-foreground">Gmail Hub</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3801,7 +3825,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.analyticsData ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Analytics</span>
+                              <span className="text-sm text-muted-foreground">Analytics</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3813,7 +3837,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.searchConsole ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Search Console</span>
+                              <span className="text-sm text-muted-foreground">Search Console</span>
             </div>
             
             <div className="flex items-center space-x-2 p-2 border border-border dark:border-border rounded-md bg-muted">
@@ -3825,7 +3849,7 @@ export function Dashboard() {
               >
                 {visibleWidgets.cronJobs ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </Button>
-              <span className="text-sm text-foreground text-muted-foreground">Scheduled Tasks</span>
+                              <span className="text-sm text-muted-foreground">Scheduled Tasks</span>
             </div>
           </div>
         </Card>

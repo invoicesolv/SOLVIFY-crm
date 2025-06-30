@@ -8,7 +8,8 @@ import { Loader2, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { cn } from '@/lib/utils';
 
 interface GenerationProgressProps {
   workspaceId: string;
@@ -284,13 +285,14 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
           },
           (payload) => {
             console.log('Received Supabase update:', payload);
-            console.log('Progress update for record:', payload.new.id, 'Progress:', payload.new.generation_progress);
-            const { new: newRecord } = payload;
+            const newRecord = payload.new as any; // Type assertion for flexibility
             
-            if (!newRecord) {
+            if (!newRecord || !newRecord.id) {
               console.error('Received payload without new record data:', payload);
               return;
             }
+            
+            console.log('Progress update for record:', newRecord.id, 'Progress:', newRecord.generation_progress);
             
             // Update progress for this record
             setProgress(prev => ({
@@ -301,7 +303,7 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
             // Update status
             setStatuses(prev => ({
               ...prev,
-              [newRecord.id]: newRecord.status || prev[newRecord.id]
+              [newRecord.id]: newRecord.status || prev[newRecord.id] || 'unknown'
             }));
             
             // Update error if present - safely check if column exists
@@ -710,12 +712,13 @@ export function GenerationProgress({ workspaceId, userId, batchId, onComplete }:
               </div>
               <Progress 
                 value={progressValue} 
-                className="h-1.5 bg-background" 
-                indicatorClassName={
-                  statuses[id] === 'error' ? 'bg-red-500' : 
-                  statuses[id] === 'success' ? 'bg-green-500' : 
-                  'bg-blue-500'
-                }
+                className={cn(
+                  "h-1.5 bg-background",
+                  "[&>*]:transition-all",
+                  statuses[id] === 'error' ? '[&>*]:bg-red-500' : 
+                  statuses[id] === 'success' ? '[&>*]:bg-green-500' : 
+                  '[&>*]:bg-blue-500'
+                )}
               />
             </div>
             

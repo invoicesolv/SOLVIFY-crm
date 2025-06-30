@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
 import { cookies } from 'next/headers';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { createClient } from '@supabase/supabase-js';
 
 // Fortnox credentials
 const CLIENT_ID = '4LhJwn68IpdR';
@@ -26,20 +25,70 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  const supabaseAdmin = getSupabaseAdmin();
+  
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
+// Helper to load token from Supabase
+async function loadTokenFromSupabase(userId: string) {
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('settings')
+      .select('*')
+      .eq('service_name', 'fortnox')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error) {
+      console.error('Error loading Fortnox token:', error);
+      return null;
+    }
+    
+    return data;
+  } catch (e) {
+    console.error('Error loading Fortnox token:', e);
+    return null;
+  }
+}
+
 // Helper to save token to Supabase
 async function saveTokenToSupabase(token: any, userId: string) {
   const supabaseAdmin = getSupabaseAdmin();
   if (!supabaseAdmin) {
-    console.error('Cannot save token: Supabase client not initialized');
     return false;
   }
-  
+
   try {
-    // Calculate expires_at
     const expiresAt = new Date();
     expiresAt.setSeconds(expiresAt.getSeconds() + token.expires_in);
     
-    // Prepare the data
     const settingsData = {
       service_name: 'fortnox',
       user_id: userId,
@@ -48,7 +97,6 @@ async function saveTokenToSupabase(token: any, userId: string) {
       expires_at: expiresAt.toISOString()
     };
     
-    // Save to Supabase
     const { error } = await supabaseAdmin
       .from('settings')
       .upsert(settingsData, {
@@ -63,37 +111,6 @@ async function saveTokenToSupabase(token: any, userId: string) {
   } catch (e) {
     console.error('Error saving token to Supabase:', e);
     return false;
-  }
-}
-
-// Helper to load token from Supabase
-async function loadTokenFromSupabase(userId: string) {
-  const supabaseAdmin = getSupabaseAdmin();
-  if (!supabaseAdmin) {
-    console.error('Cannot load token: Supabase client not initialized');
-    return null;
-  }
-  
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('settings')
-      .select('*')
-      .eq('service_name', 'fortnox')
-      .eq('user_id', userId)
-      .single();
-    
-    if (error || !data) {
-      return null;
-    }
-    
-    return {
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expires_at: data.expires_at
-    };
-  } catch (e) {
-    console.error('Error loading token from Supabase:', e);
-    return null;
   }
 }
 
@@ -118,36 +135,28 @@ async function verifyToken(token: string) {
 }
 
 // Helper to refresh token
-async function refreshToken(refreshToken: string, userId: string) {
-  const supabaseAdmin = getSupabaseAdmin();
-  if (!supabaseAdmin) {
-    console.error('Cannot refresh token: Supabase client not initialized');
-    return null;
-  }
-  
+async function refreshToken(refreshTokenValue: string, userId: string) {
   try {
-    const basicAuth = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-    
-    const response = await fetch('https://apps5.fortnox.se/oauth-v1/token', {
+    const response = await fetch(TOKEN_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Basic ${basicAuth}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams({
-        'grant_type': 'refresh_token',
-        'refresh_token': refreshToken,
-        'client_id': CLIENT_ID,
-        'client_secret': CLIENT_SECRET
-      })
+        grant_type: 'refresh_token',
+        refresh_token: refreshTokenValue,
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+      }),
     });
     
-    if (response.status === 200) {
-      const newTokenData = await response.json();
-      await saveTokenToSupabase(newTokenData, userId);
-      return newTokenData;
+    if (!response.ok) {
+      throw new Error(`Token refresh failed: ${response.status}`);
     }
-    return null;
+    
+    const newToken = await response.json();
+    await saveTokenToSupabase(newToken, userId);
+    return newToken;
   } catch (e) {
     console.error('Error refreshing token:', e);
     return null;
@@ -165,18 +174,19 @@ export async function GET(req: NextRequest) {
     );
   }
   
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  // Get user from JWT token
+  const user = await getUserFromToken(req);
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  
+
   // Check if Fortnox token exists
   try {
     const { data, error } = await supabaseAdmin
       .from('settings')
       .select('*')
       .eq('service_name', 'fortnox')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single();
     
     if (error) {

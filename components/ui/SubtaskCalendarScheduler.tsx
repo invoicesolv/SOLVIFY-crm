@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 
 interface SubtaskCalendarSchedulerProps {
@@ -147,15 +147,20 @@ export function SubtaskCalendarScheduler({
   const [selectedTime, setSelectedTime] = useState('');
   const [duration, setDuration] = useState(60); // Default 1 hour
   const [isCreating, setIsCreating] = useState(false);
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
 
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
   };
 
   const handleSchedule = async () => {
-    if (!selectedDate || !selectedTime || !session?.user?.id) {
+    if (!selectedDate || !selectedTime || !user?.id) {
       toast.error('Please select both date and time');
+      return;
+    }
+
+    if (!session?.access_token) {
+      toast.error('Authentication required to schedule events');
       return;
     }
 
@@ -183,6 +188,7 @@ export function SubtaskCalendarScheduler({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(eventData),
       });

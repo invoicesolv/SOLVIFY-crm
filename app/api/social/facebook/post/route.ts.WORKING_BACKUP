@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
 import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = supabaseClient;supabaseUrl, supabaseKey);
 
     // Get the selected Facebook page's access token from database
     const { data: facebookPageAccount, error } = await supabase

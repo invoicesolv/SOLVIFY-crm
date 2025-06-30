@@ -1,28 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
 
-// Map scopes to services
-const SCOPE_TO_SERVICE = {
-  'https://www.googleapis.com/auth/analytics.readonly': 'google-analytics',
-  'https://www.googleapis.com/auth/analytics': 'google-analytics',
-  'https://www.googleapis.com/auth/webmasters.readonly': 'google-searchconsole',
-  'https://www.googleapis.com/auth/webmasters': 'google-searchconsole',
-  'https://www.googleapis.com/auth/calendar.readonly': 'google-calendar',
-  'https://www.googleapis.com/auth/calendar': 'google-calendar',
-  'https://www.googleapis.com/auth/drive.file': 'google-drive',
-  'https://www.googleapis.com/auth/drive.appdata': 'google-drive',
-  'https://www.googleapis.com/auth/drive.readonly': 'google-drive',
-  'https://www.googleapis.com/auth/drive': 'google-drive',
-  'https://www.googleapis.com/auth/drive.metadata': 'google-drive',
-  'https://www.googleapis.com/auth/youtube': 'youtube',
-  'https://www.googleapis.com/auth/youtube.upload': 'youtube',
-  'https://www.googleapis.com/auth/youtube.readonly': 'youtube',
-  'https://www.googleapis.com/auth/youtube.force-ssl': 'youtube'
-};
+import { GOOGLE_SCOPES } from '@/lib/oauth-scopes';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -43,7 +26,6 @@ export async function GET(request: NextRequest) {
     authUrl.searchParams.append('scope', scope);
     authUrl.searchParams.append('access_type', 'offline');
     authUrl.searchParams.append('prompt', 'consent');
-    authUrl.searchParams.append('include_granted_scopes', 'true');
     if (state) {
       authUrl.searchParams.append('state', state);
     }
@@ -117,7 +99,7 @@ export async function GET(request: NextRequest) {
       // Determine which services were authenticated based on the granted scopes
       const authenticatedServices = new Set<string>();
       grantedScopes.forEach((scope: string) => {
-        const service = SCOPE_TO_SERVICE[scope as keyof typeof SCOPE_TO_SERVICE];
+        const service = GOOGLE_SCOPES[scope as keyof typeof GOOGLE_SCOPES];
         if (service) {
           authenticatedServices.add(service);
         }

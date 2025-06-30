@@ -1,20 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Get workspace ID
     let workspaceId = null;
     try {
-      const response = await fetch(`${process.env.NEXTAUTH_URL}/api/workspace/leave`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/workspace/leave`);
       if (response.ok) {
         const data = await response.json();
         const workspaces = data.workspaces || [];
@@ -27,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Query social_accounts table
-    let socialAccountsQuery = supabase
+    let socialAccountsQuery = supabaseAdmin
       .from('social_accounts')
       .select(`
         id,
@@ -47,7 +71,7 @@ export async function GET(request: NextRequest) {
     if (workspaceId) {
       socialAccountsQuery = socialAccountsQuery.eq('workspace_id', workspaceId);
     } else {
-      socialAccountsQuery = socialAccountsQuery.eq('user_id', session.user.id);
+      socialAccountsQuery = socialAccountsQuery.eq('user_id', user.id);
     }
 
     const { data: socialAccounts, error: socialError } = await socialAccountsQuery
@@ -63,10 +87,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Also check for YouTube connection in integrations table
-    const { data: youtubeIntegration, error: youtubeError } = await supabase
+    const { data: youtubeIntegration, error: youtubeError } = await supabaseAdmin
       .from('integrations')
       .select('service_name, created_at, metadata')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('service_name', 'youtube')
       .single();
 
@@ -132,7 +156,7 @@ export async function GET(request: NextRequest) {
       summary,
       accounts: allAccounts,
       accounts_by_platform: accountsByPlatform,
-      user_id: session.user.id,
+      user_id: user.id,
       workspace_id: workspaceId
     });
 

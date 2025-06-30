@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { 
   Upload, 
   ArrowLeft, 
@@ -67,7 +67,7 @@ const TARGET_FIELDS = [
 ];
 
 export default function ImportContactsPage() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const router = useRouter();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
@@ -79,11 +79,11 @@ export default function ImportContactsPage() {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const initializeWorkspace = async () => {
-      if (session?.user?.id) {
+      if (user?.id) {
         try {
-          const activeWorkspaceId = await getActiveWorkspaceId(session.user.id);
+          const activeWorkspaceId = await getActiveWorkspaceId(user.id);
           setWorkspaceId(activeWorkspaceId);
           if (activeWorkspaceId) {
             fetchContactLists(activeWorkspaceId);
@@ -95,7 +95,7 @@ export default function ImportContactsPage() {
     };
     
     initializeWorkspace();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   const fetchContactLists = async (workspaceId: string) => {
     try {

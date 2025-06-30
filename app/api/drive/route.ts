@@ -1,7 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { supabaseClient } from '@/lib/supabase-client';
+import { createClient } from '@supabase/supabase-js';
+
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  const supabaseAdmin = getSupabaseAdmin();
+  
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -51,19 +89,18 @@ async function getAccessToken(userId: string): Promise<string | null> {
   return integration.access_token;
 }
 
-export async function POST(request: NextRequest) {
+export async function GET(req: NextRequest) {
+  // Get user from JWT token
+  const user = await getUserFromToken(req);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    const { action, ...params } = await request.json();
+    const { action, ...params } = await req.json();
 
     // Get access token for all actions
-    const accessToken = await getAccessToken(userId);
+    const accessToken = await getAccessToken(user.id);
     if (!accessToken) {
       return NextResponse.json({ error: 'Drive not connected' }, { status: 401 });
     }

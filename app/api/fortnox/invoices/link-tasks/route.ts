@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
 import axios from 'axios';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { createClient } from '@supabase/supabase-js';
+
 
 // Create Supabase admin client
 function getSupabaseAdmin() {
@@ -64,6 +67,11 @@ export async function POST(req: NextRequest) {
   console.log('\n=== Linking Tasks to Fortnox Invoice ===');
   
   try {
+    const user = await getUserFromToken(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     // Get the user ID from the headers
     const userId = req.headers.get('user-id');
     if (!userId) {

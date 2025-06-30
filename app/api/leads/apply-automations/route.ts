@@ -1,7 +1,6 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 
 interface AutomationRule {
   id: string;
@@ -132,14 +131,17 @@ async function executeAutomationForExistingLead(
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { workspaceId, userId, leadIds, automations } = await request.json();
+    // Use user.id instead of session?.user?.id
+    const userId = user.id;
+
+    const { workspaceId, leadIds, automations } = await request.json();
 
     if (!workspaceId || !leadIds || !Array.isArray(leadIds) || !automations) {
       return NextResponse.json({ error: 'Invalid request data' }, { status: 400 });

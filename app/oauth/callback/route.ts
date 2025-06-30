@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { supabaseClient } from '@/lib/supabase-client';
 
 // Fortnox credentials
 const CLIENT_ID = '4LhJwn68IpdR';
@@ -11,24 +9,55 @@ const TOKEN_URL = 'https://apps.fortnox.se/oauth-v1/token';
 // Define the required scopes
 const REQUIRED_SCOPES = 'companyinformation invoice customer project bookkeeping payment';
 
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  const supabaseAdmin = getSupabaseAdmin();
+  
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
 // Helper to save token to Supabase
 async function saveTokenToSupabase(token: any, userId: string) {
   try {
     console.log(`Attempting to save Fortnox token for user ID: ${userId}`);
     
-    // Initialize Supabase admin client at runtime
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // Check for both variable names, preferring the non-public one if both exist
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-      console.error(`URL: ${supabaseUrl ? 'present' : 'missing'}, Key: ${supabaseKey ? 'present' : 'missing'}`);
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      console.error('Cannot save token: Supabase client not initialized');
       return false;
     }
-    
-    console.log('Initializing Supabase admin client');
-    const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
     
     // Calculate expires_at
     const expiresAt = new Date();
@@ -116,12 +145,47 @@ export async function GET(req: NextRequest) {
   console.log('Received Fortnox OAuth callback at the correct redirect URI');
   console.log(`Callback URL: ${req.url}`);
 
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // For OAuth callbacks, we need to handle this differently since the user comes from external OAuth
+  // We'll need to check for a state parameter or use cookies to maintain session
+  // For now, let's try to get user from cookies or handle this as a special case
+  
+  // Check if we have a session cookie from Supabase
+  const cookieHeader = req.headers.get('cookie');
+  let userId: string | null = null;
+  
+  if (cookieHeader) {
+    // Try to extract Supabase session from cookies
+    const cookies = cookieHeader.split(';').reduce((acc: any, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      acc[key] = value;
+      return acc;
+    }, {});
+    
+    // Look for Supabase auth token in cookies
+    const supabaseAuthToken = cookies['sb-jbspiufukrifntnwlrts-auth-token'];
+    if (supabaseAuthToken) {
+      try {
+        const tokenData = JSON.parse(decodeURIComponent(supabaseAuthToken));
+        if (tokenData && tokenData[0]) {
+          const supabaseAdmin = getSupabaseAdmin();
+          if (supabaseAdmin) {
+            const { data: { user }, error } = await supabaseAdmin.auth.getUser(tokenData[0]);
+            if (user && !error) {
+              userId = user.id;
+              console.log(`Authenticated user from cookie: ${user.email} (ID: ${user.id})`);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error parsing Supabase auth token from cookie:', e);
+      }
+    }
   }
-
-  console.log(`Authenticated user: ${session.user.email} (ID: ${session.user.id})`);
+  
+  if (!userId) {
+    console.error('No authenticated user found in cookies');
+    return NextResponse.json({ error: 'Unauthorized - no session found' }, { status: 401 });
+  }
 
   const url = new URL(req.url);
   const code = url.searchParams.get('code');
@@ -168,20 +232,17 @@ export async function GET(req: NextRequest) {
       console.log(`- Scope: ${tokenData.scope || 'not specified'}`);
       
       // Save to Supabase with user ID
-      const saveResult = await saveTokenToSupabase(tokenData, session.user.id);
+      const saveResult = await saveTokenToSupabase(tokenData, userId);
       console.log(`Token save result: ${saveResult ? 'SUCCESS ✅' : 'FAILED ❌'}`);
       
       // After saving, verify token exists in database
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-      
-      if (supabaseUrl && supabaseKey) {
-        const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+      const supabaseAdmin = getSupabaseAdmin();
+      if (supabaseAdmin) {
         const { data: verifyData, error: verifyError } = await supabaseAdmin
           .from('settings')
           .select('*')
           .eq('service_name', 'fortnox')
-          .eq('user_id', session.user.id)
+          .eq('user_id', userId)
           .single();
         
         if (verifyError) {

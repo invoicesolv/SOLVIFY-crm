@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const user = await getUserFromToken(request);
     
-    if (!session?.user?.id) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -18,8 +17,7 @@ export async function GET(request: NextRequest) {
       'FACEBOOK_APP_ID',
       'FACEBOOK_APP_SECRET',
       'GOOGLE_CLIENT_ID',
-      'GOOGLE_CLIENT_SECRET',
-      'NEXTAUTH_URL'
+      'GOOGLE_CLIENT_SECRET'
     ];
     
     const missingEnvVars: string[] = [];
@@ -39,7 +37,7 @@ export async function GET(request: NextRequest) {
     }
     
     // 2. Test YouTube integration fix
-    const userId = session.user.id;
+    const userId = user.id;
     
     // Create a sample YouTube integration if it doesn't exist
     const { data: existingYoutube, error: youtubeCheckError } = await supabase
@@ -125,14 +123,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { action } = await request.json();
-    const userId = session.user.id;
+    const userId = user.id;
     
     if (action === 'refresh_fortnox') {
       // Try to refresh Fortnox token if possible

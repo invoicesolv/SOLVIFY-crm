@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
 import { getRandomImage, trackDownload, UnsplashImage, initializeWithApiKey } from '@/lib/unsplash';
+import { createClient } from '@supabase/supabase-js';
+
+export const dynamic = 'force-dynamic';
 
 // Create Supabase client
 function getSupabaseClient() {

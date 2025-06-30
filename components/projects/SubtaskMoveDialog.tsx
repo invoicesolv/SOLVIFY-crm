@@ -33,12 +33,7 @@ interface Task {
   project_id?: string;
 }
 
-interface ChecklistItem {
-  id: number;
-  text: string;
-  done: boolean;
-  assigned_to?: string;
-}
+import type { ChecklistItem } from "@/types/project";
 
 interface SubtaskMoveDialogProps {
   open: boolean;

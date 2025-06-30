@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { 
   Mail, 
   ArrowLeft, 
@@ -36,6 +36,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { getActiveWorkspaceId } from '@/lib/permission';
 import { SidebarDemo } from "@/components/ui/code.demo";
+import { EmailMarketingNav } from '@/components/email-marketing/EmailMarketingNav';
 
 interface Template {
   id: string;
@@ -67,7 +68,7 @@ interface CampaignData {
 }
 
 export default function NewCampaignPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const router = useRouter();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
@@ -80,9 +81,9 @@ export default function NewCampaignPage() {
   const [campaignData, setCampaignData] = useState<CampaignData>({
     name: '',
     subject: '',
-    from_name: session?.user?.name || '',
-    from_email: session?.user?.email || '',
-    reply_to: session?.user?.email || '',
+    from_name: user?.user_metadata?.name || '',
+    from_email: user?.email || '',
+    reply_to: user?.email || '',
     html_content: '',
     plain_content: '',
     selected_lists: [],
@@ -91,9 +92,9 @@ export default function NewCampaignPage() {
 
   useEffect(() => {
     const initializeWorkspace = async () => {
-      if (session?.user?.id) {
+      if (user?.id) {
         try {
-          const activeWorkspaceId = await getActiveWorkspaceId(session.user.id);
+          const activeWorkspaceId = await getActiveWorkspaceId(user.id);
           setWorkspaceId(activeWorkspaceId);
         } catch (error) {
           console.error('Error getting workspace ID:', error);
@@ -102,7 +103,7 @@ export default function NewCampaignPage() {
     };
     
     initializeWorkspace();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (workspaceId) {
@@ -112,18 +113,21 @@ export default function NewCampaignPage() {
   }, [workspaceId]);
 
   const fetchTemplates = async () => {
-    if (!workspaceId) return;
+    if (!workspaceId || !session?.access_token) return;
     
     try {
-      const { data, error } = await supabase
-        .from('email_templates')
-        .select('*')
-        .eq('workspace_id', workspaceId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+      const response = await fetch('/api/email-marketing/templates', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+      const result = await response.json();
 
-      if (error) throw error;
-      setTemplates(data || []);
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to fetch templates');
+      }
+
+      setTemplates(result.templates || []);
     } catch (error) {
       console.error('Error fetching templates:', error);
       toast.error('Failed to load templates');
@@ -159,7 +163,7 @@ export default function NewCampaignPage() {
   };
 
   const handleSaveDraft = async () => {
-    if (!workspaceId || !session?.user?.id) return;
+    if (!workspaceId || !user?.id) return;
     
     setSaveLoading(true);
     try {
@@ -167,7 +171,7 @@ export default function NewCampaignPage() {
         .from('email_campaigns')
         .insert({
           workspace_id: workspaceId,
-          user_id: session.user.id,
+          user_id: user.id,
           ...campaignData,
           status: 'draft',
           total_recipients: 0
@@ -188,7 +192,7 @@ export default function NewCampaignPage() {
   };
 
   const handleSendCampaign = async () => {
-    if (!workspaceId || !session?.user?.id) return;
+    if (!workspaceId || !user?.id) return;
     
     // Validation
     if (!campaignData.name || !campaignData.subject || !campaignData.html_content) {
@@ -217,7 +221,7 @@ export default function NewCampaignPage() {
         .from('email_campaigns')
         .insert({
           workspace_id: workspaceId,
-          user_id: session.user.id,
+          user_id: user.id,
           ...campaignData,
           status: campaignStatus,
           total_recipients: totalRecipients,
@@ -275,6 +279,142 @@ export default function NewCampaignPage() {
     }));
   };
 
+  // Logo insertion functions
+  const insertLogo = async () => {
+    try {
+      // First try to get workspace logos
+      const response = await fetch('/api/workspace/logos');
+      const result = await response.json();
+      
+      let logoData: { url: string; border_radius?: number; name?: string } | null = null;
+      
+      // Use the most recent logo if available
+      if (result.logos && result.logos.length > 0) {
+        logoData = result.logos[0]; // Most recent logo
+      } else {
+        // Fallback to old workspace logo
+        const oldResponse = await fetch('/api/workspace/logo');
+        const oldResult = await oldResponse.json();
+        
+        if (oldResult.logoUrl) {
+          logoData = { url: oldResult.logoUrl, border_radius: 0, name: 'Company Logo' };
+        } else {
+          // If no logo exists, prompt for one
+          const logoUrl = prompt('Enter your company logo URL:');
+          if (!logoUrl) return;
+          
+          logoData = { url: logoUrl, border_radius: 0, name: 'Company Logo' };
+          
+          // Save it to workspace for future use
+          await fetch('/api/workspace/logo', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ logoUrl })
+          });
+        }
+      }
+      
+      if (!logoData) return;
+      
+      const borderRadiusStyle = logoData.border_radius ? `border-radius: ${logoData.border_radius}px; ` : '';
+      const logoHtml = `<img src="${logoData.url}" alt="${logoData.name || 'Company Logo'}" style="max-width: 200px; height: auto; display: block; margin: 0 auto; ${borderRadiusStyle}border: 1px solid #e5e7eb;">`;
+      
+      let updatedHtmlContent = campaignData.html_content;
+      
+      // Try to replace logo placeholders first
+      const replacementPatterns = [
+        /\{\{company_initial\}\}/gi,
+        /\{\{company_logo\}\}/gi,
+        /\{\{logo\}\}/gi,
+        /\{\{brand_logo\}\}/gi,
+      ];
+
+      let logoReplaced = false;
+      
+      // Special handling for company_initial in styled divs
+      const companyInitialDivPattern = /<div[^>]*>([^<]*\{\{company_initial\}\}[^<]*)<\/div>/gi;
+      if (companyInitialDivPattern.test(updatedHtmlContent)) {
+        updatedHtmlContent = updatedHtmlContent.replace(companyInitialDivPattern, `<div style="padding: 8px;">${logoHtml}</div>`);
+        logoReplaced = true;
+      }
+      
+      if (!logoReplaced) {
+        for (const pattern of replacementPatterns) {
+          if (pattern.test(updatedHtmlContent)) {
+            updatedHtmlContent = updatedHtmlContent.replace(pattern, logoHtml);
+            logoReplaced = true;
+            break;
+          }
+        }
+      }
+      
+      // If no placeholder found, add logo at the beginning
+      if (!logoReplaced) {
+        updatedHtmlContent = `<div style="text-align: center; margin: 30px 0;">${logoHtml}</div>` + updatedHtmlContent;
+      }
+      
+      setCampaignData(prev => ({ 
+        ...prev, 
+        html_content: updatedHtmlContent 
+      }));
+      
+      toast.success(logoReplaced ? 'Logo replaced placeholders in email content' : 'Logo inserted into email content');
+    } catch (error) {
+      console.error('Error inserting logo:', error);
+      toast.error('Failed to insert logo');
+    }
+  };
+
+  const insertCompanyHeader = () => {
+    const logoUrl = prompt('Enter your company logo URL:') || '';
+    const companyName = prompt('Enter your company name:') || 'Your Company';
+    const tagline = prompt('Enter tagline (optional):') || '';
+    
+    const headerHtml = `
+      <table role="presentation" style="width: 100%; margin: 0 0 40px 0; border-bottom: 1px solid #e5e7eb; padding-bottom: 30px;">
+        <tr>
+          <td style="text-align: center;">
+            ${logoUrl ? `<img src="${logoUrl}" alt="${companyName} Logo" style="max-width: 180px; height: auto; margin-bottom: 15px;">` : ''}
+            <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #1f2937;">${companyName}</h1>
+            ${tagline ? `<p style="margin: 8px 0 0 0; font-size: 16px; color: #6b7280;">${tagline}</p>` : ''}
+          </td>
+        </tr>
+      </table>
+    `;
+    setCampaignData(prev => ({ 
+      ...prev, 
+      html_content: prev.html_content + headerHtml 
+    }));
+  };
+
+  const insertText = (tag: string, placeholder: string = 'Your text here') => {
+    const textHtml = `<${tag}>${placeholder}</${tag}>`;
+    setCampaignData(prev => ({ 
+      ...prev, 
+      html_content: prev.html_content + textHtml 
+    }));
+  };
+
+  const insertButton = () => {
+    const url = prompt('Enter button URL:');
+    const text = prompt('Enter button text:') || 'Click Here';
+    if (url) {
+      const buttonHtml = `
+        <table role="presentation" style="margin: 20px 0;">
+          <tr>
+            <td style="background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%); border-radius: 8px; padding: 0;">
+              <a href="${url}" style="display: inline-block; padding: 16px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">${text}</a>
+            </td>
+          </tr>
+        </table>
+      `;
+      setCampaignData(prev => ({ 
+        ...prev, 
+        html_content: prev.html_content + buttonHtml 
+      }));
+    }
+  };
+
   // Step indicator
   const steps = [
     { number: 1, title: 'Template', description: 'Choose or create' },
@@ -312,6 +452,7 @@ export default function NewCampaignPage() {
 
   return (
     <SidebarDemo>
+      <EmailMarketingNav />
       <div className="min-h-screen bg-background">
         {/* Header */}
         <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -438,8 +579,64 @@ export default function NewCampaignPage() {
 
           {/* Step 2: Content Editor */}
           {currentStep === 2 && (
-            <div className="max-w-6xl mx-auto">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="max-w-7xl mx-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                {/* Editing Tools Sidebar */}
+                <div className="lg:col-span-1">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Quick Insert</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start"
+                        onClick={() => insertText('h1', 'Your Heading')}
+                      >
+                        <Type className="h-4 w-4 mr-2" />
+                        Heading
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start"
+                        onClick={() => insertText('p', 'Your paragraph text here.')}
+                      >
+                        <Type className="h-4 w-4 mr-2" />
+                        Paragraph
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start"
+                        onClick={insertLogo}
+                      >
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Company Logo
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start"
+                        onClick={insertCompanyHeader}
+                      >
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Company Header
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start"
+                        onClick={insertButton}
+                      >
+                        <Palette className="h-4 w-4 mr-2" />
+                        Button
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+
                 {/* Editor */}
                 <div className="lg:col-span-2">
                   <Card>
@@ -471,14 +668,50 @@ export default function NewCampaignPage() {
                       </div>
                       
                       <div className="space-y-2">
-                        <Label htmlFor="html-content">Email Content *</Label>
-                        <Textarea
-                          id="html-content"
-                          value={campaignData.html_content}
-                          onChange={(e) => setCampaignData(prev => ({ ...prev, html_content: e.target.value }))}
-                          placeholder="Enter your email content here..."
-                          className="min-h-[400px] font-mono text-sm"
-                        />
+                        <Label>Email Content *</Label>
+                        <Tabs defaultValue="visual" className="w-full">
+                          <TabsList className="grid w-full grid-cols-2">
+                            <TabsTrigger value="visual">Visual Editor</TabsTrigger>
+                            <TabsTrigger value="html">HTML Code</TabsTrigger>
+                          </TabsList>
+                          
+                          <TabsContent value="visual" className="mt-4">
+                            <div 
+                              className="min-h-[400px] border rounded-lg p-4 bg-white overflow-auto"
+                              style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}
+                            >
+                              <div
+                                contentEditable
+                                className="outline-none min-h-full"
+                                dangerouslySetInnerHTML={{ __html: campaignData.html_content }}
+                                onBlur={(e) => {
+                                  try {
+                                    const target = e.currentTarget;
+                                    if (target && target.innerHTML !== null && target.innerHTML !== undefined) {
+                                      setCampaignData(prev => ({ ...prev, html_content: target.innerHTML }));
+                                    }
+                                  } catch (error) {
+                                    console.error('Error updating HTML content:', error);
+                                  }
+                                }}
+                                style={{
+                                  lineHeight: '1.6',
+                                  color: '#333333'
+                                }}
+                              />
+                            </div>
+                          </TabsContent>
+                          
+                          <TabsContent value="html" className="mt-4">
+                            <Textarea
+                              id="html-content"
+                              value={campaignData.html_content}
+                              onChange={(e) => setCampaignData(prev => ({ ...prev, html_content: e.target.value }))}
+                              placeholder="Enter your email content here..."
+                              className="min-h-[400px] font-mono text-sm"
+                            />
+                          </TabsContent>
+                        </Tabs>
                       </div>
                       
                       <div className="flex justify-between">
@@ -543,9 +776,26 @@ export default function NewCampaignPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <Button variant="outline" className="w-full">
-                        Preview Email
-                      </Button>
+                      <div className="space-y-4">
+                        <div className="bg-gray-50 border rounded-lg p-4 max-h-80 overflow-y-auto">
+                          <div className="bg-white border-b text-xs text-gray-600 px-2 py-1 mb-2">
+                            From: {campaignData.from_name} &lt;{campaignData.from_email}&gt;
+                          </div>
+                          <div className="bg-gray-100 text-xs font-medium px-2 py-1 mb-2">
+                            {campaignData.subject || 'Subject Line'}
+                          </div>
+                          <div 
+                            className="text-sm"
+                            dangerouslySetInnerHTML={{ 
+                              __html: campaignData.html_content || '<p className="text-gray-500">No content yet...</p>'
+                            }}
+                          />
+                        </div>
+                        <Button variant="outline" className="w-full" size="sm">
+                          <Eye className="h-4 w-4 mr-2" />
+                          Full Preview
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 </div>

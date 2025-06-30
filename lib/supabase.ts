@@ -1,73 +1,154 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const supabaseServiceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseAdminKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const isBrowser = typeof window !== 'undefined'
 
-// Create storage object based on environment
-const customStorage = {
+// Create cookie-based storage for Supabase auth
+const cookieStorage = {
   getItem: (key: string) => {
     if (!isBrowser) return null
-    if (process.env.SUPABASE_DEBUG === 'true') {
-    console.log('[SUPABASE DEBUG] Getting item from localStorage:', key);
-    }
-    const value = localStorage.getItem(key);
-    if (process.env.SUPABASE_DEBUG === 'true') {
+    console.log('[SUPABASE DEBUG] Getting item from cookies:', key);
+    
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+      const [k, v] = cookie.trim().split('=');
+      if (k && v) {
+        acc[k] = v;
+      }
+      return acc;
+    }, {} as Record<string, string>);
+    
+    // Get the value for the exact key
+    let value = cookies[key] ? decodeURIComponent(cookies[key]) : null;
+    
     console.log('[SUPABASE DEBUG] Value presence for', key, ':', value ? 'Present' : 'Missing');
-    }
     return value;
   },
   setItem: (key: string, value: string) => {
     if (!isBrowser) return
-    if (process.env.SUPABASE_DEBUG === 'true') {
-    console.log('[SUPABASE DEBUG] Setting item in localStorage:', key);
-    }
+    console.log('[SUPABASE DEBUG] Setting item in cookies:', key, 'value length:', value.length);
+    
     try {
-      localStorage.setItem(key, value);
-      if (process.env.SUPABASE_DEBUG === 'true') {
-      console.log('[SUPABASE DEBUG] Successfully set', key, 'in localStorage');
+      // Parse the session data to extract tokens
+      let sessionData;
+      try {
+        sessionData = JSON.parse(value);
+        console.log('[SUPABASE DEBUG] Parsed session data:', {
+          hasAccessToken: !!sessionData.access_token,
+          hasRefreshToken: !!sessionData.refresh_token,
+          hasUser: !!sessionData.user,
+          expires_at: sessionData.expires_at
+        });
+      } catch {
+        console.log('[SUPABASE DEBUG] Value is not JSON, storing as plain text');
+        // If it's not JSON, just store as is
+        const encodedValue = encodeURIComponent(value);
+        const maxAge = 7 * 24 * 60 * 60; // 7 days
+        document.cookie = `${key}=${encodedValue}; max-age=${maxAge}; path=/; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}`;
+        return;
       }
+      
+      // Store the session data normally
+      const encodedValue = encodeURIComponent(value);
+      const maxAge = 7 * 24 * 60 * 60; // 7 days
+      document.cookie = `${key}=${encodedValue}; max-age=${maxAge}; path=/; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}`;
+      console.log('[SUPABASE DEBUG] Set cookie with key:', key);
+      
+      // If this is session data, also store it in the middleware-expected format
+      if (key.includes('auth') && sessionData && sessionData.access_token) {
+        // Store in the format middleware expects
+        const middlewareSessionData = {
+          access_token: sessionData.access_token,
+          refresh_token: sessionData.refresh_token,
+          expires_at: sessionData.expires_at,
+          expires_in: sessionData.expires_in,
+          token_type: sessionData.token_type,
+          user: sessionData.user
+        };
+        const middlewareValue = encodeURIComponent(JSON.stringify(middlewareSessionData));
+        document.cookie = `sb-jbspiufukrifntnwlrts-auth-token=${middlewareValue}; max-age=${maxAge}; path=/; SameSite=Lax${window.location.protocol === 'https:' ? '; Secure' : ''}`;
+        console.log('[SUPABASE DEBUG] Also set middleware cookie with session data');
+        
+        // Verify the cookie was set
+        setTimeout(() => {
+          const testCookies = document.cookie.split(';');
+          const middlewareCookie = testCookies.find(c => c.trim().startsWith('sb-jbspiufukrifntnwlrts-auth-token='));
+          console.log('[SUPABASE DEBUG] Cookie verification:', middlewareCookie ? 'FOUND' : 'NOT FOUND');
+        }, 100);
+      }
+      
+        console.log('[SUPABASE DEBUG] Successfully set', key, 'in cookies');
     } catch (err) {
-      console.error('[SUPABASE DEBUG] Error setting localStorage item:', err);
+      console.error('[SUPABASE DEBUG] Error setting cookie:', err);
     }
   },
   removeItem: (key: string) => {
     if (!isBrowser) return
-    if (process.env.SUPABASE_DEBUG === 'true') {
-    console.log('[SUPABASE DEBUG] Removing item from localStorage:', key);
+      console.log('[SUPABASE DEBUG] Removing item from cookies:', key);
+    
+    document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    // Also remove the middleware cookie if this is auth-related
+    if (key.includes('auth')) {
+      document.cookie = `sb-jbspiufukrifntnwlrts-auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      console.log('[SUPABASE DEBUG] Also removed middleware cookie');
     }
-    localStorage.removeItem(key);
   }
 }
 
-// Global variables to hold singleton instances
-let supabaseClientSingleton: any = null;
-let supabaseAdminSingleton: any = null;
+// Single global instance to prevent multiple clients
+let globalSupabaseClient: any = null;
+let globalSupabaseAdmin: any = null;
 
-// Properly implement the singleton pattern with a function that ensures only one client exists
+// Function to get or create the singleton client (auth disabled)
 function getSupabaseClient() {
-  if (supabaseClientSingleton === null) {
-    supabaseClientSingleton = createClient(supabaseUrl, supabaseAnonKey, {
+  if (globalSupabaseClient === null) {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('Supabase URL and Anon Key are required');
+    }
+    globalSupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        storage: customStorage,
-        debug: process.env.SUPABASE_DEBUG === 'true',
-        // Prevent automatic redirects - let our app handle the flow
-        flowType: 'pkce'
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        // Auth is disabled - will use token-based authentication instead
       }
     });
   }
-  return supabaseClientSingleton;
+  return globalSupabaseClient;
 }
 
-// Properly implement the singleton pattern for admin client
+// Function to fetch workspace data automatically using auth
+export async function fetchWorkspaceData() {
+  const client = createSupabaseAdmin();
+
+  try {
+    // Fetch all workspaces for now - you can add user filtering later
+    const { data, error } = await client
+      .from('profiles')
+      .select('*')
+      .limit(10);
+
+    if (error) {
+      console.error('Error fetching workspace data:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error('Unexpected error fetching workspace data:', err);
+    return [];
+  }
+}
+
+// Function to get or create the singleton admin client
 function getSupabaseAdmin() {
-  if (supabaseAdminSingleton === null) {
-    supabaseAdminSingleton = createClient(supabaseUrl, supabaseServiceKey, {
+  if (globalSupabaseAdmin === null) {
+    if (!supabaseUrl || !supabaseAdminKey) {
+      throw new Error('Supabase URL and Admin Key are required');
+    }
+    globalSupabaseAdmin = createClient(supabaseUrl, supabaseAdminKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
@@ -75,317 +156,40 @@ function getSupabaseAdmin() {
       }
     });
   }
-  return supabaseAdminSingleton;
+  return globalSupabaseAdmin;
 }
 
-// Export the singleton instances
-export const supabase = getSupabaseClient();
-export const supabaseAdmin = getSupabaseAdmin();
-
-// Function to sync NextAuth session with Supabase
-export const syncSupabaseSession = async (accessToken: string) => {
+// Export direct access to singleton clients
+export const supabaseDb = (() => {
   try {
-    // Disabled debugging for cleaner logs
-    
-    if (!accessToken) {
-      return null;
-    }
-
-    // console.log("[Supabase] Syncing session with token");
-    
-    // Instead of using setSession which expects a Supabase token,
-    // we'll use signInWithPassword which creates a proper Supabase session
-    try {
-      // Try to get user information from NextAuth session
-      const baseUrl = typeof window !== 'undefined' 
-        ? window.location.origin 
-        : process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
-      // console.log("[Supabase] Fetching session from:", `${baseUrl}/api/auth/session`);
-      
-      const sessionResponse = await fetch(`${baseUrl}/api/auth/session`);
-      if (!sessionResponse.ok) {
-        return null;
-      }
-      
-      const sessionData = await sessionResponse.json();
-      // console.log("[Supabase] Session data received:", {
-      //   hasUser: !!sessionData?.user,
-      //   userEmail: sessionData?.user?.email,
-      //   userId: sessionData?.user?.id
-      // });
-      
-      const { user } = sessionData;
-      
-      if (!user?.email) {
-        console.error("[AUTH DEBUG] Failed to sync with Supabase session");
-        return null;
-      }
-
-      console.log(`[Supabase] Authenticating user: ${user.email} (ID: ${user.id})`);
-      
-      // Before proceeding, verify the user exists in Supabase Auth to catch mismatches
-      console.log("[Supabase] Pre-check: Verifying user exists in Supabase Auth");
-      try {
-        const { data: authUserData, error: authError } = await supabaseAdmin.auth.admin.getUserById(user.id);
-        
-        if (authError) {
-          console.warn("[Supabase] Auth user lookup failed:", authError.message);
-          console.log("[Supabase] Checking if user exists with email instead");
-          
-          // Try to find by email
-          const { data: emailUsers, error: emailError } = await supabaseAdmin.auth.admin.listUsers({
-            filter: { email: user.email }
-          });
-          
-          if (!emailError && emailUsers?.users?.length > 0) {
-            const existingUser = emailUsers.users[0];
-            console.log(`[Supabase] Found user in auth.users with email, but ID mismatch:
-              Session ID: ${user.id}
-              Auth User ID: ${existingUser.id}`);
-            
-            // Update oauth mapping to fix the mismatch
-            const { error: mappingError } = await supabaseAdmin
-              .from('oauth_provider_mapping')
-              .upsert({
-                provider_id: user.id,
-                provider_name: 'google',
-                user_uuid: existingUser.id,
-                email: user.email,
-                updated_at: new Date().toISOString(),
-                created_at: new Date().toISOString()
-              }, {
-                onConflict: 'provider_id,provider_name'
-              });
-            
-            if (mappingError) {
-              console.error("[Supabase] Failed to update oauth mapping:", mappingError);
-            } else {
-              console.log("[Supabase] Updated oauth mapping to fix ID mismatch");
-            }
-            
-            // Continue using the auth user ID from this point
-            console.log("[Supabase] Proceeding with existing auth user ID:", existingUser.id);
-            user.id = existingUser.id; // Update user ID for the rest of the function
-          } else {
-            console.warn("[Supabase] User does not exist in auth.users. Proceeding anyway, the API will attempt to create or match user.");
-          }
-        } else {
-          console.log("[Supabase] User exists in auth.users with matching ID:", authUserData.user.id);
-        }
-      } catch (authCheckError) {
-        console.error("[Supabase] Error checking auth user:", authCheckError);
-      }
-      
-      // Look up user in profiles table
-      console.log("[Supabase] Looking up user in profiles table");
-      const profileLookup = await supabaseAdmin
-          .from('profiles')
-          .select('id, email')
-          .eq('email', user.email)
-          .maybeSingle();
-          
-      if (profileLookup.error) {
-        console.error("[Supabase] Error finding user:", profileLookup.error.code, profileLookup.error.message, profileLookup.error.details);
-        return null;
-      }
-      
-      // Store the profile data in a variable we can modify later
-      let userData = profileLookup.data;
-      
-      if (!userData) {
-        console.error("[Supabase] User not found in Supabase profiles table");
-        
-        // Try to create a profile
-        console.log("[Supabase] Attempting to create profile for user:", user.id);
-        try {
-          const { error: createError } = await supabaseAdmin
-            .from('profiles')
-            .insert({
-              id: user.id,
-              email: user.email,
-              name: user.name || user.email.split('@')[0] || 'User',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              phone: '',
-              company: '',
-              role: '',
-              address: '',
-              city: '',
-              country: '',
-              website: '',
-              password: ''
-            });
-            
-          if (createError) {
-            console.error("[Supabase] Failed to create profile:", createError);
-          } else {
-            console.log("[Supabase] Successfully created profile for user:", user.id);
-            // Refetch the profile
-            const newProfileLookup = await supabaseAdmin
-              .from('profiles')
-              .select('id, email')
-              .eq('id', user.id)
-              .single();
-              
-            if (!newProfileLookup.error && newProfileLookup.data) {
-              console.log("[Supabase] Using newly created profile:", newProfileLookup.data);
-              userData = newProfileLookup.data;
-            }
-          }
-        } catch (createError) {
-          console.error("[Supabase] Exception creating profile:", createError);
-        }
-      }
-
-      // Use profile ID if available
-      const userId = userData?.id || user.id;
-      
-      console.log("[Supabase] Found user in profiles:", {
-        id: userId,
-        email: userData?.email || user.email,
-        matchesSessionId: userId === user.id
-      });
-      
-      // Create a custom token via an API endpoint
-      console.log("[Supabase] Calling create-supabase-token API endpoint");
-      const tokenResponse = await fetch('/api/auth/create-supabase-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          userId: userId,
-          email: userData?.email || user.email,
-          accessToken
-        })
-      });
-              
-      if (!tokenResponse.ok) {
-        console.error("[Supabase] Failed to create custom token:", tokenResponse.status, tokenResponse.statusText);
-        try {
-          const errorData = await tokenResponse.json();
-          console.error("[Supabase] Token API error:", errorData);
-          
-          // If error is about user not found in auth.users table
-          if (errorData?.error?.includes('User not found') || 
-              (errorData?.details?.message && errorData.details.message.includes('User not found'))) {
-            
-            console.log("[Supabase] User exists in profiles but not in auth.users - attempting direct auth fix");
-            
-            // Try to do a direct admin API call to fix this
-            try {
-              // Create a temp password
-              const tempPassword = generateRandomPassword(16);
-              
-              // Create user with admin API
-              const { data: newAuthUser, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
-                email: userData?.email || user.email,
-                password: tempPassword,
-                email_confirm: true,
-                user_metadata: {
-                  full_name: user.name || 'User',
-                  from_oauth: true,
-                  oauth_provider: 'google'
-                }
-              });
-              
-              if (createAuthError) {
-                console.error("[Supabase] Failed direct auth user creation:", createAuthError);
-              } else {
-                console.log("[Supabase] Created auth user directly:", newAuthUser.user.id);
-                
-                // Now try the sign in
-                const { data, error } = await supabase.auth.signInWithPassword({
-                  email: userData?.email || user.email,
-                  password: tempPassword
-                });
-                
-                if (error) {
-                  console.error("[Supabase] Direct auth sign-in failed:", error);
-                } else {
-                  console.log("[Supabase] Direct auth sign-in successful");
-                  console.log("[Supabase] Session info:", {
-                    hasSession: !!data?.session,
-                    accessTokenLength: data?.session?.access_token?.length,
-                    refreshTokenLength: data?.session?.refresh_token?.length,
-                    expiresAt: data?.session?.expires_at
-                  });
-                  console.log("=============== END SUPABASE SESSION SYNC DEBUG ===============");
-                  return data.session;
-                }
-              }
-            } catch (directAuthError) {
-              console.error("[Supabase] Exception in direct auth fix:", directAuthError);
-            }
-          }
-        } catch (e) {
-          try {
-            const errorText = await tokenResponse.text();
-            console.error("[Supabase] Token API error text:", errorText);
-          } catch (textError) {
-            console.error("[Supabase] Couldn't read token API error response");
-          }
-        }
-        return null;
-      }
-      
-      const tokenData = await tokenResponse.json();
-      console.log("[Supabase] Received token from API:", {
-        hasToken: !!tokenData?.token,
-        tokenLength: tokenData?.token?.length
-      });
-      
-      if (!tokenData.token) {
-        console.error("[Supabase] No token returned from API");
-        return null;
-      }
-      
-      // Sign in with the custom token
-      console.log("[Supabase] Signing in with password (token)");
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: userData?.email || user.email,
-        password: tokenData.token // This isn't a real password, but a token exchange mechanism
-      });
-      
-      if (error) {
-        console.error("[Supabase] Auth error:", error.message, error.cause);
-        return null;
-      }
-      
-      console.log("[Supabase] Successfully authenticated user:", userId);
-      console.log("[Supabase] Session info:", {
-        hasSession: !!data?.session,
-        accessTokenLength: data?.session?.access_token?.length,
-        refreshTokenLength: data?.session?.refresh_token?.length,
-        expiresAt: data?.session?.expires_at
-      });
-      console.log("=============== END SUPABASE SESSION SYNC DEBUG ===============");
-      return data.session;
-      
-    } catch (error) {
-      console.error("[Supabase] Authentication error:", error);
-      if (error instanceof Error) {
-        console.error("[Supabase] Error details:", {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
-      }
-      return null;
-    }
-  } catch (error) {
-    console.error("[Supabase] Unexpected error during authentication:", error);
-    if (error instanceof Error) {
-      console.error("[Supabase] Error details:", {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      });
+    if (supabaseUrl && supabaseAnonKey) {
+      return getSupabaseClient();
     }
     return null;
+  } catch (error) {
+    console.warn('Failed to initialize Supabase client:', error);
+    return null;
   }
-};
+})();
+
+export const supabaseAdmin = (() => {
+  try {
+    if (supabaseUrl && supabaseAdminKey) {
+      return getSupabaseAdmin();
+    }
+    return null;
+  } catch (error) {
+    console.warn('Failed to initialize Supabase admin client:', error);
+    return null;
+  }
+})();
+
+// For backward compatibility, also export as supabase (client)
+export const supabase = supabaseDb;
+
+// Auth state listener removed - using token-based authentication instead of Supabase auth
+
+// NextAuth sync functionality removed - using pure Supabase authentication
 
 // Helper function to generate a random password
 function generateRandomPassword(length = 16) {
@@ -401,6 +205,29 @@ function generateRandomPassword(length = 16) {
 export type Database = {
   public: {
     Tables: {
+      workspace: {
+        Row: {
+          id: string
+          name: string
+          token: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          token: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          token?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
       profiles: {
         Row: {
           id: string
@@ -622,6 +449,9 @@ export type Database = {
 
 // Create a truly unique client for server-side use
 export const createServerSupabaseClient = () => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase URL and Anon Key are required');
+  }
   return createClient(
   supabaseUrl,
   supabaseAnonKey,
@@ -633,6 +463,20 @@ export const createServerSupabaseClient = () => {
     }
   }
   );
+};
+
+// Create admin client for server-side admin operations
+export const createSupabaseAdmin = () => {
+  if (!supabaseUrl || !supabaseAdminKey) {
+    throw new Error('Supabase URL and Service Role Key are required for admin operations');
+  }
+  return createClient(supabaseUrl, supabaseAdminKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  });
 };
 
   /**
@@ -665,10 +509,13 @@ export async function getConsistentUserId(userId: string | undefined, email?: st
   
   console.log(`[getConsistentUserId] Non-UUID ID detected: ${userId}, attempting to find valid ID`);
 
+  // Create admin client for this operation
+  const adminClient = createSupabaseAdmin();
+
   // First, check if this is a Google ID in our mapping table
   try {
     console.log(`[getConsistentUserId] Checking oauth_provider_mapping for provider ID: ${userId}`);
-    const { data: mappedUser, error: mappingError } = await supabaseAdmin
+    const { data: mappedUser, error: mappingError } = await adminClient
       .from('oauth_provider_mapping')
       .select('user_uuid')
       .eq('provider_id', userId)
@@ -689,7 +536,7 @@ export async function getConsistentUserId(userId: string | undefined, email?: st
   if (email) {
     try {
       console.log(`[getConsistentUserId] Looking up user by email: ${email}`);
-      const { data: profile, error } = await supabaseAdmin
+      const { data: profile, error } = await adminClient
         .from('profiles')
         .select('id')
         .eq('email', email)
@@ -706,7 +553,7 @@ export async function getConsistentUserId(userId: string | undefined, email?: st
         // Create or update the mapping for future use
         if (!isNaN(Number(userId))) {
           try {
-            const { error: mappingError } = await supabaseAdmin
+            const { error: mappingError } = await adminClient
               .from('oauth_provider_mapping')
               .upsert({
                 provider_id: userId,
@@ -741,4 +588,4 @@ export async function getConsistentUserId(userId: string | undefined, email?: st
   
   console.log(`[getConsistentUserId] Could not find valid UUID for user ID: ${userId}`);
   return undefined;
-} 
+}

@@ -1,13 +1,15 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const contentId = params.id;
@@ -35,7 +37,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const { data: membership, error: membershipError } = await supabase
       .from('team_members')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('workspace_id', content.workspace_id)
       .maybeSingle();
 
@@ -43,7 +45,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       .from('workspaces')
       .select('*')
       .eq('id', content.workspace_id)
-      .eq('owner_id', session.user.id)
+      .eq('owner_id', user.id)
       .maybeSingle();
 
     if ((membershipError || !membership) && (ownedError || !ownedWorkspace)) {

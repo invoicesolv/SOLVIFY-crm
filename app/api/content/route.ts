@@ -1,8 +1,14 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import OpenAI from 'openai';
+import { getUserFromToken } from '@/lib/auth-utils';
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export const dynamic = 'force-dynamic';
 
 // Create Supabase admin client with service role key
 function getSupabaseAdmin() {
@@ -102,7 +108,9 @@ function deduplicateContentByTitle(content: any[]): any[] {
   return uniqueContent;
 }
 
-export async function GET(req: Request) {
+// Using imported getUserFromToken from auth-utils
+
+export async function GET(request: NextRequest) {
   try {
     console.log('GET /api/content - Starting request handling');
     
@@ -115,18 +123,20 @@ export async function GET(req: Request) {
     
     // Try to ensure schema includes error_message column
     await ensureErrorMessageColumn();
-    
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      console.log('GET /api/content - No authenticated session found');
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    console.log('GET /api/content - User ID from session:', session.user.id);
+    console.log('GET /api/content - User ID from session:', user.id);
 
     // Get query parameters
-    const url = new URL(req.url);
+    const url = new URL(request.url);
     const workspaceId = url.searchParams.get('workspaceId');
     const batchId = url.searchParams.get('batchId');
     const contentId = url.searchParams.get('id'); // New: Optional specific content ID
@@ -149,7 +159,7 @@ export async function GET(req: Request) {
     const { data: membership, error: membershipError } = await supabase
       .from('team_members')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('workspace_id', workspaceId)
       .maybeSingle();
 
@@ -162,7 +172,7 @@ export async function GET(req: Request) {
       .from('workspaces')
       .select('*')
       .eq('id', workspaceId)
-      .eq('owner_id', session.user.id)
+      .eq('owner_id', user.id)
       .maybeSingle();
 
     if (ownedError) {
@@ -255,5 +265,69 @@ export async function GET(req: Request) {
     console.error('GET /api/content - Unexpected error:', error);
     // Return empty content array instead of error
     return NextResponse.json({ content: [] });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    // Get JWT token from Authorization header
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Not authenticated' },
+        { status: 401 }
+      );
+    }
+
+    // Verify token and get user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Invalid token' },
+        { status: 401 }
+      );
+    }
+
+    // Get user's workspace
+    const { data: teamMember, error: teamError } = await supabase
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', user.id)
+      .single();
+
+    if (teamError || !teamMember?.workspace_id) {
+      return NextResponse.json(
+        { error: 'Workspace not found' },
+        { status: 404 }
+      );
+    }
+
+    const { 
+      topic, 
+      tone, 
+      type, 
+      keywords, 
+      target_audience, 
+      content_length,
+      include_seo_optimization,
+      additional_instructions 
+    } = await request.json();
+
+    console.log('[Content Generation] Request received:', {
+      topic,
+      tone,
+      type,
+      keywords,
+      target_audience,
+      content_length,
+      include_seo_optimization,
+      user_id: user.id,
+      workspace_id: teamMember.workspace_id
+    });
+
+    // Rest of the function...
+  } catch (error) {
+    console.error('POST /api/content - Unexpected error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 } 

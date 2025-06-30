@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import {
   Plus, 
   Play, 
@@ -76,6 +76,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { cn } from '@/lib/utils';
+import { CustomerEmailManager } from '@/components/projects/CustomerEmailManager';
 
 // Analytics Property Selector Component
 function AnalyticsPropertySelector({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -395,6 +396,30 @@ const AUTOMATION_TYPES = [
     category: 'AI'
   },
   { 
+    value: 'chatbot_integration', 
+    label: 'Chatbot Integration', 
+    icon: MessageSquare, 
+    description: 'Connect AI chatbot to automation workflows',
+    color: 'from-blue-500 to-cyan-500',
+    category: 'AI'
+  },
+  { 
+    value: 'smart_calendar', 
+    label: 'Smart Calendar', 
+    icon: Calendar, 
+    description: 'AI-powered calendar event creation and management',
+    color: 'from-green-500 to-emerald-500',
+    category: 'AI'
+  },
+  { 
+    value: 'project_ai_assistant', 
+    label: 'Project AI Assistant', 
+    icon: FolderOpen, 
+    description: 'AI assistant for project management and analysis',
+    color: 'from-orange-500 to-amber-500',
+    category: 'AI'
+  },
+  { 
     value: 'blog_post', 
     label: 'Blog Post', 
     icon: Edit3, 
@@ -645,7 +670,11 @@ const EVENT_TRIGGER_OPTIONS = [
   { value: 'api_webhook', label: 'API Webhook', icon: Zap, description: 'External API trigger' },
   { value: 'file_upload', label: 'File Upload', icon: Upload, description: 'When file is uploaded' },
   { value: 'database_change', label: 'Database Change', icon: RefreshCw, description: 'When database records change' },
-  { value: 'time_condition', label: 'Time Condition', icon: Clock, description: 'When specific time conditions are met' }
+  { value: 'time_condition', label: 'Time Condition', icon: Clock, description: 'When specific time conditions are met' },
+  { value: 'project_completion', label: 'Project Completed', icon: CheckCircle, description: 'When a project reaches 100% completion' },
+  { value: 'project_milestone', label: 'Project Milestone', icon: Target, description: 'When project reaches 25%, 50%, 75% progress' },
+  { value: 'project_status_change', label: 'Project Status Change', icon: GitBranch, description: 'When project status changes (active, completed, on-hold)' },
+  { value: 'project_trigger_automation', label: 'Project Trigger Automation', icon: Target, description: 'Automated customer notifications for project events' }
 ];
 
 const SOCIAL_MEDIA_PLATFORMS = [
@@ -659,6 +688,16 @@ const SOCIAL_MEDIA_PLATFORMS = [
 ];
 
 const AI_REASONING_MODELS = [
+  // Anthropic Claude Models (Latest 2025) - Prioritized for Reasoning
+      { value: 'claude-opus-4-20250514', label: '🚀 Claude Opus 4 (Anthropic)', description: 'Next-generation reasoning and analysis' },
+    { value: 'claude-sonnet-4-20250514', label: '🚀 Claude Sonnet 4 (Anthropic)', description: 'Next-generation reasoning and analysis' },
+          { value: 'claude-3-7-sonnet-20250219', label: '🧠 Claude 3.7 Sonnet (Anthropic)', description: 'Advanced reasoning with enhanced capabilities' },
+  { value: 'claude-3-5-sonnet-20241022', label: '💎 Claude 3.5 Sonnet (Anthropic)', description: 'Superior reasoning & analysis capabilities' },
+  { value: 'claude-3-5-haiku-20241022', label: '⚡ Claude 3.5 Haiku (Anthropic)', description: 'Fast reasoning with excellent quality' },
+  { value: 'claude-3-opus-20240229', label: '🎯 Claude 3 Opus (Anthropic)', description: 'Most capable Claude 3 model for complex reasoning' },
+  { value: 'claude-3-sonnet-20240229', label: '⚖️ Claude 3 Sonnet (Anthropic)', description: 'Balanced reasoning model' },
+  { value: 'claude-3-haiku-20240307', label: '🚀 Claude 3 Haiku (Anthropic)', description: 'Fastest Claude model' },
+  
   // OpenAI Models (Latest 2024-2025)
   { value: 'o1', label: 'GPT-o1 (OpenAI)', description: 'Latest reasoning model with chain-of-thought' },
   { value: 'o1-mini', label: 'GPT-o1-mini (OpenAI)', description: 'Faster reasoning model' },
@@ -666,13 +705,6 @@ const AI_REASONING_MODELS = [
   { value: 'gpt-4o', label: 'GPT-4o (OpenAI)', description: 'Advanced multimodal reasoning' },
   { value: 'gpt-4o-mini', label: 'GPT-4o-mini (OpenAI)', description: 'Efficient reasoning model' },
   { value: 'gpt-4-turbo', label: 'GPT-4 Turbo (OpenAI)', description: 'Enhanced GPT-4 with reasoning' },
-  
-  // Anthropic Claude Models (Latest 2024-2025)
-  { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet (Anthropic)', description: 'Superior reasoning capabilities' },
-  { value: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku (Anthropic)', description: 'Fast reasoning model' },
-  { value: 'claude-3-opus', label: 'Claude 3 Opus (Anthropic)', description: 'Most capable Claude model' },
-  { value: 'claude-3-sonnet', label: 'Claude 3 Sonnet (Anthropic)', description: 'Balanced reasoning model' },
-  { value: 'claude-3-haiku', label: 'Claude 3 Haiku (Anthropic)', description: 'Fastest Claude model' },
   
   // xAI Grok Models (Latest 2024-2025)
   { value: 'grok-3', label: 'Grok 3 (xAI)', description: 'Latest reasoning model with Think mode' },
@@ -752,7 +784,7 @@ const CALENDAR_EVENT_TYPES = [
 ];
 
 export default function CronJobsPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [loading, setLoading] = useState(true);
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [workflows, setWorkflows] = useState<AutomationWorkflow[]>([]);
@@ -780,15 +812,19 @@ export default function CronJobsPage() {
   const [configNode, setConfigNode] = useState<WorkflowNode | null>(null);
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [customerEmailManagerOpen, setCustomerEmailManagerOpen] = useState(false);
+  const [editingWorkflowName, setEditingWorkflowName] = useState<string | null>(null);
+  const [tempWorkflowName, setTempWorkflowName] = useState('');
 
   useEffect(() => {
-    if (session?.user?.id) {
+    if (user?.id) {
       loadCronJobs();
       loadSocialAccounts();
       loadCalendarAccounts();
+      fetchProjects();
       loadInvoiceData();
     }
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   const loadSocialAccounts = async () => {
     try {
@@ -880,14 +916,57 @@ export default function CronJobsPage() {
     }
   };
 
-  const loadInvoiceData = async () => {
+  const fetchProjects = async () => {
     try {
-      const response = await fetch('/api/invoices/data');
+      console.log('🔄 Loading projects...');
+      const response = await fetch('/api/projects');
+      console.log('📊 Projects response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('📊 Projects data received:', data);
+        
         if (data.success) {
-          setInvoiceData(data.data);
+          console.log('📊 Projects found:', data.projects?.length || 0);
+          setInvoiceData(prev => ({
+            ...prev,
+            projects: data.projects || []
+          }));
+        } else {
+          console.error('📊 Projects API returned success: false');
         }
+      } else {
+        console.error('📊 Projects API response not ok:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    }
+  };
+
+  const loadInvoiceData = async () => {
+    try {
+      console.log('🔄 Loading invoice data...');
+      const response = await fetch('/api/invoices/data');
+      console.log('📊 Invoice data response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📊 Invoice data received:', data);
+        
+        if (data.success) {
+          console.log('📊 Customers found:', data.data.customers?.length || 0);
+          setInvoiceData(prev => ({
+            ...prev,
+            customers: data.data.customers || [],
+            recent_invoices: data.data.recent_invoices || [],
+            recurring_invoices: data.data.recurring_invoices || [],
+            stats: data.data.stats || {}
+          }));
+        } else {
+          console.error('📊 Invoice data API returned success: false');
+        }
+      } else {
+        console.error('📊 Invoice data API response not ok:', response.status);
       }
     } catch (error) {
       console.error('Error fetching invoice data:', error);
@@ -921,14 +1000,22 @@ export default function CronJobsPage() {
   };
 
   const convertCronJobsToWorkflows = (jobs: CronJob[]) => {
+    console.log('🔄 Converting cron jobs to workflows:', jobs.length, 'jobs');
+    
     const workflows: AutomationWorkflow[] = jobs.map((job, index) => {
       const automationType = AUTOMATION_TYPES.find(type => type.value === job.job_type);
+      
+      console.log(`📊 Job ${job.id}: status="${job.status}", type="${job.job_type}"`);
       
       // Check if this is a saved workflow with full data
       if (job.settings.workflow_data) {
         // Use the saved workflow data with preserved positions
+        const workflowStatus = job.status === 'active' ? 'active' : job.status === 'disabled' ? 'paused' : 'draft';
+        console.log(`✅ Workflow ${job.id}: cron_status="${job.status}" → workflow_status="${workflowStatus}"`);
+        
         return {
           ...job.settings.workflow_data,
+          status: workflowStatus, // Override with current cron job status
           cron_job: job,
           stats: {
             triggered: Math.floor(Math.random() * 100),
@@ -988,6 +1075,188 @@ export default function CronJobsPage() {
     });
 
     setWorkflows(workflows);
+    console.log('✅ Workflows updated:', workflows.map(w => ({ id: w.id, name: w.name, status: w.status })));
+  };
+
+  // Test project triggers function
+  const testProjectTriggers = async () => {
+    try {
+      console.log('[🧪 TRIGGER TEST] Starting project trigger test...');
+      
+      const response = await fetch('/api/test-project-triggers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ testType: 'all' })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log('[✅ TRIGGER TEST] Test completed:', result);
+      
+      toast.success(
+        `🎉 Project Trigger Test Completed!\n\n` +
+        `✅ Test Results: ${result.results?.length || 0} triggers tested\n` +
+        `📊 Project: ${result.project?.name || 'Test Project'}\n` +
+        `🚀 Status: ${result.project?.status || 'Unknown'}\n\n` +
+        `Check your server console for detailed logs with emojis!`,
+        { duration: 8000 }
+      );
+      
+      // Show detailed results in console for debugging
+      if (result.results && result.results.length > 0) {
+        console.table(result.results.map((r: any) => ({
+          'Trigger Type': r.type,
+          'Triggered': r.result.triggered ? '✅ Yes' : '❌ No',
+          'Reason': r.result.triggerReason || r.result.reason || 'N/A'
+        })));
+      }
+      
+    } catch (error) {
+      console.error('[❌ TRIGGER TEST] Test failed:', error);
+      toast.error(
+        `❌ Project Trigger Test Failed\n\n` +
+        `Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\n` +
+        `Please check your server console for details.`,
+        { duration: 6000 }
+      );
+    }
+  };
+
+  // Test chat trigger live function
+  const testChatTriggerLive = async () => {
+    try {
+      console.log('💬 Testing chat integration live...');
+      
+      if (!selectedWorkflow) {
+        toast.error('❌ Please select a workflow first');
+        return;
+      }
+
+      // Update workflow nodes to show testing state
+      const updatedWorkflow = { ...selectedWorkflow };
+      const chatTriggerNode = updatedWorkflow.nodes.find(n => n.subtype === 'chat_message_received');
+      const chatbotNode = updatedWorkflow.nodes.find(n => n.subtype === 'chatbot_integration');
+      
+      if (chatTriggerNode) {
+        chatTriggerNode.data = { ...chatTriggerNode.data, testing: true, status: 'testing' };
+      }
+      if (chatbotNode) {
+        chatbotNode.data = { ...chatbotNode.data, testing: true, status: 'testing' };
+      }
+      
+      setSelectedWorkflow(updatedWorkflow);
+      toast.info('🧪 Starting live chat test...');
+
+      // Test the chat trigger with a sample message
+      const testMessage = "Test automation: Show me my projects and calendar";
+      
+      const response = await fetch('/api/automation/chat-trigger', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: testMessage,
+          workflowId: selectedWorkflow.id,
+          userId: session?.user?.id,
+          context: { 
+            test: true,
+            platform: 'automation_test',
+            trigger_type: 'live_test'
+          }
+        }),
+      });
+
+      const result = await response.json();
+      
+      // Update workflow nodes with results
+      if (response.ok && result.success) {
+        // Mark nodes as successful
+        if (chatTriggerNode) {
+          chatTriggerNode.data = { 
+            ...chatTriggerNode.data, 
+            testing: false, 
+            status: 'success',
+            lastTest: new Date().toISOString(),
+            testResult: 'Chat trigger activated successfully'
+          };
+        }
+        if (chatbotNode) {
+          chatbotNode.data = { 
+            ...chatbotNode.data, 
+            testing: false, 
+            status: 'success',
+            lastTest: new Date().toISOString(),
+            testResult: `AI response generated: ${result.response?.substring(0, 100)}...`
+          };
+        }
+        
+        setSelectedWorkflow(updatedWorkflow);
+        toast.success(`✅ Chat integration test successful!`);
+        console.log('✅ Chat test results:', result);
+        
+        // Show the AI response in a toast for immediate feedback
+        toast.info(`🤖 AI Response: ${result.response?.substring(0, 150)}...`);
+        
+      } else {
+        // Mark nodes as failed
+        const errorMessage = result.error || 'Unknown error';
+        
+        if (chatTriggerNode) {
+          chatTriggerNode.data = { 
+            ...chatTriggerNode.data, 
+            testing: false, 
+            status: 'error',
+            lastTest: new Date().toISOString(),
+            testError: errorMessage
+          };
+        }
+        if (chatbotNode) {
+          chatbotNode.data = { 
+            ...chatbotNode.data, 
+            testing: false, 
+            status: 'error',
+            lastTest: new Date().toISOString(),
+            testError: errorMessage
+          };
+        }
+        
+        setSelectedWorkflow(updatedWorkflow);
+        toast.error(`❌ Chat test failed: ${errorMessage}`);
+        console.error('❌ Chat test error:', result);
+      }
+      
+    } catch (error) {
+      console.error('Error testing chat integration:', error);
+      
+      // Mark nodes as failed due to network/system error
+      if (selectedWorkflow) {
+        const updatedWorkflow = { ...selectedWorkflow };
+        const chatTriggerNode = updatedWorkflow.nodes.find(n => n.subtype === 'chat_message_received');
+        const chatbotNode = updatedWorkflow.nodes.find(n => n.subtype === 'chatbot_integration');
+        
+        [chatTriggerNode, chatbotNode].forEach(node => {
+          if (node) {
+            node.data = { 
+              ...node.data, 
+              testing: false, 
+              status: 'error',
+              lastTest: new Date().toISOString(),
+              testError: error instanceof Error ? error.message : 'Network error'
+            };
+          }
+        });
+        
+        setSelectedWorkflow(updatedWorkflow);
+      }
+      
+      toast.error('❌ Failed to test chat integration');
+    }
   };
 
   const createNewWorkflow = () => {
@@ -1020,27 +1289,50 @@ export default function CronJobsPage() {
     const newStatus = currentStatus === 'active' ? 'paused' : 'active';
     const cronStatus = newStatus === 'active' ? 'active' : 'disabled';
     
+    console.log(`🔄 Toggling workflow ${workflowId}: ${currentStatus} → ${newStatus} (cron: ${cronStatus})`);
+    
     try {
-      const { error } = await supabase
-        .from('cron_jobs')
-        .update({ status: cronStatus })
-        .eq('id', workflowId);
-
-      if (error) throw error;
-
+      // Update optimistically first
       setWorkflows(prev => 
         prev.map(w => 
           w.id === workflowId 
-            ? { ...w, status: newStatus as 'active' | 'paused' | 'draft' }
+            ? { 
+                ...w, 
+                status: newStatus as 'active' | 'paused' | 'draft',
+                cron_job: w.cron_job ? { ...w.cron_job, status: cronStatus as 'active' | 'disabled' | 'pending' } : w.cron_job
+              }
             : w
         )
       );
+
+      const { data, error } = await supabase
+        .from('cron_jobs')
+        .update({ status: cronStatus })
+        .eq('id', workflowId)
+        .select();
+
+      if (error) throw error;
+
+      console.log(`✅ Database updated successfully:`, data);
+      toast.success(`🎉 Automation ${newStatus === 'active' ? 'activated' : 'paused'} successfully!`);
       
-      toast.success(`Automation ${newStatus === 'active' ? 'activated' : 'paused'}`);
-      loadCronJobs(); // Refresh data
+      // Refresh data after a short delay to ensure database consistency
+      setTimeout(() => {
+        loadCronJobs();
+      }, 1000);
+      
     } catch (error) {
-      console.error('Error updating workflow status:', error);
+      console.error('❌ Error updating workflow status:', error);
       toast.error('Failed to update automation status');
+      
+      // Revert optimistic update on error
+      setWorkflows(prev => 
+        prev.map(w => 
+          w.id === workflowId 
+            ? { ...w, status: currentStatus as 'active' | 'paused' | 'draft' }
+            : w
+        )
+      );
     }
   };
 
@@ -1058,6 +1350,66 @@ export default function CronJobsPage() {
     } catch (error) {
       console.error('Error deleting workflow:', error);
       toast.error('Failed to delete automation');
+    }
+  };
+
+  const startRenameWorkflow = (workflow: AutomationWorkflow) => {
+    setEditingWorkflowName(workflow.id);
+    setTempWorkflowName(workflow.name);
+  };
+
+  const cancelRenameWorkflow = () => {
+    setEditingWorkflowName(null);
+    setTempWorkflowName('');
+  };
+
+  const saveWorkflowName = async (workflowId: string) => {
+    if (!tempWorkflowName.trim()) {
+      toast.error('Workflow name cannot be empty');
+      return;
+    }
+
+    try {
+      // Update the workflow data in the cron job settings
+      const workflow = workflows.find(w => w.id === workflowId);
+      if (!workflow || !workflow.cron_job) {
+        toast.error('Workflow not found');
+        return;
+      }
+
+      const updatedWorkflowData = {
+        ...workflow.cron_job.settings.workflow_data,
+        name: tempWorkflowName.trim(),
+        description: workflow.description // Keep existing description
+      };
+
+      const { error } = await supabase
+        .from('cron_jobs')
+        .update({ 
+          settings: {
+            ...workflow.cron_job.settings,
+            workflow_data: updatedWorkflowData
+          }
+        })
+        .eq('id', workflowId);
+
+      if (error) throw error;
+
+      // Update local state
+      setWorkflows(prev => 
+        prev.map(w => 
+          w.id === workflowId 
+            ? { ...w, name: tempWorkflowName.trim() }
+            : w
+        )
+      );
+
+      setEditingWorkflowName(null);
+      setTempWorkflowName('');
+      toast.success('Workflow renamed successfully');
+    } catch (error) {
+      console.error('Error renaming workflow:', error);
+      toast.error('Failed to rename workflow');
     }
   };
 
@@ -1455,7 +1807,7 @@ export default function CronJobsPage() {
                   const IconComponent = automationType.icon;
                   
                   return (
-                    <AnimatedBorderCard key={workflow.id} className="p-6">
+                    <AnimatedBorderCard key={workflow.id} className="p-6 group">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                           <div className={cn(
@@ -1464,8 +1816,53 @@ export default function CronJobsPage() {
                           )}>
                             <IconComponent className="h-6 w-6 text-white" />
                           </div>
-                          <div>
+                          <div className="flex-1">
+                            {editingWorkflowName === workflow.id ? (
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={tempWorkflowName}
+                                  onChange={(e) => setTempWorkflowName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      saveWorkflowName(workflow.id);
+                                    } else if (e.key === 'Escape') {
+                                      cancelRenameWorkflow();
+                                    }
+                                  }}
+                                  className="h-8 text-sm font-semibold"
+                                  autoFocus
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => saveWorkflowName(workflow.id)}
+                                  className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={cancelRenameWorkflow}
+                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
                             <h3 className="font-semibold text-foreground">{workflow.name}</h3>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => startRenameWorkflow(workflow)}
+                                  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Rename workflow"
+                                >
+                                  <Edit3 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            )}
                             <p className="text-sm text-muted-foreground">{workflow.description}</p>
                             <div className="flex items-center gap-4 mt-2">
                               <Badge className={getStatusColor(workflow.status)}>
@@ -1590,6 +1987,13 @@ export default function CronJobsPage() {
                                   <div className="text-xs text-muted-foreground">{type.description}</div>
                                 </div>
                               </div>
+
+      {/* Customer Email Manager Modal */}
+      {customerEmailManagerOpen && (
+        <CustomerEmailManager 
+          onClose={() => setCustomerEmailManagerOpen(false)} 
+        />
+      )}
                             </div>
                           );
                         })}
@@ -1607,7 +2011,77 @@ export default function CronJobsPage() {
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       <Workflow className="h-5 w-5" />
-                      {selectedWorkflow?.name || 'New Workflow'}
+                      {editingWorkflowName === selectedWorkflow?.id ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={tempWorkflowName}
+                            onChange={(e) => setTempWorkflowName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveWorkflowName(selectedWorkflow?.id || '');
+                              } else if (e.key === 'Escape') {
+                                cancelRenameWorkflow();
+                              }
+                            }}
+                            className="h-8 text-lg font-bold"
+                            autoFocus
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => saveWorkflowName(selectedWorkflow?.id || '')}
+                            className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={cancelRenameWorkflow}
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span>{selectedWorkflow?.name || 'New Workflow'}</span>
+                          
+                          {/* Real-time test status */}
+                          {selectedWorkflow && (
+                            <>
+                              {selectedWorkflow.nodes.some(n => n.data?.status === 'testing') && (
+                                <div className="inline-flex items-center gap-1 text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full text-xs">
+                                  <div className="h-2 w-2 bg-yellow-500 rounded-full animate-pulse" />
+                                  Testing...
+                                </div>
+                              )}
+                              {selectedWorkflow.nodes.some(n => n.data?.status === 'success') && !selectedWorkflow.nodes.some(n => n.data?.status === 'testing') && (
+                                <div className="inline-flex items-center gap-1 text-green-600 bg-green-50 px-2 py-1 rounded-full text-xs">
+                                  <div className="h-2 w-2 bg-green-500 rounded-full" />
+                                  Test Passed
+                                </div>
+                              )}
+                              {selectedWorkflow.nodes.some(n => n.data?.status === 'error') && !selectedWorkflow.nodes.some(n => n.data?.status === 'testing') && (
+                                <div className="inline-flex items-center gap-1 text-red-600 bg-red-50 px-2 py-1 rounded-full text-xs">
+                                  <div className="h-2 w-2 bg-red-500 rounded-full" />
+                                  Test Failed
+                                </div>
+                              )}
+                              
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => startRenameWorkflow(selectedWorkflow)}
+                                className="h-6 w-6 p-0"
+                                title="Rename workflow"
+                              >
+                                <Edit3 className="h-3 w-3" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
                       Drag automation blocks from the left panel to build your workflow
@@ -1668,10 +2142,31 @@ export default function CronJobsPage() {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className={cn(
-                            "p-2 rounded-md bg-gradient-to-r text-white",
+                            "p-2 rounded-md bg-gradient-to-r text-white relative",
                             getNodeColor(node.type, node.subtype)
                           )}>
                             {getNodeIcon(node.type, node.subtype)}
+                            
+                            {/* Status indicator overlay */}
+                            {node.data?.status && (
+                              <div className="absolute -top-1 -right-1">
+                                {node.data.status === 'testing' && (
+                                  <div className="h-3 w-3 bg-yellow-500 rounded-full animate-pulse flex items-center justify-center">
+                                    <div className="h-1.5 w-1.5 bg-white rounded-full animate-ping" />
+                                  </div>
+                                )}
+                                {node.data.status === 'success' && (
+                                  <div className="h-3 w-3 bg-green-500 rounded-full flex items-center justify-center">
+                                    <div className="h-1.5 w-1.5 bg-white rounded-full" />
+                                  </div>
+                                )}
+                                {node.data.status === 'error' && (
+                                  <div className="h-3 w-3 bg-red-500 rounded-full flex items-center justify-center">
+                                    <X className="h-2 w-2 text-white" />
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <Button
                             variant="ghost"
@@ -1688,6 +2183,27 @@ export default function CronJobsPage() {
                         <div>
                           <h4 className="font-medium text-sm text-foreground">{node.title}</h4>
                           <p className="text-xs text-muted-foreground mt-1">{node.description}</p>
+                          
+                          {/* Status information */}
+                          {node.data?.status && (
+                            <div className="mt-2 text-xs">
+                              {node.data.status === 'testing' && (
+                                <div className="text-yellow-600 bg-yellow-50 px-2 py-1 rounded">
+                                  🧪 Testing in progress...
+                                </div>
+                              )}
+                              {node.data.status === 'success' && node.data.testResult && (
+                                <div className="text-green-600 bg-green-50 px-2 py-1 rounded">
+                                  ✅ {node.data.testResult}
+                                </div>
+                              )}
+                              {node.data.status === 'error' && node.data.testError && (
+                                <div className="text-red-600 bg-red-50 px-2 py-1 rounded">
+                                  ❌ {node.data.testError}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -2359,6 +2875,274 @@ export default function CronJobsPage() {
                         <p className="text-sm text-purple-600 dark:text-purple-400">
                           ⏰ <strong>Smart Alternative:</strong> This combines time-based triggers with condition checking - perfect for business rules!
                         </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Project Trigger Automation Configuration */}
+                  {configNode.data.event_type === 'project_trigger_automation' && (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Trigger Types</Label>
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              checked={configNode.data.trigger_completion !== false}
+                              onCheckedChange={(checked) => {
+                                if (selectedWorkflow && configNode) {
+                                  const updatedNode = { ...configNode, data: { ...configNode.data, trigger_completion: checked } };
+                                  setConfigNode(updatedNode);
+                                  setSelectedWorkflow(prev => prev ? {
+                                    ...prev,
+                                    nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                  } : null);
+                                }
+                              }}
+                            />
+                            <Label>🎉 Project Completion</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              checked={configNode.data.trigger_progress_25 !== false}
+                              onCheckedChange={(checked) => {
+                                if (selectedWorkflow && configNode) {
+                                  const updatedNode = { ...configNode, data: { ...configNode.data, trigger_progress_25: checked } };
+                                  setConfigNode(updatedNode);
+                                  setSelectedWorkflow(prev => prev ? {
+                                    ...prev,
+                                    nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                  } : null);
+                                }
+                              }}
+                            />
+                            <Label>📈 25% Progress Milestone</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              checked={configNode.data.trigger_progress_50 !== false}
+                              onCheckedChange={(checked) => {
+                                if (selectedWorkflow && configNode) {
+                                  const updatedNode = { ...configNode, data: { ...configNode.data, trigger_progress_50: checked } };
+                                  setConfigNode(updatedNode);
+                                  setSelectedWorkflow(prev => prev ? {
+                                    ...prev,
+                                    nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                  } : null);
+                                }
+                              }}
+                            />
+                            <Label>📈 50% Progress Milestone</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              checked={configNode.data.trigger_progress_75 !== false}
+                              onCheckedChange={(checked) => {
+                                if (selectedWorkflow && configNode) {
+                                  const updatedNode = { ...configNode, data: { ...configNode.data, trigger_progress_75: checked } };
+                                  setConfigNode(updatedNode);
+                                  setSelectedWorkflow(prev => prev ? {
+                                    ...prev,
+                                    nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                  } : null);
+                                }
+                              }}
+                            />
+                            <Label>📈 75% Progress Milestone</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Switch
+                              checked={configNode.data.trigger_status_change !== false}
+                              onCheckedChange={(checked) => {
+                                if (selectedWorkflow && configNode) {
+                                  const updatedNode = { ...configNode, data: { ...configNode.data, trigger_status_change: checked } };
+                                  setConfigNode(updatedNode);
+                                  setSelectedWorkflow(prev => prev ? {
+                                    ...prev,
+                                    nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                  } : null);
+                                }
+                              }}
+                            />
+                            <Label>🔄 Status Changes</Label>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label>Projects to Monitor</Label>
+                        <Select
+                          value={configNode.data.projects_filter || 'all'}
+                          onValueChange={(value) => {
+                            if (selectedWorkflow && configNode) {
+                              const updatedNode = { ...configNode, data: { ...configNode.data, projects_filter: value } };
+                              setConfigNode(updatedNode);
+                              setSelectedWorkflow(prev => prev ? {
+                                ...prev,
+                                nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                              } : null);
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Projects</SelectItem>
+                            <SelectItem value="active">Active Projects Only</SelectItem>
+                            <SelectItem value="specific">Specific Projects</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      {configNode.data.projects_filter === 'specific' && (
+                        <div className="space-y-2">
+                                                     <Label>Select Projects ({invoiceData.projects?.length || 0} available)</Label>
+                           <Select
+                             value={configNode.data.specific_projects || ''}
+                             onValueChange={(value) => {
+                               if (selectedWorkflow && configNode) {
+                                 const selectedProject = invoiceData.projects?.find((p: any) => p.id === value);
+                                 const updatedNode = { 
+                                   ...configNode, 
+                                   data: { 
+                                     ...configNode.data, 
+                                     specific_projects: value,
+                                     project_name: selectedProject?.name || '',
+                                     customer_name: selectedProject?.customer_name || '',
+                                     customer_id: selectedProject?.customer_id || null
+                                   } 
+                                 };
+                                 setConfigNode(updatedNode);
+                                 setSelectedWorkflow(prev => prev ? {
+                                   ...prev,
+                                   nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                 } : null);
+                               }
+                             }}
+                           >
+                             <SelectTrigger>
+                               <SelectValue placeholder="Select a project to monitor" />
+                             </SelectTrigger>
+                             <SelectContent>
+                               {invoiceData.projects?.length > 0 ? (
+                                 invoiceData.projects.map((project: any) => (
+                                   <SelectItem key={project.id} value={project.id}>
+                                     {project.name} - {project.customer_name}
+                                   </SelectItem>
+                                 ))
+                               ) : (
+                                 <SelectItem value="loading" disabled>
+                                   {invoiceData.projects === undefined ? 'Loading projects...' : 'No projects found'}
+                                 </SelectItem>
+                               )}
+                             </SelectContent>
+                           </Select>
+                           
+                           {configNode.data.specific_projects && configNode.data.customer_name && (
+                             <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                               <p className="text-sm text-green-700 dark:text-green-300">
+                                 <strong>Selected:</strong> {configNode.data.project_name}<br/>
+                                 <strong>Customer:</strong> {configNode.data.customer_name}<br/>
+                                 {configNode.data.customer_id ? (
+                                   <span className="text-green-600">✅ Customer email will be automatically fetched</span>
+                                 ) : (
+                                   <span className="text-orange-600">⚠️ No customer ID - will use fallback recipients</span>
+                                 )}
+                               </p>
+                             </div>
+                           )}
+                        </div>
+                      )}
+                      
+                      <div className="space-y-2">
+                        <Label>Email Notification Strategy</Label>
+                        <Select
+                          value={configNode.data.email_strategy || 'customer_only'}
+                          onValueChange={(value) => {
+                            if (selectedWorkflow && configNode) {
+                              const updatedNode = { ...configNode, data: { ...configNode.data, email_strategy: value } };
+                              setConfigNode(updatedNode);
+                              setSelectedWorkflow(prev => prev ? {
+                                ...prev,
+                                nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                              } : null);
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="customer_only">Customer Only (Project-Specific)</SelectItem>
+                            <SelectItem value="customer_and_team">Customer + Project Team</SelectItem>
+                            <SelectItem value="custom_recipients">Custom Recipients</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      {configNode.data.email_strategy === 'custom_recipients' && (
+                        <div className="space-y-2">
+                          <Label>Additional Recipients (one per line)</Label>
+                          <Textarea
+                            placeholder="Enter email addresses for additional notifications..."
+                            value={configNode.data.additional_recipients || ''}
+                            onChange={(e) => {
+                              if (selectedWorkflow && configNode) {
+                                const updatedNode = { ...configNode, data: { ...configNode.data, additional_recipients: e.target.value } };
+                                setConfigNode(updatedNode);
+                                setSelectedWorkflow(prev => prev ? {
+                                  ...prev,
+                                  nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                } : null);
+                              }
+                            }}
+                            rows={3}
+                          />
+                        </div>
+                      )}
+                      
+                                             <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                         <p className="text-sm text-blue-600 dark:text-blue-400">
+                           🎯 <strong>Smart Customer Notifications:</strong> Each project's customer will receive targeted email notifications only for their specific projects. No more mass emails!
+                         </p>
+                       </div>
+                       
+                       <div className="border-t pt-4">
+                         <Button
+                           onClick={() => setCustomerEmailManagerOpen(true)}
+                           variant="outline"
+                           className="w-full mb-2"
+                         >
+                           📧 Manage Customer Emails
+                         </Button>
+                         <p className="text-xs text-muted-foreground text-center">
+                           Set up customer emails for each project to enable targeted notifications
+                         </p>
+                       </div>
+                      
+                                             <div className="space-y-2">
+                         <Button
+                           onClick={testProjectTriggers}
+                           className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+                         >
+                           🧪 Test Project Triggers
+                         </Button>
+                         
+                         <Button
+                           onClick={fetchProjects}
+                           variant="outline"
+                           className="w-full"
+                         >
+                           🔄 Reload Projects ({invoiceData.projects?.length || 0} loaded)
+                         </Button>
+                         
+                         {invoiceData.projects?.length === 0 && (
+                           <div className="p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                             <p className="text-sm text-orange-700 dark:text-orange-300">
+                               ⚠️ <strong>No projects loaded!</strong> Click "Reload Projects" or check the console for API errors.
+                             </p>
+                           </div>
+                         )}
                       </div>
                     </div>
                   )}
@@ -3544,6 +4328,196 @@ export default function CronJobsPage() {
                            </Select>
                          </div>
                        )}
+                       
+                       <div className="space-y-2">
+                         <Label>Task Selection</Label>
+                         <Select
+                           value={configNode.data.task_filter || 'all'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, task_filter: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="all">All Tasks</SelectItem>
+                             <SelectItem value="completed">Completed Tasks Only</SelectItem>
+                             <SelectItem value="pending">Pending Tasks Only</SelectItem>
+                             <SelectItem value="overdue">Overdue Tasks Only</SelectItem>
+                             <SelectItem value="specific">Specific Tasks</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       
+                       {configNode.data.task_filter === 'specific' && (
+                         <div className="space-y-2">
+                           <Label>Specific Tasks</Label>
+                           <Textarea
+                             placeholder="Enter task IDs or names (one per line)&#10;e.g., task-123, Setup Database, Configure API"
+                             value={configNode.data.specific_tasks || ''}
+                             onChange={(e) => {
+                               if (selectedWorkflow && configNode) {
+                                 const updatedNode = { ...configNode, data: { ...configNode.data, specific_tasks: e.target.value } };
+                                 setConfigNode(updatedNode);
+                                 setSelectedWorkflow(prev => prev ? {
+                                   ...prev,
+                                   nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                 } : null);
+                               }
+                             }}
+                             rows={3}
+                           />
+                           <p className="text-xs text-muted-foreground">
+                             Enter task IDs, names, or keywords to match specific tasks
+                           </p>
+                         </div>
+                       )}
+                       
+                       <div className="space-y-2">
+                         <Label>Subtask Inclusion</Label>
+                         <Select
+                           value={configNode.data.subtask_filter || 'include'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, subtask_filter: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="include">Include All Subtasks</SelectItem>
+                             <SelectItem value="completed_only">Completed Subtasks Only</SelectItem>
+                             <SelectItem value="pending_only">Pending Subtasks Only</SelectItem>
+                             <SelectItem value="exclude">Exclude Subtasks</SelectItem>
+                             <SelectItem value="specific">Specific Subtasks</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       
+                       {configNode.data.subtask_filter === 'specific' && (
+                         <div className="space-y-2">
+                           <Label>Specific Subtasks</Label>
+                           <Textarea
+                             placeholder="Enter subtask keywords or patterns (one per line)&#10;e.g., Design, Testing, Review, Documentation"
+                             value={configNode.data.specific_subtasks || ''}
+                             onChange={(e) => {
+                               if (selectedWorkflow && configNode) {
+                                 const updatedNode = { ...configNode, data: { ...configNode.data, specific_subtasks: e.target.value } };
+                                 setConfigNode(updatedNode);
+                                 setSelectedWorkflow(prev => prev ? {
+                                   ...prev,
+                                   nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                 } : null);
+                               }
+                             }}
+                             rows={3}
+                           />
+                           <p className="text-xs text-muted-foreground">
+                             Enter keywords to match specific subtasks across all selected tasks
+                           </p>
+                         </div>
+                       )}
+                       
+                       <div className="space-y-2">
+                         <Label>Task Details to Include</Label>
+                         <div className="space-y-2">
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.include_task_progress !== false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, include_task_progress: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Task Progress Percentages</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.include_task_assignments !== false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, include_task_assignments: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Task Assignments</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.include_due_dates !== false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, include_due_dates: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Due Dates & Deadlines</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.include_time_tracking !== false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, include_time_tracking: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Time Tracking Data</Label>
+                           </div>
+                                                       <div className="flex items-center space-x-2">
+                              <Switch
+                                checked={configNode.data.include_comments !== false}
+                                onCheckedChange={(checked) => {
+                                  if (selectedWorkflow && configNode) {
+                                    const updatedNode = { ...configNode, data: { ...configNode.data, include_comments: checked } };
+                                    setConfigNode(updatedNode);
+                                    setSelectedWorkflow(prev => prev ? {
+                                      ...prev,
+                                      nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                    } : null);
+                                  }
+                                }}
+                              />
+                              <Label>Task Comments & Notes</Label>
+                            </div>
+                          </div>
+                        </div>
                        <div className="space-y-2">
                          <Label>Recipients (one per line)</Label>
                          <Textarea
@@ -3745,7 +4719,7 @@ export default function CronJobsPage() {
                                    });
                                    const result = await response.json();
                                    console.log('Memory store result:', result);
-                                   alert(result.success ? 'Memory stored!' : 'Error storing memory');
+                                   alert(result.success ? `✅ Memory stored! Status: ${result.status}` : 'Error storing memory');
                                  } catch (error) {
                                    console.error('Error testing memory:', error);
                                    alert('Error testing memory storage');
@@ -3763,7 +4737,7 @@ export default function CronJobsPage() {
                                    const response = await fetch(`/api/automation/memory?workspace_id=7ab1e32d-a48b-4437-a2cf-6c1bb9f3d2f7&workflow_id=${selectedWorkflow?.id || 'test-workflow'}&memory_key=test_key`);
                                    const result = await response.json();
                                    console.log('Memory retrieve result:', result);
-                                   alert(result.success ? `Retrieved: ${JSON.stringify(result.data)}` : 'No memory found');
+                                   alert(result.success ? `✅ Retrieved (Status ${result.status}): ${JSON.stringify(result.data)}` : 'No memory found');
                                  } catch (error) {
                                    console.error('Error retrieving memory:', error);
                                    alert('Error retrieving memory');
@@ -3771,6 +4745,30 @@ export default function CronJobsPage() {
                                }}
                              >
                                Test Retrieve
+                             </Button>
+                             <Button
+                               type="button"
+                               variant="default"
+                               size="sm"
+                               onClick={async () => {
+                                 try {
+                                   const response = await fetch('/api/automation/memory?test=true');
+                                   const result = await response.json();
+                                   console.log('🗄️ Database access test result:', result);
+                                   
+                                   // Show detailed results in alert
+                                   const dataInfo = Object.entries(result.available_data)
+                                     .map(([key, data]: [string, any]) => `${key}: ${data.count} records`)
+                                     .join('\n');
+                                   
+                                   alert(`✅ Database Access Test - Status ${result.status}\n\n${result.message}\n\nAvailable Data:\n${dataInfo}\n\nCheck console for full schema details!`);
+                                 } catch (error) {
+                                   console.error('Error testing database access:', error);
+                                   alert('Error testing database access');
+                                 }
+                               }}
+                             >
+                               🗄️ Test Database Access
                              </Button>
                            </div>
                          </div>
@@ -4078,7 +5076,7 @@ export default function CronJobsPage() {
                        <div className="space-y-2">
                          <Label>Request Body (JSON)</Label>
                          <Textarea
-                           placeholder='{"message": "Hello from automation!", "data": "{{memory.customer_data}}"}'
+                           placeholder='{"message": "Hello from automation!", "data": "{memory.customer_data}"}'
                            value={configNode.data.body || ''}
                            onChange={(e) => {
                              if (selectedWorkflow && configNode) {
@@ -5518,17 +6516,412 @@ if (input.background_video) {
                        </div>
                      </div>
                    )}
+
+                   {/* Chatbot Integration Configuration */}
+                   {configNode.subtype === 'chatbot_integration' && (
+                     <div className="space-y-4">
+                       <div className="space-y-2">
+                         <Label>Chatbot Type</Label>
+                         <Select
+                           value={configNode.data.chatbot_type || 'existing'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, chatbot_type: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="existing">🤖 Use Existing ChatWindow</SelectItem>
+                             <SelectItem value="team_chat">💬 Team Chat Integration</SelectItem>
+                             <SelectItem value="custom">⚙️ Custom Chatbot Instance</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+
+                       <div className="space-y-2">
+                         <Label>AI Model</Label>
+                         <Select
+                           value={configNode.data.chatbot_model || 'gpt-4o'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, chatbot_model: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             {AI_REASONING_MODELS.slice(0, 20).map(model => (
+                               <SelectItem key={model.value} value={model.value}>
+                                 <div>
+                                   <div className="font-medium">{model.label}</div>
+                                   <div className="text-xs text-muted-foreground">{model.description}</div>
+                                 </div>
+                               </SelectItem>
+                             ))}
+                           </SelectContent>
+                         </Select>
+                       </div>
+
+                       <div className="space-y-2">
+                         <Label>System Instructions</Label>
+                         <Textarea
+                           placeholder="You are a helpful AI assistant. Respond professionally and provide helpful information about projects, calendar events, and CRM data..."
+                           value={configNode.data.system_instructions || ''}
+                           onChange={(e) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, system_instructions: e.target.value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                           rows={4}
+                         />
+                       </div>
+
+                       <div className="space-y-2">
+                         <Label>Integration Features</Label>
+                         <div className="grid grid-cols-1 gap-2">
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.connect_to_projects || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, connect_to_projects: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Connect to Projects</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.connect_to_calendar || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, connect_to_calendar: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Connect to Calendar</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.connect_to_reasoning || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, connect_to_reasoning: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Connect to AI Reasoning</Label>
+                           </div>
+                         </div>
+                       </div>
+                 </div>
+               )}
+
+                   {/* Smart Calendar Configuration */}
+                   {configNode.subtype === 'smart_calendar' && (
+                     <div className="space-y-4">
+                       <div className="space-y-2">
+                         <Label>Calendar Action</Label>
+                         <Select
+                           value={configNode.data.calendar_action || 'create_event'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, calendar_action: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="create_event">📅 Create Calendar Event</SelectItem>
+                             <SelectItem value="analyze_schedule">🔍 Analyze Schedule</SelectItem>
+                             <SelectItem value="suggest_times">⏰ Suggest Meeting Times</SelectItem>
+                             <SelectItem value="reschedule">🔄 Smart Rescheduling</SelectItem>
+                           </SelectContent>
+                         </Select>
+            </div>
+
+                       <div className="space-y-2">
+                         <Label>AI Model for Calendar Intelligence</Label>
+                         <Select
+                           value={configNode.data.calendar_ai_model || 'gpt-4o'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, calendar_ai_model: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             {AI_REASONING_MODELS.slice(0, 20).map(model => (
+                               <SelectItem key={model.value} value={model.value}>
+                                 <div>
+                                   <div className="font-medium">{model.label}</div>
+                                   <div className="text-xs text-muted-foreground">{model.description}</div>
+                                 </div>
+                               </SelectItem>
+                             ))}
+                           </SelectContent>
+                         </Select>
+                       </div>
+
+                       <div className="space-y-2">
+                         <Label>Smart Features</Label>
+                         <div className="grid grid-cols-1 gap-2">
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.auto_timezone_detection || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, auto_timezone_detection: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Auto Timezone Detection</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.conflict_detection || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, conflict_detection: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Conflict Detection</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.smart_reminders || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, smart_reminders: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Smart Reminders</Label>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   )}
+
+                   {/* Project AI Assistant Configuration */}
+                   {configNode.subtype === 'project_ai_assistant' && (
+                     <div className="space-y-4">
+                       <div className="space-y-2">
+                         <Label>Assistant Role</Label>
+                         <Select
+                           value={configNode.data.assistant_role || 'project_manager'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, assistant_role: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="project_manager">👔 Project Manager</SelectItem>
+                             <SelectItem value="analyst">📊 Data Analyst</SelectItem>
+                             <SelectItem value="coordinator">🤝 Team Coordinator</SelectItem>
+                             <SelectItem value="reporter">📋 Progress Reporter</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+
+                       <div className="space-y-2">
+                         <Label>AI Model for Project Analysis</Label>
+                         <Select
+                           value={configNode.data.project_ai_model || 'gpt-4o'}
+                           onValueChange={(value) => {
+                             if (selectedWorkflow && configNode) {
+                               const updatedNode = { ...configNode, data: { ...configNode.data, project_ai_model: value } };
+                               setConfigNode(updatedNode);
+                               setSelectedWorkflow(prev => prev ? {
+                                 ...prev,
+                                 nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                               } : null);
+                             }
+                           }}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             {AI_REASONING_MODELS.slice(0, 20).map(model => (
+                               <SelectItem key={model.value} value={model.value}>
+                                 <div>
+                                   <div className="font-medium">{model.label}</div>
+                                   <div className="text-xs text-muted-foreground">{model.description}</div>
+                                 </div>
+                               </SelectItem>
+                             ))}
+                           </SelectContent>
+                         </Select>
+                       </div>
+
+                       <div className="space-y-2">
+                         <Label>AI Capabilities</Label>
+                         <div className="grid grid-cols-1 gap-2">
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.analyze_progress || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, analyze_progress: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Progress Analysis</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.task_suggestions || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, task_suggestions: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Task Suggestions</Label>
+                           </div>
+                           <div className="flex items-center space-x-2">
+                             <Switch
+                               checked={configNode.data.deadline_optimization || false}
+                               onCheckedChange={(checked) => {
+                                 if (selectedWorkflow && configNode) {
+                                   const updatedNode = { ...configNode, data: { ...configNode.data, deadline_optimization: checked } };
+                                   setConfigNode(updatedNode);
+                                   setSelectedWorkflow(prev => prev ? {
+                                     ...prev,
+                                     nodes: prev.nodes.map(n => n.id === configNode.id ? updatedNode : n)
+                                   } : null);
+                                 }
+                               }}
+                             />
+                             <Label>Deadline Optimization</Label>
+                           </div>
+                         </div>
+                       </div>
+                     </div>
+                   )}
                  </div>
                )}
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
+                          <div className="flex justify-between items-center mt-6">
+                                 <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        onClick={testProjectTriggers}
+                        className="bg-gradient-to-r from-blue-500 to-purple-600 text-white border-0 hover:from-blue-600 hover:to-purple-700"
+                      >
+                        🧪 Test Project Triggers
+                      </Button>
+                     <Button 
+                       variant="outline" 
+                       onClick={testChatTriggerLive}
+                       className="bg-gradient-to-r from-green-500 to-teal-600 text-white border-0 hover:from-green-600 hover:to-teal-700"
+                       disabled={!selectedWorkflow}
+                     >
+                       💬 Test Chat Integration Live
+                     </Button>
+                     <Button 
+                       variant="outline" 
+                       onClick={() => window.open('/chat', '_blank')}
+                       className="bg-gradient-to-r from-purple-500 to-pink-600 text-white border-0 hover:from-purple-600 hover:to-pink-700"
+                     >
+                       🚀 Open Live Chat
+                     </Button>
+                   </div>
+              <div className="flex gap-2">
               <Button variant="outline" onClick={() => setConfigDialogOpen(false)}>
                 Cancel
               </Button>
               <Button onClick={() => setConfigDialogOpen(false)}>
                 Save Configuration
               </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>

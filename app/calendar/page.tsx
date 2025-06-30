@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { RefreshCw, Trash2, Edit2, Grid } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { CalendarErrorBoundary } from '@/components/ui/calendar-error-boundary';
 import {
@@ -78,6 +78,7 @@ const getUserActiveWorkspace = async () => {
   try {
     const response = await fetch('/api/user/active-workspace', {
       method: 'GET',
+      credentials: 'include', // Include cookies for authentication
       headers: {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache',
@@ -136,11 +137,12 @@ async function loadEvents(currentWorkspace: string | null): Promise<Event[]> {
   try {
     // Create a controller to handle timeouts
     const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // Reduced from 15s to 8s
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // Increased to 20s for bulk optimization
     
       console.log(`Fetching events from main calendar API (attempt ${retryCount + 1}/${maxRetries + 1})...`);
     const response = await fetch('/api/calendar', {
       signal: controller.signal,
+      credentials: 'include', // Include cookies for authentication
       headers: {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache'
@@ -170,6 +172,7 @@ async function loadEvents(currentWorkspace: string | null): Promise<Event[]> {
       
       const fallbackResponse = await fetch('/api/calendar/events', {
         signal: fallbackController.signal,
+        credentials: 'include', // Include cookies for authentication
         headers: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache'
@@ -270,6 +273,7 @@ async function loadEvents(currentWorkspace: string | null): Promise<Event[]> {
       
       const workspaceEventsResponse = await fetch(`/api/calendar/workspace-events?workspaceId=${activeWorkspace}`, {
         signal: workspaceEventsController.signal,
+        credentials: 'include', // Include cookies for authentication
         headers: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache'
@@ -311,6 +315,8 @@ async function loadEvents(currentWorkspace: string | null): Promise<Event[]> {
     isSynced: event.is_synced !== undefined ? event.is_synced : (event.google_calendar_id ? true : false)
   }));
 
+  // Debug logging removed for performance
+
   // Only cache if we got successful responses
   if (mainApiSuccess || fallbackApiSuccess || workspaceApiSuccess) {
     localStorage.setItem('calendarEvents', JSON.stringify({
@@ -327,76 +333,48 @@ function clearCache(): void {
 }
 
 function CalendarPageContent() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<string>('');
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [error, setError] = useState<string | null>(null);
-  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
-  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [noWorkspace, setNoWorkspace] = useState(false);
   
-  // Load workspaces
-  useEffect(() => {
-    const loadWorkspaces = async () => {
-      if (!session?.user?.id) return;
+  const loadWorkspaces = async () => {
+    if (!user?.id || !session?.access_token) return;
+
+    try {
+      const response = await fetch('/api/workspace/leave', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
+      if (!response.ok) throw new Error('Failed to fetch workspaces');
       
-      try {
-        // First check if we have a stored workspace preference
-        if (typeof window !== 'undefined') {
-          const storedWorkspace = localStorage.getItem(`workspace_${session.user.id}`);
-          if (storedWorkspace) {
-            setActiveWorkspace(storedWorkspace);
-            console.log('Loaded active workspace from localStorage:', storedWorkspace);
-          }
-        }
-        
-        // Load available workspaces
-        const { data: memberships, error: membershipError } = await supabase
-          .from("team_members")
-          .select("workspace_id, workspaces(id, name)")
-          .eq("user_id", session.user.id);
-          
-        if (membershipError) {
-          console.error("Error loading workspaces:", membershipError);
-          return;
-        }
-        
-        const workspaceData = (memberships as any[] | null)
-          ?.filter(m => m.workspaces) // Filter out any null workspaces
-          .map((m) => ({
-            id: m.workspaces.id,
-            name: m.workspaces.name,
-          })) || [];
-          
-        setWorkspaces(workspaceData);
-        
-        // If we have workspaces but no active workspace set yet, use the first one
-        if (workspaceData?.length > 0 && !activeWorkspace) {
-          setActiveWorkspace(workspaceData[0].id);
-          
-          // Store this selection
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(`workspace_${session.user.id}`, workspaceData[0].id);
-          }
-        } else if (workspaceData.length === 0) {
-          setNoWorkspace(true);
-        }
-      } catch (error) {
-        console.error("Error in loadWorkspaces:", error);
+      const data = await response.json();
+      const workspaceData = data.workspaces || [];
+      setWorkspaces(workspaceData);
+      
+      if (workspaceData.length > 0 && !activeWorkspace) {
+        setActiveWorkspace(workspaceData[0].id);
       }
-    };
-    
-    loadWorkspaces();
-  }, [session?.user?.id, activeWorkspace]);
+    } catch (error) {
+      console.error('Error loading workspaces:', error);
+      toast.error('Failed to load workspaces');
+    }
+  };
+
+  useEffect(() => {
+    if (user?.id && session?.access_token) {
+      loadWorkspaces();
+    }
+  }, [user?.id, session?.access_token]);
   
   // Handle workspace selection
   const handleWorkspaceChange = (workspaceId: string) => {
     setActiveWorkspace(workspaceId);
-    
-    // Store the selection in localStorage
-    if (session?.user?.id && typeof window !== 'undefined') {
-      localStorage.setItem(`workspace_${session.user.id}`, workspaceId);
-    }
     
     // Clear the error state
     setError(null);
@@ -493,6 +471,7 @@ function CalendarPageContent() {
     try {
       const response = await fetch('/api/calendar', {
         method: 'POST',
+        credentials: 'include', // Include cookies for authentication
         headers: {
           'Content-Type': 'application/json',
         },
@@ -525,6 +504,7 @@ function CalendarPageContent() {
       // Add cache busting parameter to avoid cached responses
       const response = await fetch(`/api/calendar?id=${eventId}&t=${Date.now()}`, {
         method: 'DELETE',
+        credentials: 'include', // Include cookies for authentication
         headers: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache'
@@ -556,6 +536,7 @@ function CalendarPageContent() {
 
       const response = await fetch('/api/calendar', {
         method: 'PATCH',
+        credentials: 'include', // Include cookies for authentication
         headers: {
           'Content-Type': 'application/json',
         },
@@ -605,6 +586,7 @@ function CalendarPageContent() {
           
           const response = await fetch('/api/calendar/save-to-database', {
             method: 'POST',
+            credentials: 'include', // Include cookies for authentication
             headers: {
               'Content-Type': 'application/json',
               'Cache-Control': 'no-cache',
@@ -699,6 +681,8 @@ function CalendarPageContent() {
       color: event.isSynced ? 'green' : 'blue'
     } as Status
   }));
+
+  // Debug logging removed for performance
 
   return (
     <SidebarDemo>

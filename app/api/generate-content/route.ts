@@ -1,13 +1,12 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { checkPermission } from '@/lib/permission';
 import { getRandomImage, trackDownload, UnsplashImage } from '@/lib/unsplash';
 // TODO: Import necessary AI SDKs (e.g., OpenAI)
 
-// Create Supabase admin client with service role key
+// Create Supabase admin client
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
@@ -19,6 +18,8 @@ function getSupabaseAdmin() {
   
   return createClient(supabaseUrl, supabaseKey);
 }
+
+// Using imported getUserFromToken from auth-utils
 
 // Define types for our data structures
 interface GenerationTask {
@@ -138,7 +139,10 @@ async function insertImagesIntoContent(
   apiKey: string, 
   keyword: string,
   numberOfImages: number = 3,
-  imageSize: string = '1344x768'
+  imageSize: string = '1344x768',
+  imageStyle: string = '',
+  brandName: string = '',
+  distributeEvenly: boolean = true
 ): Promise<string> {
   if (!apiKey || !content) return content;
   
@@ -169,16 +173,22 @@ async function insertImagesIntoContent(
       return content;
     }
     
-    // Fetch images
+    // Fetch images with style preference
     const images: UnsplashImage[] = [];
     for (let i = 0; i < actualNumberOfImages; i++) {
       try {
-        const image = await getRandomImage(keyword, apiKey);
+        // Create search query with style preference
+        let searchQuery = keyword;
+        if (imageStyle) {
+          searchQuery = `${keyword} ${imageStyle}`;
+        }
+        
+        const image = await getRandomImage(searchQuery, apiKey);
         if (image && image.id !== 'local-fallback') {
           // Track the download as required by Unsplash API terms
           await trackDownload(image.id);
           images.push(image);
-          console.log(`Fetched image ${i+1}/${actualNumberOfImages}: ${image.id}`);
+          console.log(`Fetched image ${i+1}/${actualNumberOfImages}: ${image.id} with style: ${imageStyle || 'default'}`);
         }
       } catch (error) {
         console.error(`Error fetching image ${i+1}:`, error);
@@ -198,12 +208,17 @@ async function insertImagesIntoContent(
       const insertPoint = insertPoints[i];
       const image = images[i];
       
-      // Create markdown image with attribution
+      // Create markdown image with attribution and brand context
+      let altText = image.alt_text;
+      if (brandName) {
+        altText = `${altText} - ${brandName}`;
+      }
+      
       const imageMarkdown = `
 
 <div class="image-container">
 
-![${image.alt_text}](${image.url})
+![${altText}](${image.url})
 
 <small>Photo by [${image.author.name}](${image.author.link}?utm_source=app&utm_medium=referral) on [Unsplash](https://unsplash.com/?utm_source=app&utm_medium=referral)</small>
 
@@ -227,28 +242,29 @@ async function insertImagesIntoContent(
   }
 }
 
-export async function POST(req: Request) {
-  // Initialize Supabase admin client
-  const supabaseAdmin = getSupabaseAdmin();
-  if (!supabaseAdmin) {
-    console.error('Failed to initialize Supabase admin client');
-    return NextResponse.json({ error: 'Server configuration error', success: false }, { status: 500 });
-  }
-
+export async function POST(request: NextRequest) {
   try {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Initialize Supabase admin client
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      console.error('Failed to initialize Supabase admin client');
+      return NextResponse.json({ error: 'Server configuration error', success: false }, { status: 500 });
+    }
+
     // Verify database schema first
     await verifyDatabaseSchema();
     
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Unauthorized', success: false }, { status: 401 });
-    }
-
-    console.log('User ID from session:', session.user.id);
+    console.log('User ID from session:', user.id);
     
     let config;
     try {
-      config = await req.json();
+      config = await request.json();
     } catch (parseError) {
       console.error('Error parsing request JSON:', parseError);
       return NextResponse.json({ error: 'Invalid request format', success: false }, { status: 400 });
@@ -269,7 +285,7 @@ export async function POST(req: Request) {
     const { data: membership, error: membershipError } = await supabase
       .from('team_members')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('workspace_id', config.workspaceId)
       .maybeSingle();
 
@@ -291,7 +307,7 @@ export async function POST(req: Request) {
           .from('workspaces')
           .select('*')
           .eq('id', config.workspaceId)
-          .eq('owner_id', session.user.id)
+          .eq('owner_id', user.id)
           .maybeSingle();
           
         if (ownershipError) {
@@ -310,25 +326,44 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Access to this workspace denied', success: false }, { status: 403 });
     }
 
-    // Get OpenAI API key
-    // First try to get from workspace settings, then fallback to environment
-    let apiKey = process.env.OPENAI_API_KEY;
+    // Get OpenAI API key based on user preference
+    let apiKey = process.env.OPENAI_API_KEY; // Default system key
     
-    try {
-      console.log('Fetching workspace settings...');
-    const { data: workspaceSettings, error: settingsError } = await supabase
-      .from('workspace_settings')
-      .select('openai_api_key')
-      .eq('workspace_id', config.workspaceId)
-      .maybeSingle();
+    // Check if user wants to use their own API key
+    if (config.aiSettings?.useApiKey) {
+      console.log('User opted to use their own API key, fetching from workspace settings...');
+      try {
+        const { data: workspaceSettings, error: settingsError } = await supabase
+          .from('workspace_settings')
+          .select('openai_api_key')
+          .eq('workspace_id', config.workspaceId)
+          .maybeSingle();
 
-      if (settingsError) {
-        console.error('Error fetching workspace settings:', settingsError);
-      } else if (workspaceSettings?.openai_api_key) {
-        apiKey = workspaceSettings.openai_api_key;
+        if (settingsError) {
+          console.error('Error fetching workspace settings:', settingsError);
+          return NextResponse.json({ 
+            error: 'Failed to fetch your API key. Please check your settings.', 
+            success: false 
+          }, { status: 400 });
+        } else if (workspaceSettings?.openai_api_key) {
+          apiKey = workspaceSettings.openai_api_key;
+          console.log('Using user-provided API key');
+        } else {
+          console.error('User requested to use own API key but none found in settings');
+          return NextResponse.json({ 
+            error: 'No API key found in your settings. Please add one or use the system key.', 
+            success: false 
+          }, { status: 400 });
+        }
+      } catch (e) {
+        console.error('Exception fetching workspace settings:', e);
+        return NextResponse.json({ 
+          error: 'Failed to fetch API key settings', 
+          success: false 
+        }, { status: 500 });
       }
-    } catch (e) {
-      console.error('Exception fetching workspace settings:', e);
+    } else {
+      console.log('Using system API key');
     }
     
     if (!apiKey) {
@@ -391,7 +426,7 @@ export async function POST(req: Request) {
           .from('generated_content')
           .insert({
             workspace_id: config.workspaceId,
-            user_id: session.user.id,
+            user_id: user.id,
             title: title,
             content: '',
             status: 'generating',
@@ -549,7 +584,10 @@ export async function POST(req: Request) {
               config.mediaHub.unsplashApiKey,
               task.mainKeyword || title,
               config.mediaHub.numberOfImages,
-              config.mediaHub.imageSize
+              config.mediaHub.imageSize,
+              config.mediaHub.imageStyle || '',
+              config.mediaHub.brandName || '',
+              config.mediaHub.distributeEvenly || true
             );
             console.log('Images inserted successfully');
           } catch (imageError) {
@@ -789,9 +827,103 @@ ARTICLE SPECIFICATIONS:
     prompt += `\n- Readability Level: ${config.aiSettings.textReadability}`;
   }
 
+  // Add target country localization
+  if (config.aiSettings.targetCountry && config.aiSettings.targetCountry !== 'us') {
+    const countryMap: Record<string, string> = {
+      'uk': 'United Kingdom (use British English, UK examples, £ currency)',
+      'ca': 'Canada (use Canadian English, Canadian examples, CAD currency)', 
+      'au': 'Australia (use Australian English, Australian examples, AUD currency)',
+      'de': 'Germany (use German context, EUR currency, European examples)',
+      'fr': 'France (use French context, EUR currency, European examples)',
+      'es': 'Spain (use Spanish context, EUR currency, European examples)',
+      'it': 'Italy (use Italian context, EUR currency, European examples)',
+      'nl': 'Netherlands (use Dutch context, EUR currency, European examples)',
+      'se': 'Sweden (use Swedish context, SEK currency, Nordic examples)',
+      'no': 'Norway (use Norwegian context, NOK currency, Nordic examples)',
+      'dk': 'Denmark (use Danish context, DKK currency, Nordic examples)'
+    };
+    
+    const countryContext = countryMap[config.aiSettings.targetCountry] || 'United States (use American English, USD currency)';
+    prompt += `\n- Target Country: ${countryContext}`;
+  }
+
+  // Add AI content cleaning instructions
+  if (config.aiSettings.aiContentCleaning && config.aiSettings.aiContentCleaning !== 'none') {
+    prompt += `\n\nCONTENT QUALITY REQUIREMENTS:`;
+    
+    if (config.aiSettings.aiContentCleaning === 'basic') {
+      prompt += `\n- Avoid obvious AI phrases like "In conclusion", "It's important to note", "Furthermore", "Moreover"
+- Write in a natural, conversational tone
+- Vary sentence structure and length
+- Use contractions where appropriate`;
+    } else if (config.aiSettings.aiContentCleaning === 'advanced') {
+      prompt += `\n- Write like a real human expert, not an AI assistant
+- Avoid all formulaic phrases and repetitive structures
+- Use personal insights and authentic voice
+- Include specific examples and real-world applications
+- Vary paragraph length naturally
+- Use contractions, colloquialisms, and natural speech patterns
+- Avoid listing everything in bullet points - integrate information naturally`;
+    }
+  }
+
+  // Add brand voice if specified
+  if (config.aiSettings.brandVoice && config.aiSettings.brandVoice !== 'none') {
+    prompt += `\n- Brand Voice: ${config.aiSettings.brandVoice}`;
+  }
+
   // Add details to include if available
   if (config.detailsToInclude?.details) {
     prompt += `\n\nADDITIONAL DETAILS TO INCLUDE:\n${config.detailsToInclude.details}`;
+  }
+
+  // Add image and media context
+  if (config.mediaHub?.aiImages !== 'none') {
+    prompt += `\n\nIMAGE INTEGRATION:`;
+    prompt += `\n- ${config.mediaHub.numberOfImages || 3} images will be added to this article`;
+    
+    if (config.mediaHub.imageStyle) {
+      prompt += `\n- Image style preference: ${config.mediaHub.imageStyle}`;
+    }
+    
+    if (config.mediaHub.brandName) {
+      prompt += `\n- Brand name for image alt-text: ${config.mediaHub.brandName}`;
+      prompt += `\n- Include "${config.mediaHub.brandName}" context where natural in the content`;
+    }
+    
+    if (config.mediaHub.additionalInstructions) {
+      prompt += `\n- Image guidance: ${config.mediaHub.additionalInstructions}`;
+    }
+    
+    prompt += `\n- Write with clear section breaks where images would enhance the content`;
+    prompt += `\n- Include descriptive context that would work well with relevant images`;
+  }
+
+  // Add YouTube video integration if specified
+  if (config.mediaHub?.youtubeVideos !== 'none') {
+    prompt += `\n\nVIDEO INTEGRATION:`;
+    prompt += `\n- ${config.mediaHub.numberOfVideos || 1} video(s) will be embedded in this article`;
+    prompt += `\n- Write sections that would benefit from video demonstrations or explanations`;
+    prompt += `\n- Include natural places for video embeds in your content structure`;
+  }
+
+  // Add external linking strategy
+  if (config.linking?.linkType !== 'none') {
+    prompt += `\n\nLINKING STRATEGY:`;
+    
+    if (config.linking.linkType === 'authority') {
+      prompt += `\n- Include references to authoritative sources that should be linked`;
+      prompt += `\n- Mention industry leaders, research studies, or official resources`;
+      prompt += `\n- Write with link-worthy authority sources in mind`;
+    } else if (config.linking.linkType === 'related') {
+      prompt += `\n- Include natural opportunities for related topic links`;
+      prompt += `\n- Mention complementary concepts that could link to other articles`;
+    }
+    
+    if (config.linking.webAccess === 'enabled') {
+      prompt += `\n- Include current data, recent statistics, and up-to-date information`;
+      prompt += `\n- Reference recent trends and developments in the field`;
+    }
   }
 
   // Add structure requirements
@@ -819,6 +951,20 @@ ARTICLE SPECIFICATIONS:
   
   if (structureElements.length > 0) {
     prompt += `\n- Include: ${structureElements.join(', ')}`;
+  }
+
+  // Add syndication context
+  const syndicationPlatforms: string[] = [];
+  if (config.syndication?.twitterPost) syndicationPlatforms.push("Twitter");
+  if (config.syndication?.linkedinPost) syndicationPlatforms.push("LinkedIn");
+  if (config.syndication?.facebookPost) syndicationPlatforms.push("Facebook");
+  if (config.syndication?.emailNewsletter) syndicationPlatforms.push("Email Newsletter");
+  
+  if (syndicationPlatforms.length > 0) {
+    prompt += `\n\nSYNDICATION CONTEXT:`;
+    prompt += `\n- This content will be shared on: ${syndicationPlatforms.join(', ')}`;
+    prompt += `\n- Write with social media sharing in mind - include engaging hooks and shareable insights`;
+    prompt += `\n- Create content that works well in shorter excerpt formats`;
   }
 
   // Final formatting instructions

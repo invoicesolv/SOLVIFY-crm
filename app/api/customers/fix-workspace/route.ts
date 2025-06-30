@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
   try {
-    // Get user session
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -16,13 +15,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to initialize database connection' }, { status: 500 });
     }
 
-    console.log('Starting customer workspace fix for user:', session.user.id);
+    console.log('Starting customer workspace fix for user:', user.id);
 
     // Get the user's workspace
     const { data: teamMembership, error: teamError } = await supabase
       .from('team_members')
       .select('workspace_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single();
 
     if (teamError || !teamMembership) {
@@ -38,7 +37,7 @@ export async function POST(request: NextRequest) {
       .from('customers')
       .select('id, name, user_id')
       .is('workspace_id', null)
-      .eq('user_id', session.user.id);
+      .eq('user_id', user.id);
 
     if (fetchError) {
       console.error('Error fetching customers to fix:', fetchError);
@@ -49,7 +48,7 @@ export async function POST(request: NextRequest) {
     const { data: customersWithBadNames, error: badNamesError } = await supabase
       .from('customers')
       .select('id, name, customer_number')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .or('name.is.null,name.eq.');
 
     if (badNamesError) {
@@ -67,7 +66,7 @@ export async function POST(request: NextRequest) {
         .from('customers')
         .update({ workspace_id: workspaceId })
         .is('workspace_id', null)
-        .eq('user_id', session.user.id);
+        .eq('user_id', user.id);
 
       if (updateError) {
         console.error('Error updating customers workspace_id:', updateError);

@@ -1,17 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getServerSession } from "next-auth/next";
-import authOptions from '@/lib/auth';
 import { getOrCreateWorkspaceForAPI } from '@/lib/workspace';
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 export async function DELETE(req: NextRequest) {
   try {
-    // Verify user authentication
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      console.log('API: No user ID in session');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Get user from JWT token
+    const user = await getUserFromToken(req);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const url = new URL(req.url);
@@ -23,15 +43,15 @@ export async function DELETE(req: NextRequest) {
 
     console.log('API: Processing customer deletion for:', {
       customerId,
-      userId: session.user.id,
-      email: session.user.email
+      userId: user.id,
+      email: user.email
     });
 
     // Use the workspace utility to get the user's workspace
     const workspaceId = await getOrCreateWorkspaceForAPI(
-      session.user.id,
-      session.user.email || '',
-      session.user.name
+      user.id,
+      user.email || '',
+      user.user_metadata.name
     );
 
     if (!workspaceId) {

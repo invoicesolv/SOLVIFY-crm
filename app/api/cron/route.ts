@@ -1,22 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 // GET - Fetch cron jobs for the authenticated user
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data: cronJobs, error } = await supabase
+    const { data: cronJobs, error } = await supabaseAdmin
       .from('cron_jobs')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .order('updated_at', { ascending: false });
 
     if (error) {
@@ -34,8 +53,8 @@ export async function GET(request: NextRequest) {
 // POST - Create a new cron job
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -81,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     // Create the cron job
     const cronJobData = {
-      user_id: session.user.id,
+      user_id: user.id,
       job_type,
       status,
       settings,
@@ -91,7 +110,7 @@ export async function POST(request: NextRequest) {
       ...(site_url && { site_url })
     };
 
-    const { data: newJob, error } = await supabase
+    const { data: newJob, error } = await supabaseAdmin
       .from('cron_jobs')
       .insert([cronJobData])
       .select()
@@ -112,8 +131,8 @@ export async function POST(request: NextRequest) {
 // PATCH - Update an existing cron job
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -125,11 +144,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Verify the job belongs to the user
-    const { data: existingJob, error: fetchError } = await supabase
+    const { data: existingJob, error: fetchError } = await supabaseAdmin
       .from('cron_jobs')
       .select('*')
       .eq('id', id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single();
 
     if (fetchError || !existingJob) {
@@ -142,11 +161,11 @@ export async function PATCH(request: NextRequest) {
       updated_at: new Date().toISOString()
     };
 
-    const { data: updatedJob, error } = await supabase
+    const { data: updatedJob, error } = await supabaseAdmin
       .from('cron_jobs')
       .update(updateData)
       .eq('id', id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -165,8 +184,8 @@ export async function PATCH(request: NextRequest) {
 // DELETE - Delete a cron job
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -178,11 +197,11 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Verify the job belongs to the user and delete it
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('cron_jobs')
       .delete()
       .eq('id', id)
-      .eq('user_id', session.user.id);
+      .eq('user_id', user.id);
 
     if (error) {
       console.error('Error deleting cron job:', error);

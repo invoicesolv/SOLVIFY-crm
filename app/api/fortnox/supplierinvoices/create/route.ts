@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 import { createClient } from '@supabase/supabase-js';
-import authOptions from '../../../../../lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -248,34 +248,38 @@ async function createSupplierInvoice(accessToken: string, invoiceData: any): Pro
   }
 }
 
-export async function POST(req: NextRequest) {
-  console.log('\n=== Creating Fortnox Supplier Invoice ===');
-  
-  // Get user ID from session or request header
-  let userId: string | null = null;
-  
-  // First try to get from the session
-  const session = await getServerSession(authOptions);
-  if (session?.user?.id) {
-    userId = session.user.id;
-    console.log('Using user ID from session:', userId);
-  } else {
-    // If no session, check for user-id header (for client-side API calls)
-    userId = req.headers.get('user-id');
-    console.log('Using user ID from header:', userId);
-  }
-  
-  if (!userId) {
-    console.error('No user ID found in session or header');
-    return NextResponse.json({ error: 'Unauthorized - No user ID' }, { status: 401 });
-  }
-  
-  const finalUserId = userId;
-  console.log('Processing supplier invoice creation for user ID:', finalUserId);
-  
+export async function POST(request: NextRequest) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    console.log('\n=== Creating Fortnox Supplier Invoice ===');
+    
+    // Get user ID from session or request header
+    let userId: string | null = null;
+    
+    // First try to get from the session
+    if (user.id) {
+      userId = user.id;
+      console.log('Using user ID from session:', userId);
+    } else {
+      // If no session, check for user-id header (for client-side API calls)
+      userId = request.headers.get('user-id');
+      console.log('Using user ID from header:', userId);
+    }
+    
+    if (!userId) {
+      console.error('No user ID found in session or header');
+      return NextResponse.json({ error: 'Unauthorized - No user ID' }, { status: 401 });
+    }
+    
+    const finalUserId = userId;
+    console.log('Processing supplier invoice creation for user ID:', finalUserId);
+    
     // Parse the JSON request body
-    const requestData = await req.json();
+    const requestData = await request.json();
     console.log('Request data:', JSON.stringify(requestData, null, 2));
     
     // Get Fortnox access token from user's saved credentials

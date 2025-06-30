@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { Clock, Calendar, User, Filter } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
@@ -40,7 +39,6 @@ interface TimeTrackingSummaryProps {
 }
 
 export function TimeTrackingSummary({ projectId, className }: TimeTrackingSummaryProps) {
-  const { data: session } = useSession();
   const [records, setRecords] = useState<TimeTrackingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState<'today'|'week'|'month'|'all'>('week');

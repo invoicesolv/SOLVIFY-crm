@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
+import { useAuth } from '@/lib/auth-client';
 
 interface Customer {
   id: string;
@@ -41,17 +42,27 @@ interface CustomerProviderProps {
 }
 
 export function CustomerProvider({ children }: CustomerProviderProps) {
+  const { session } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
   const fetchCustomers = async () => {
+    if (!session?.access_token) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       
-      const response = await fetch('/api/customers');
+      const response = await fetch('/api/customers', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -69,10 +80,12 @@ export function CustomerProvider({ children }: CustomerProviderProps) {
     }
   };
 
-  // Load customers on initial mount
+  // Load customers when session is available
   useEffect(() => {
-    fetchCustomers();
-  }, []);
+    if (session?.access_token) {
+      fetchCustomers();
+    }
+  }, [session?.access_token]);
 
   return (
     <CustomerContext.Provider

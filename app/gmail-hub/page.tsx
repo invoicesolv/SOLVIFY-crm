@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { SidebarDemo } from '@/components/ui/code.demo';
 import { Card } from '@/components/ui/card';
@@ -12,10 +12,11 @@ import { Loader2, Inbox, MoveRight, AlertCircle, Save, Trash2, Search, RefreshCw
 import { LeadDialog } from '@/components/leads/LeadDialog';
 import { GmailFolderSidebar } from '@/components/gmail/GmailFolderSidebar';
 import { EmailPopup } from '@/components/gmail/EmailPopup';
-import { supabase } from "@/lib/supabase";
+import { supabaseClient } from '@/lib/supabase-client';
 import { Input } from '@/components/ui/input';
 import { LeadImportDialog } from '@/components/leads/LeadImportDialog';
 import { ExistingLeadImportDialog } from '@/components/leads/ExistingLeadImportDialog';
+import { useWorkspace } from '@/hooks/useWorkspace';
 import { 
   Dialog,
   DialogContent,
@@ -56,7 +57,8 @@ interface Lead {
 }
 
 export default function GmailHubPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
+  const { activeWorkspaceId, isLoading: workspaceLoading, error: workspaceError } = useWorkspace();
   const router = useRouter();
   const [emails, setEmails] = useState<Email[]>([]);
   const [filteredEmails, setFilteredEmails] = useState<Email[]>([]);
@@ -66,7 +68,6 @@ export default function GmailHubPage() {
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [leadDialogOpen, setLeadDialogOpen] = useState(false);
   const [leadInitialData, setLeadInitialData] = useState<Partial<Lead> | undefined>(undefined);
-  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [savingEmail, setSavingEmail] = useState<string | null>(null);
   const [deletingEmail, setDeletingEmail] = useState<string | null>(null);
@@ -75,13 +76,32 @@ export default function GmailHubPage() {
   const [reconnecting, setReconnecting] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [emailPopupOpen, setEmailPopupOpen] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  // Use the centralized Supabase client to avoid multiple instances
+  const supabase = supabaseClient;
+  
+  // Show workspace error if any
+  useEffect(() => {
+    if (workspaceError) {
+      toast.error(`Workspace error: ${workspaceError}`);
+    }
+  }, [workspaceError]);
   
   // Setup the migration hook to ensure the saved_emails table exists
   useEffect(() => {
     const setupDatabase = async () => {
+      if (!session?.access_token) return;
+      
       try {
         // Call the migration endpoint to ensure the saved_emails table exists
-        const response = await fetch('/api/migrations/create-saved-emails-table');
+        const response = await fetch('/api/migrations/create-saved-emails-table', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
         if (!response.ok) {
           console.error('Failed to setup database:', await response.json());
         }
@@ -90,57 +110,35 @@ export default function GmailHubPage() {
       }
     };
     
-    setupDatabase();
-  }, []);
+    if (session?.access_token) {
+      setupDatabase();
+    }
+  }, [session?.access_token]);
   
-  // Fetch active workspace
-  useEffect(() => {
-    const fetchWorkspace = async () => {
-      if (!session?.user?.id) return;
-
-      try {
-        // Instead of using is_personal, just get the first workspace owned by this user
-        const { data: workspaces, error } = await supabase
-          .from('workspaces')
-          .select('id')
-          .eq('owner_id', session.user.id)
-          .order('created_at', { ascending: true })
-          .limit(1);
-
-        if (error) throw error;
-        if (workspaces && workspaces.length > 0) {
-          setActiveWorkspace(workspaces[0].id);
-        } else {
-          // If no workspace exists, create a default one
-          const { data: newWorkspace, error: createError } = await supabase
-            .from('workspaces')
-            .insert([{
-              name: 'Default Workspace', 
-              owner_id: session.user.id,
-            }])
-            .select()
-            .single();
-          
-          if (createError) throw createError;
-          if (newWorkspace) {
-            setActiveWorkspace(newWorkspace.id);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching workspace:', error);
-        toast.error('Failed to load workspace');
-      }
-    };
-
-    fetchWorkspace();
-  }, [session]);
+  // Fetch active workspace - Removed as it's now handled by useWorkspace hook
   
+  // Fetch emails effect - only run when essential dependencies change
   useEffect(() => {
     const fetchEmails = async () => {
-      if (!session) return;
+      if (!user || !session?.access_token) return;
+      
+      // Prevent excessive retries
+      if (retryCount >= 3) {
+        setError('Too many failed attempts. Please check your Gmail integration.');
+        setConnectionDialogOpen(true);
+        return;
+      }
+      
+      // Rate limiting check
+      if (isRateLimited) {
+        console.log('Rate limited, skipping fetch');
+        return;
+      }
+      
       setLoading(true);
       setError(null);
       setErrorCode(null);
+      
       try {
         // If we have an active folder, get its query
         let searchQuery = '';
@@ -155,25 +153,45 @@ export default function GmailHubPage() {
           searchQuery = folder.query;
         }
 
-        const response = await fetch('/api/gmail/fetch' + (searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ''));
+        const response = await fetch('/api/gmail/fetch' + (searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ''), {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
+        
         if (!response.ok) {
           const errorData = await response.json();
-          if (errorData.code) {
-            setErrorCode(errorData.code);
+          const currentErrorCode = errorData.code;
+          
+          if (currentErrorCode) {
+            setErrorCode(currentErrorCode);
+            
+            // Handle specific error codes
+            if (['NO_INTEGRATION', 'INVALID_TOKEN', 'PERMISSION_DENIED', 'AUTH_FAILED_AFTER_REFRESH', 'REFRESH_FAILED'].includes(currentErrorCode)) {
+              setConnectionDialogOpen(true);
+              setRetryCount(prev => prev + 1);
+              
+              // Rate limit after failed auth attempts
+              setIsRateLimited(true);
+              setTimeout(() => setIsRateLimited(false), 30000); // 30 second cooldown
+              
+              throw new Error('Gmail integration required. Please connect your Gmail account.');
+            }
           }
           throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
+        
         const data = await response.json();
         setEmails(data.emails || []);
         setFilteredEmails(data.emails || []);
+        setRetryCount(0); // Reset retry count on success
+        
       } catch (err: any) {
         console.error("Failed to fetch emails:", err);
         setError(err.message || 'Failed to load emails. Please ensure Google permissions are granted and try again.');
         
-        // Auto-show the connection dialog if this appears to be a connection issue
-        if (errorCode && ['NO_INTEGRATION', 'INVALID_TOKEN', 'PERMISSION_DENIED', 'AUTH_FAILED_AFTER_REFRESH', 'REFRESH_FAILED'].includes(errorCode)) {
-          setConnectionDialogOpen(true);
-        } else {
+        // Only show toast for non-auth errors to avoid spam
+        if (!err.message?.includes('Gmail integration required')) {
           toast.error(err.message || 'Failed to load emails.');
         }
       } finally {
@@ -181,8 +199,11 @@ export default function GmailHubPage() {
       }
     };
 
-    fetchEmails();
-  }, [session, activeFolder, errorCode]);
+    // Only fetch if we have the basic requirements
+    if (user && session?.access_token) {
+      fetchEmails();
+    }
+  }, [user?.id, session?.access_token, activeFolder, refreshTrigger]); // Added refreshTrigger for manual refreshes
 
   // Filter emails based on search query
   useEffect(() => {
@@ -199,7 +220,7 @@ export default function GmailHubPage() {
     );
     
     setFilteredEmails(filtered);
-  }, [searchQuery, emails]);
+  }, [emails, searchQuery]);
 
   const handleConvertToLead = (email: Email) => {
     // Basic parsing attempt (can be improved significantly)
@@ -222,27 +243,30 @@ export default function GmailHubPage() {
   };
 
   const saveEmailToDatabase = async (email: Email) => {
-    if (!session?.user?.id || !activeWorkspace) {
-      toast.error('No active workspace');
+    if (!session?.access_token || !activeWorkspaceId || !user?.id) {
+      toast.error('No active workspace or user');
       return;
     }
 
     setSavingEmail(email.id);
     try {
-      // Check if email already exists in database
+      // Check if email already exists
       const { data: existingEmail, error: checkError } = await supabase
         .from('saved_emails')
         .select('id')
         .eq('email_id', email.id)
-        .eq('workspace_id', activeWorkspace)
+        .eq('workspace_id', activeWorkspaceId)
         .single();
 
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError;
+      }
+
       if (existingEmail) {
-        toast.info('Email already saved');
-        setSavingEmail(null);
+        toast.info('Email already saved to database');
         return;
       }
-      
+
       // Save email to database
       const { error } = await supabase
         .from('saved_emails')
@@ -253,8 +277,8 @@ export default function GmailHubPage() {
           from_address: email.from,
           subject: email.subject,
           received_date: email.date,
-          workspace_id: activeWorkspace,
-          user_id: session.user.id,
+          workspace_id: activeWorkspaceId,
+          user_id: user.id,
           category: activeFolder || 'inbox'
         });
 
@@ -269,8 +293,8 @@ export default function GmailHubPage() {
   };
 
   const saveAllEmailsToDatabase = async () => {
-    if (!session?.user?.id || !activeWorkspace) {
-      toast.error('No active workspace');
+    if (!session?.access_token || !activeWorkspaceId || !user?.id) {
+      toast.error('No active workspace or user');
       return;
     }
 
@@ -299,7 +323,7 @@ export default function GmailHubPage() {
           .from('saved_emails')
           .select('email_id')
           .in('email_id', emailIds)
-          .eq('workspace_id', activeWorkspace);
+          .eq('workspace_id', activeWorkspaceId);
         
         if (checkError) throw checkError;
         
@@ -321,8 +345,8 @@ export default function GmailHubPage() {
           from_address: email.from,
           subject: email.subject,
           received_date: email.date,
-          workspace_id: activeWorkspace,
-          user_id: session.user.id,
+          workspace_id: activeWorkspaceId,
+          user_id: user.id,
           category: activeFolder || 'inbox'
         }));
         
@@ -364,12 +388,15 @@ export default function GmailHubPage() {
   };
 
   const deleteEmail = async (emailId: string) => {
-    if (!session) return;
+    if (!session?.access_token) return;
 
     setDeletingEmail(emailId);
     try {
       const response = await fetch(`/api/gmail/delete?id=${emailId}`, {
         method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
       });
 
       if (!response.ok) {
@@ -392,8 +419,32 @@ export default function GmailHubPage() {
   const handleReconnectGmail = () => {
     setReconnecting(true);
     
-    // Use the existing NextAuth Google provider for authentication
-    window.location.href = `/api/auth/signin/google?callbackUrl=${encodeURIComponent('/gmail-hub')}`;
+    // Use the Supabase OAuth flow for Gmail authentication
+    try {
+      // Create state parameter with user ID and services
+      const stateData = {
+        userId: user?.id,
+        services: ['google-gmail'],
+        returnTo: '/gmail-hub'
+      };
+      const state = btoa(JSON.stringify(stateData));
+      
+      // Define Gmail-specific scopes - ONLY the broad scope to avoid metadata conflicts
+      const gmailScopes = [
+        'https://mail.google.com/' // ONLY this scope - it includes everything we need without metadata restrictions
+        // REMOVED: All other Gmail scopes because they trigger Google to add gmail.metadata automatically
+      ];
+      
+      // Redirect to OAuth with Google for Gmail scopes
+      const scopeParam = encodeURIComponent(gmailScopes.join(' '));
+      const authUrl = `/api/oauth/google?scopes=${scopeParam}&state=${state}&prompt=consent`;
+      
+      console.log('🚀 Gmail OAuth reconnect:', { authUrl, scopes: gmailScopes });
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error("Gmail reconnection error:", error);
+      setReconnecting(false);
+    }
   };
 
   // Function to open email popup
@@ -402,13 +453,23 @@ export default function GmailHubPage() {
     setEmailPopupOpen(true);
   };
 
+  // Manual refresh function
+  const handleManualRefresh = () => {
+    setRetryCount(0);
+    setIsRateLimited(false);
+    setError(null);
+    setErrorCode(null);
+    // Force a re-fetch by updating the refresh trigger
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   return (
     <SidebarDemo>
       <div className="flex h-[calc(100vh-2rem)] bg-background">
-        {session?.user?.id && activeWorkspace && (
+        {session?.access_token && activeWorkspaceId && user?.id && (
           <GmailFolderSidebar
-            workspaceId={activeWorkspace}
-            userId={session.user.id}
+            workspaceId={activeWorkspaceId}
+            userId={user.id}
             activeFolder={activeFolder}
             onFolderChange={setActiveFolder}
           />
@@ -421,6 +482,20 @@ export default function GmailHubPage() {
               <p className="text-muted-foreground">View and respond to all emails from your connected Gmail account.</p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManualRefresh}
+                disabled={loading || isRateLimited}
+                className="flex items-center gap-2"
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Refresh
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -439,45 +514,44 @@ export default function GmailHubPage() {
                 variant="outline"
                 size="sm"
                 onClick={saveAllEmailsToDatabase}
-                disabled={savingAllEmails || !activeWorkspace || filteredEmails.length === 0}
+                disabled={savingAllEmails || !activeWorkspaceId || filteredEmails.length === 0}
                 className="flex items-center gap-2"
               >
                 {savingAllEmails ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Save className="h-4 w-4" />
+                  <SaveAll className="h-4 w-4" />
                 )}
-                Save All Emails
+                Save All
               </Button>
               
-              {activeWorkspace && session?.user?.id && (
+              {activeWorkspaceId && session?.access_token && user?.id && (
                 <>
                   <LeadImportDialog
-                    workspaceId={activeWorkspace}
-                    userId={session.user.id}
+                    workspaceId={activeWorkspaceId}
+                    userId={user.id}
                     trigger={
                       <Button
                         variant="outline"
                         size="sm"
-                        className="flex items-center gap-2 bg-green-100 hover:bg-green-200 dark:bg-green-600 dark:hover:bg-green-700 border-green-300 dark:border-green-600 text-green-800 dark:text-foreground"
+                        className="flex items-center gap-2"
                       >
                         <Upload className="h-4 w-4" />
-                        Import from Gmail
+                        Import Leads
                       </Button>
                     }
                   />
-                  
                   <ExistingLeadImportDialog
-                    workspaceId={activeWorkspace}
-                    userId={session.user.id}
+                    workspaceId={activeWorkspaceId}
+                    userId={user.id}
                     trigger={
                       <Button
                         variant="outline"
                         size="sm"
-                        className="flex items-center gap-2 bg-blue-100 hover:bg-blue-200 dark:bg-blue-600 dark:hover:bg-blue-700 border-blue-300 dark:border-blue-600 text-blue-800 dark:text-foreground"
+                        className="flex items-center gap-2"
                       >
                         <Database className="h-4 w-4" />
-                        Import Leads
+                        Import to Existing
                       </Button>
                     }
                   />
@@ -509,14 +583,33 @@ export default function GmailHubPage() {
                   <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400 mb-2" />
                   <p className="text-red-400">Error loading emails:</p>
                   <p className="text-sm text-muted-foreground max-w-md">{error}</p>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={() => setConnectionDialogOpen(true)}
-                    className="mt-4"
-                  >
-                    Reconnect Gmail
-                  </Button>
+                  {isRateLimited && (
+                    <p className="text-xs text-yellow-500 mt-2">
+                      Rate limited. Please wait 30 seconds before trying again.
+                    </p>
+                  )}
+                  {retryCount > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Retry attempts: {retryCount}/3
+                    </p>
+                  )}
+                  <div className="flex gap-2 mt-4">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleManualRefresh}
+                      disabled={isRateLimited || retryCount >= 3}
+                    >
+                      Try Again
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setConnectionDialogOpen(true)}
+                    >
+                      Reconnect Gmail
+                    </Button>
+                  </div>
                 </div>
               )}
               {!loading && !error && filteredEmails.length === 0 && (
@@ -561,7 +654,7 @@ export default function GmailHubPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => saveEmailToDatabase(email)}
-                          disabled={!activeWorkspace || savingEmail === email.id}
+                          disabled={!activeWorkspaceId || savingEmail === email.id}
                           className="flex items-center gap-1"
                         >
                           {savingEmail === email.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
@@ -571,7 +664,7 @@ export default function GmailHubPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleConvertToLead(email)}
-                          disabled={!activeWorkspace}
+                          disabled={!activeWorkspaceId}
                           className="flex items-center gap-1"
                         >
                           <MoveRight className="h-3 w-3" /> Convert
@@ -594,27 +687,27 @@ export default function GmailHubPage() {
           </Card>
         </div>
 
-        {session?.user?.id && activeWorkspace && (
+        {session?.access_token && activeWorkspaceId && user?.id && (
           <LeadDialog
             open={leadDialogOpen}
             onOpenChange={setLeadDialogOpen}
-            workspaceId={activeWorkspace}
-            userId={session.user.id}
+            workspaceId={activeWorkspaceId}
+            userId={user.id}
             initialData={leadInitialData}
             onSuccess={() => {
               setLeadDialogOpen(false);
-              // Optionally, refresh emails or mark converted email as read/archived in Gmail
+              setLeadInitialData(undefined);
             }}
           />
         )}
 
-        {session?.user?.id && activeWorkspace && (
+        {session?.access_token && activeWorkspaceId && user?.id && (
           <EmailPopup
             email={selectedEmail}
             open={emailPopupOpen}
             onOpenChange={setEmailPopupOpen}
-            workspaceId={activeWorkspace}
-            userId={session.user.id}
+            workspaceId={activeWorkspaceId}
+            userId={user.id}
           />
         )}
 

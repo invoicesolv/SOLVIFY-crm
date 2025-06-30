@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient } from '@/lib/supabase-client';
 import { 
   Mail, 
   Plus, 
@@ -35,7 +35,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { toast } from 'sonner';
 import { getActiveWorkspaceId } from '@/lib/permission';
 import { SidebarDemo } from "@/components/ui/code.demo";
+import { LogoManager } from '@/components/ui/logo-manager';
 import { cn } from '@/lib/utils';
+import { EmailMarketingNav } from '@/components/email-marketing/EmailMarketingNav';
 
 interface Template {
   id: string;
@@ -72,7 +74,7 @@ const TEMPLATE_TYPES = [
 ];
 
 export default function TemplatesPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -80,97 +82,71 @@ export default function TemplatesPage() {
   const [selectedType, setSelectedType] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
+  const [selectedLogo, setSelectedLogo] = useState<string>('');
+  const [showLogoManager, setShowLogoManager] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
 
   useEffect(() => {
     const initializeWorkspace = async () => {
-      if (session?.user?.id) {
+      if (user?.id) {
         try {
-          console.log('[Templates] Initializing workspace for user:', session.user.id, session.user.email);
-          const activeWorkspaceId = await getActiveWorkspaceId(session.user.id);
+          console.log('[Templates] Initializing workspace for user:', user.id, user.email);
+          const activeWorkspaceId = await getActiveWorkspaceId(user.id);
           console.log('[Templates] Got workspace ID:', activeWorkspaceId);
           setWorkspaceId(activeWorkspaceId);
         } catch (error) {
           console.error('[Templates] Error getting workspace ID:', error);
         }
       } else {
-        console.log('[Templates] No session user ID available');
+        console.log('[Templates] No user ID available');
       }
     };
     
     initializeWorkspace();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (workspaceId) {
       console.log('[Templates] Workspace ID is set, fetching templates for:', workspaceId);
       console.log('[Templates] Session state:', {
-        userId: session?.user?.id,
-        email: session?.user?.email,
+        userId: user?.id,
+        email: user?.email,
         hasSession: !!session
       });
       fetchTemplates();
+      fetchWorkspaceLogo();
     } else {
       console.log('[Templates] No workspace ID available yet');
     }
   }, [workspaceId]);
 
   const fetchTemplates = async () => {
-    if (!workspaceId) {
-      console.log('[Templates] fetchTemplates called but no workspaceId');
+    if (!workspaceId || !session?.access_token) {
+      console.log('[Templates] No workspace ID or session available yet');
       return;
     }
-    
-    try {
-      setLoading(true);
-      console.log('[Templates] === FETCHING TEMPLATES ===');
-      console.log('[Templates] Using workspace ID:', workspaceId);
-      console.log('[Templates] Session user:', session?.user);
-      
-      // Test auth first
-      const { data: authTest, error: authError } = await supabase.auth.getUser();
-      console.log('[Templates] Auth test result:', { user: authTest?.user?.email, error: authError?.message });
-      
-      // Check what session looks like
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      console.log('[Templates] Session data:', { 
-        hasSession: !!sessionData?.session,
-        accessToken: sessionData?.session?.access_token ? 'present' : 'missing',
-        userId: sessionData?.session?.user?.id,
-        email: sessionData?.session?.user?.email,
-        sessionError: sessionError?.message
-      });
-      
-      // Test if we can query team_members to verify auth
-      const { data: memberTest, error: memberError } = await supabase
-        .from('team_members')
-        .select('workspace_id')
-        .eq('user_id', session?.user?.id)
-        .limit(1);
-      console.log('[Templates] Member test result:', { memberTest, memberError });
-      
-      console.log('[Templates] About to query email_templates with workspace_id:', workspaceId);
-      const { data, error } = await supabase
-        .from('email_templates')
-        .select('*')
-        .eq('workspace_id', workspaceId)
-        .order('updated_at', { ascending: false });
 
-      console.log('[Templates] Supabase query result:', { 
-        dataLength: data?.length, 
-        error: error?.message, 
-        errorCode: error?.code,
-        errorDetails: error?.details,
-        queryWorkspaceId: workspaceId
+    try {
+      console.log('[Templates] Fetching templates for workspace:', workspaceId);
+      
+      const response = await fetch('/api/email-marketing/templates', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to fetch templates');
+      }
+
+      console.log('[Templates] API response:', { 
+        templatesCount: result.templates?.length || 0,
+        templates: result.templates
       });
       
-      if (error) {
-        console.error('[Templates] Full error object:', error);
-        throw error;
-      }
-      
-      setTemplates(data || []);
-      console.log('[Templates] Set templates:', data?.length || 0, 'templates loaded');
-      console.log('[Templates] Template names:', data?.map(t => t.name) || []);
+      setTemplates(result.templates || []);
+      console.log('[Templates] Templates loaded successfully:', result.templates?.length || 0);
     } catch (error) {
       console.error('[Templates] Error fetching templates:', error);
       toast.error('Failed to load templates');
@@ -179,15 +155,60 @@ export default function TemplatesPage() {
     }
   };
 
-  const duplicateTemplate = async (template: Template) => {
-    if (!workspaceId || !session?.user?.id) return;
+  const fetchWorkspaceLogo = async () => {
+    if (!session?.access_token) return;
     
     try {
-      const { error } = await supabase
-        .from('email_templates')
-        .insert({
-          workspace_id: workspaceId,
-          user_id: session.user.id,
+      const response = await fetch('/api/workspace/logo', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+      const result = await response.json();
+      
+      if (response.ok && result.logoUrl) {
+        setSelectedLogo(result.logoUrl);
+      }
+    } catch (error) {
+      console.error('[Templates] Error fetching workspace logo:', error);
+    }
+  };
+
+  const saveWorkspaceLogo = async (logoUrl: string) => {
+    if (!session?.access_token) return;
+    
+    try {
+      const response = await fetch('/api/workspace/logo', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ logoUrl })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save workspace logo');
+      }
+
+      toast.success('Workspace logo updated - will be used in all new templates');
+    } catch (error) {
+      console.error('[Templates] Error saving workspace logo:', error);
+      toast.error('Failed to save workspace logo');
+    }
+  };
+
+  const duplicateTemplate = async (template: Template) => {
+    if (!workspaceId || !user?.id || !session?.access_token) return;
+    
+    try {
+      const response = await fetch('/api/email-marketing/templates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           name: `${template.name} (Copy)`,
           subject: template.subject,
           html_content: template.html_content,
@@ -195,9 +216,14 @@ export default function TemplatesPage() {
           template_type: template.template_type,
           category: template.category,
           is_active: true
-        });
+        })
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to duplicate template');
+      }
       
       fetchTemplates();
       toast.success('Template duplicated successfully');
@@ -209,14 +235,21 @@ export default function TemplatesPage() {
 
   const deleteTemplate = async (templateId: string) => {
     if (!confirm('Are you sure you want to delete this template?')) return;
+    if (!session?.access_token) return;
     
     try {
-      const { error } = await supabase
-        .from('email_templates')
-        .delete()
-        .eq('id', templateId);
+      const response = await fetch(`/api/email-marketing/templates/${templateId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete template');
+      }
       
       fetchTemplates();
       toast.success('Template deleted successfully');
@@ -227,13 +260,26 @@ export default function TemplatesPage() {
   };
 
   const toggleTemplateStatus = async (template: Template) => {
+    if (!session?.access_token) return;
+    
     try {
-      const { error } = await supabase
-        .from('email_templates')
-        .update({ is_active: !template.is_active })
-        .eq('id', template.id);
+      const response = await fetch(`/api/email-marketing/templates/${template.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          ...template,
+          is_active: !template.is_active
+        })
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update template status');
+      }
       
       fetchTemplates();
       toast.success(`Template ${template.is_active ? 'deactivated' : 'activated'}`);
@@ -287,6 +333,247 @@ export default function TemplatesPage() {
     }, 100);
   };
 
+  const insertLogoIntoTemplate = async (template: Template) => {
+    if (!selectedLogo) {
+      toast.error('Please select a logo first');
+      return;
+    }
+
+    try {
+      const logoHtml = `<img src="${selectedLogo}" alt="Company Logo" style="max-width: 200px; height: auto; display: block; margin: 0 auto;">`;
+      
+      let updatedHtmlContent = template.html_content;
+      
+               // Common patterns to replace with logo
+         const replacementPatterns = [
+           // Template variables
+           /\{\{company_initial\}\}/gi,
+           /\{\{company_logo\}\}/gi,
+           /\{\{logo\}\}/gi,
+           /\{\{brand_logo\}\}/gi,
+           // HTML elements containing company initials
+           /<div[^>]*>\{\{company_initial\}\}<\/div>/gi,
+           // Bracket placeholders
+           /\[LOGO\]/gi,
+           /\[COMPANY LOGO\]/gi,
+           /\[YOUR LOGO\]/gi,
+           /\[COMPANY NAME\]/gi,
+           /\[BRAND\]/gi,
+           // Curly brace placeholders
+           /\{LOGO\}/gi,
+           /\{COMPANY\}/gi,
+           // Text placeholders
+           /Company Name/gi,
+           /Your Company/gi,
+           /Brand Name/gi,
+           /Logo Here/gi,
+           // Company initials in various formats
+           /\b[A-Z]{2,4}\b/g, // 2-4 uppercase letters (like "ABC", "ACME")
+           /\b[A-Z]\.[A-Z]\./g, // A.B.C format
+           /\b[A-Z]-[A-Z]-[A-Z]\b/g, // A-B-C format
+         ];
+
+               // Try to find and replace common logo placeholders
+         let logoReplaced = false;
+         
+         // Special handling for company_initial in styled divs
+         const companyInitialDivPattern = /<div[^>]*>([^<]*\{\{company_initial\}\}[^<]*)<\/div>/gi;
+         if (companyInitialDivPattern.test(updatedHtmlContent)) {
+           updatedHtmlContent = updatedHtmlContent.replace(companyInitialDivPattern, `<div style="padding: 8px;">${logoHtml}</div>`);
+           logoReplaced = true;
+         }
+         
+         if (!logoReplaced) {
+           for (const pattern of replacementPatterns) {
+             if (pattern.test(updatedHtmlContent)) {
+               updatedHtmlContent = updatedHtmlContent.replace(pattern, logoHtml);
+               logoReplaced = true;
+               break; // Only replace the first match to avoid multiple logos
+             }
+           }
+         }
+      
+      // If no placeholder found, look for common HTML structures that might contain company initials
+      if (!logoReplaced) {
+        // Look for text in header areas, spans, or divs that might be company initials
+        const headerPatterns = [
+          /<h[1-6][^>]*>([^<]*\b[A-Z]{2,4}\b[^<]*)<\/h[1-6]>/gi,
+          /<span[^>]*>([^<]*\b[A-Z]{2,4}\b[^<]*)<\/span>/gi,
+          /<div[^>]*>([^<]*\b[A-Z]{2,4}\b[^<]*)<\/div>/gi,
+        ];
+        
+        for (const pattern of headerPatterns) {
+          const matches = [...updatedHtmlContent.matchAll(pattern)];
+          if (matches.length > 0) {
+            // Replace the first match that looks like company initials
+            const match = matches[0];
+            const fullMatch = match[0];
+            const innerText = match[1];
+            
+            // Check if the inner text is likely company initials (2-4 uppercase letters)
+            if (/^\s*[A-Z]{2,4}\s*$/.test(innerText.trim())) {
+              updatedHtmlContent = updatedHtmlContent.replace(fullMatch, 
+                fullMatch.replace(innerText, `<div style="text-align: center;">${logoHtml}</div>`)
+              );
+              logoReplaced = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      // If still no replacement, add logo at the beginning
+      if (!logoReplaced) {
+        updatedHtmlContent = `<div style="text-align: center; margin: 30px 0;">${logoHtml}</div>` + updatedHtmlContent;
+      }
+
+      const response = await fetch(`/api/email-marketing/templates/${template.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          ...template,
+          html_content: updatedHtmlContent
+        })
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update template');
+      }
+      
+      fetchTemplates();
+      toast.success(logoReplaced ? 'Logo replaced company initials successfully' : 'Logo inserted into template successfully');
+    } catch (error) {
+      console.error('Error inserting logo:', error);
+      toast.error('Failed to insert logo into template');
+    }
+  };
+
+  const insertLogoIntoAllTemplates = async () => {
+    if (!selectedLogo) {
+      toast.error('Please select a logo first');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to replace company initials with the selected logo in all ${templates.length} templates?`)) {
+      return;
+    }
+
+    try {
+      const logoHtml = `<img src="${selectedLogo}" alt="Company Logo" style="max-width: 200px; height: auto; display: block; margin: 0 auto;">`;
+
+      const updatePromises = templates.map(async (template) => {
+        let updatedHtmlContent = template.html_content;
+        
+        // Common patterns to replace with logo
+        const replacementPatterns = [
+          // Template variables
+          /\{\{company_initial\}\}/gi,
+          /\{\{company_logo\}\}/gi,
+          /\{\{logo\}\}/gi,
+          /\{\{brand_logo\}\}/gi,
+          // HTML elements containing company initials
+          /<div[^>]*>\{\{company_initial\}\}<\/div>/gi,
+          // Bracket placeholders
+          /\[LOGO\]/gi,
+          /\[COMPANY LOGO\]/gi,
+          /\[YOUR LOGO\]/gi,
+          /\[COMPANY NAME\]/gi,
+          /\[BRAND\]/gi,
+          // Curly brace placeholders
+          /\{LOGO\}/gi,
+          /\{COMPANY\}/gi,
+          // Text placeholders
+          /Company Name/gi,
+          /Your Company/gi,
+          /Brand Name/gi,
+          /Logo Here/gi,
+          // Company initials in various formats
+          /\b[A-Z]{2,4}\b/g, // 2-4 uppercase letters (like "ABC", "ACME")
+          /\b[A-Z]\.[A-Z]\./g, // A.B.C format
+          /\b[A-Z]-[A-Z]-[A-Z]\b/g, // A-B-C format
+        ];
+
+        // Try to find and replace common logo placeholders
+        let logoReplaced = false;
+        
+        // Special handling for company_initial in styled divs
+        const companyInitialDivPattern = /<div[^>]*>([^<]*\{\{company_initial\}\}[^<]*)<\/div>/gi;
+        if (companyInitialDivPattern.test(updatedHtmlContent)) {
+          updatedHtmlContent = updatedHtmlContent.replace(companyInitialDivPattern, `<div style="padding: 8px;">${logoHtml}</div>`);
+          logoReplaced = true;
+        }
+        
+        if (!logoReplaced) {
+          for (const pattern of replacementPatterns) {
+            if (pattern.test(updatedHtmlContent)) {
+              updatedHtmlContent = updatedHtmlContent.replace(pattern, logoHtml);
+              logoReplaced = true;
+              break; // Only replace the first match to avoid multiple logos
+            }
+          }
+        }
+        
+        // If no placeholder found, look for common HTML structures that might contain company initials
+        if (!logoReplaced) {
+          // Look for text in header areas, spans, or divs that might be company initials
+          const headerPatterns = [
+            /<h[1-6][^>]*>([^<]*\b[A-Z]{2,4}\b[^<]*)<\/h[1-6]>/gi,
+            /<span[^>]*>([^<]*\b[A-Z]{2,4}\b[^<]*)<\/span>/gi,
+            /<div[^>]*>([^<]*\b[A-Z]{2,4}\b[^<]*)<\/div>/gi,
+          ];
+          
+          for (const pattern of headerPatterns) {
+            const matches = [...updatedHtmlContent.matchAll(pattern)];
+            if (matches.length > 0) {
+              // Replace the first match that looks like company initials
+              const match = matches[0];
+              const fullMatch = match[0];
+              const innerText = match[1];
+              
+              // Check if the inner text is likely company initials (2-4 uppercase letters)
+              if (/^\s*[A-Z]{2,4}\s*$/.test(innerText.trim())) {
+                updatedHtmlContent = updatedHtmlContent.replace(fullMatch, 
+                  fullMatch.replace(innerText, `<div style="text-align: center;">${logoHtml}</div>`)
+                );
+                logoReplaced = true;
+                break;
+              }
+            }
+          }
+        }
+        
+        // If still no replacement, add logo at the beginning
+        if (!logoReplaced) {
+          updatedHtmlContent = `<div style="text-align: center; margin: 30px 0;">${logoHtml}</div>` + updatedHtmlContent;
+        }
+        
+        return fetch(`/api/email-marketing/templates/${template.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            ...template,
+            html_content: updatedHtmlContent
+          })
+        });
+      });
+
+      await Promise.all(updatePromises);
+      fetchTemplates();
+      toast.success(`Logo replacements completed for all ${templates.length} templates`);
+    } catch (error) {
+      console.error('Error inserting logo into templates:', error);
+      toast.error('Failed to insert logo into some templates');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -297,22 +584,33 @@ export default function TemplatesPage() {
 
   return (
     <SidebarDemo>
-      <div className="p-8 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Email Templates</h1>
-            <p className="text-muted-foreground">Create and manage email templates for campaigns</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link href="/email-marketing/templates/new">
-              <Button className="flex items-center gap-2">
-                <Plus className="h-4 w-4" />
-                New Template
+      <EmailMarketingNav />
+      <div className="flex h-full">
+        {/* Main Content */}
+        <div className="flex-1 p-8 space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Email Templates</h1>
+              <p className="text-muted-foreground">Create and manage email templates for campaigns</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowLogoManager(!showLogoManager)}
+                className="flex items-center gap-2"
+              >
+                <ImageIcon className="h-4 w-4" />
+                {showLogoManager ? 'Hide' : 'Show'} Logo Manager
               </Button>
-            </Link>
+              <Link href="/email-marketing/templates/new">
+                <Button className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
+                  New Template
+                </Button>
+              </Link>
+            </div>
           </div>
-        </div>
 
         {/* Separator */}
         <div className="h-px bg-border/50 dark:bg-border/20"></div>
@@ -506,6 +804,12 @@ export default function TemplatesPage() {
                                 <Copy className="h-4 w-4 mr-2" />
                                 Duplicate
                               </DropdownMenuItem>
+                              {selectedLogo && (
+                                <DropdownMenuItem onClick={() => insertLogoIntoTemplate(template)}>
+                                  <ImageIcon className="h-4 w-4 mr-2" />
+                                  Insert Logo
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem onClick={() => toggleTemplateStatus(template)}>
                                 {template.is_active ? (
                                   <>
@@ -563,47 +867,104 @@ export default function TemplatesPage() {
           </div>
         )}
 
-        {/* Preview Dialog */}
-        <Dialog open={!!previewTemplate} onOpenChange={handleClosePreview}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Preview: {previewTemplate?.name}</DialogTitle>
-              <DialogDescription>
-                View the email template content and styling
-              </DialogDescription>
-            </DialogHeader>
-            
-            {previewTemplate && (
-              <div className="space-y-4" key={previewTemplate.id}>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium">Subject:</span> {previewTemplate.subject}
+          {/* Preview Dialog */}
+          <Dialog open={!!previewTemplate} onOpenChange={handleClosePreview}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Preview: {previewTemplate?.name}</DialogTitle>
+                <DialogDescription>
+                  View the email template content and styling
+                </DialogDescription>
+              </DialogHeader>
+              
+              {previewTemplate && (
+                <div className="space-y-4" key={previewTemplate.id}>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium">Subject:</span> {previewTemplate.subject}
+                    </div>
+                    <div>
+                      <span className="font-medium">Type:</span> {previewTemplate.template_type}
+                    </div>
+                    <div>
+                      <span className="font-medium">Category:</span> {previewTemplate.category}
+                    </div>
+                    <div>
+                      <span className="font-medium">Status:</span> 
+                      <Badge className={`ml-2 ${getStatusColor(previewTemplate.is_active)}`}>
+                        {previewTemplate.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium">Type:</span> {previewTemplate.template_type}
-                  </div>
-                  <div>
-                    <span className="font-medium">Category:</span> {previewTemplate.category}
-                  </div>
-                  <div>
-                    <span className="font-medium">Status:</span> 
-                    <Badge className={`ml-2 ${getStatusColor(previewTemplate.is_active)}`}>
-                      {previewTemplate.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
+                  
+                  <div className="border rounded-lg p-4 bg-white">
+                    <div className="text-sm text-muted-foreground mb-2">Email Preview:</div>
+                    <div 
+                      dangerouslySetInnerHTML={{ __html: previewTemplate.html_content }}
+                      className="prose prose-sm max-w-none"
+                    />
                   </div>
                 </div>
-                
-                <div className="border rounded-lg p-4 bg-white">
-                  <div className="text-sm text-muted-foreground mb-2">Email Preview:</div>
-                  <div 
-                    dangerouslySetInnerHTML={{ __html: previewTemplate.html_content }}
-                    className="prose prose-sm max-w-none"
-                  />
-                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Logo Manager Sidebar */}
+        {showLogoManager && (
+          <div className="w-80 border-l border-border bg-background p-6 overflow-y-auto">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Logo Manager</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowLogoManager(false)}
+                >
+                  ×
+                </Button>
               </div>
-            )}
-          </DialogContent>
-        </Dialog>
+              
+              <LogoManager 
+                onLogoSelect={(logoUrl) => {
+                  setSelectedLogo(logoUrl);
+                  saveWorkspaceLogo(logoUrl);
+                }}
+                selectedLogo={selectedLogo}
+              />
+              
+              {selectedLogo && (
+                <div className="space-y-3">
+                  <div className="border-t pt-4">
+                    <h3 className="font-medium mb-2">Selected Logo</h3>
+                    <div className="bg-gray-50 border rounded-lg p-3">
+                      <img
+                        src={selectedLogo}
+                        alt="Selected logo"
+                        className="w-full h-16 object-contain bg-white rounded border"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Button
+                        onClick={insertLogoIntoAllTemplates}
+                        className="w-full"
+                        size="sm"
+                      >
+                        <ImageIcon className="h-4 w-4 mr-2" />
+                        Insert into All Templates
+                      </Button>
+                      
+                      <p className="text-xs text-muted-foreground">
+                        This logo will automatically appear in all new templates and campaigns. Click "Insert Logo" in existing templates to add it manually.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </SidebarDemo>
   );

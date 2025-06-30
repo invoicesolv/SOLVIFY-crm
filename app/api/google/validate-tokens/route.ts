@@ -1,19 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { supabaseAdmin } from '@/lib/supabase';
 import { validateAndRefreshAllGoogleTokens } from '@/lib/token-refresh';
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const user = await getUserFromToken(request);
     
-    if (!session?.user?.id) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[Google Token Validation] Starting validation for user:', session.user.id);
+    console.log('[Google Token Validation] Starting validation for user:', user.id);
     
-    const results = await validateAndRefreshAllGoogleTokens(session.user.id);
+    const results = await validateAndRefreshAllGoogleTokens(user.id);
     
     console.log('[Google Token Validation] Results:', {
       success: results.success,
@@ -50,14 +70,14 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const user = await getUserFromToken(request);
     
-    if (!session?.user?.id) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Just check status without refreshing
-    const results = await validateAndRefreshAllGoogleTokens(session.user.id);
+    const results = await validateAndRefreshAllGoogleTokens(user.id);
     
     return NextResponse.json({
       status: 'checked',

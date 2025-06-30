@@ -6,8 +6,8 @@ require('dotenv').config();
 
 // Supabase connection
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = supabaseClient;supabaseUrl, supabaseServiceKey);
 
 async function fixUserWorkspace(userEmail) {
   try {

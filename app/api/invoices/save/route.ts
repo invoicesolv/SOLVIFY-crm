@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
 import { createClient } from '@supabase/supabase-js';
 
 // Define customer interface to avoid type errors
@@ -10,24 +11,32 @@ interface Customer {
   workspace_id?: string | null;
 }
 
-// Create Supabase admin client
-function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-    return null;
-  }
-  
-  return createClient(supabaseUrl, supabaseKey);
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const supabase = getSupabaseAdmin();
-    if (!supabase) {
-      return NextResponse.json({ error: 'Failed to initialize database connection' }, { status: 500 });
+    // Get JWT token from Authorization header
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json({ error: 'Authorization token required' }, { status: 401 });
+    }
+
+    // Create Supabase client with JWT token
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      }
+    );
+
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
     }
 
     // Get the JSON body
@@ -35,7 +44,8 @@ export async function POST(request: NextRequest) {
     console.log('Received request to save invoices:', {
       dataType: typeof requestData,
       hasInvoices: requestData.invoices ? `Yes, count: ${requestData.invoices.length}` : 'No',
-      workspaceId: requestData.workspaceId || 'Not provided'
+      workspaceId: requestData.workspaceId || 'Not provided',
+      userId: user.id
     });
 
     // Check if data is in the expected format with invoices array
@@ -48,6 +58,18 @@ export async function POST(request: NextRequest) {
 
     if (!workspaceId) {
       return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 });
+    }
+
+    // Verify user has access to this workspace
+    const { data: membership, error: membershipError } = await supabase
+      .from('team_members')
+      .select('workspace_id, role')
+      .eq('user_id', user.id)
+      .eq('workspace_id', workspaceId)
+      .single();
+
+    if (membershipError || !membership) {
+      return NextResponse.json({ error: 'Access denied to this workspace' }, { status: 403 });
     }
 
     // Log sample of the first invoice for debugging
@@ -183,6 +205,7 @@ export async function POST(request: NextRequest) {
         ...invoice,
         customer_id: customerId,
         workspace_id: workspaceId, // Ensure workspace_id is set
+        user_id: user.id, // Set the authenticated user ID
         created_at: invoice.created_at || now,
         updated_at: now,
         status: invoice.status || (invoice.balance > 0 ? 'unpaid' : 'paid') 
@@ -192,7 +215,7 @@ export async function POST(request: NextRequest) {
     console.log(`Prepared ${validatedInvoices.length} invoices for saving`);
     console.log(`Customer match statistics: ${validatedInvoices.filter(inv => inv.customer_id).length} invoices with matched customers, ${validatedInvoices.filter(inv => !inv.customer_id).length} without matches`);
 
-    // Save to database
+    // Save to database - RLS will automatically filter based on user's workspace access
     const { data: savedData, error } = await supabase
       .from('invoices')
       .upsert(validatedInvoices, {

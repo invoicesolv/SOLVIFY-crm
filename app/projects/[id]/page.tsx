@@ -8,7 +8,7 @@ import Link from "next/link";
 import { TaskManager } from "@/components/projects/TaskManager";
 import type { Project, Task } from "@/types/project";
 import { supabase } from "@/lib/supabase";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { 
@@ -58,25 +58,25 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
   const [assigningUser, setAssigningUser] = useState(false);
   const { members } = useWorkspaceMembers();
   const { assignProject, getMemberByUserId } = useProjectAssignments();
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
 
   useEffect(() => {
     async function fetchProjectDetails() {
-      if (!session?.user?.id) {
+      if (!user?.id) {
         console.log('No user session found, cannot fetch project details');
         setLoading(false);
         return;
       }
 
       try {
-        console.log('Fetching project details for user ID:', session.user.id, 'project ID:', params.id);
+        console.log('Fetching project details for user ID:', user.id, 'project ID:', params.id);
         
         // Fetch project from Supabase
         const { data: projectData, error: projectError } = await supabase
           .from('projects')
           .select('*')
           .eq('id', params.id)
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .single();
 
         if (projectError) {
@@ -89,7 +89,7 @@ export default function ProjectPage({ params }: { params: { id: string } }) {
           .from('project_tasks')
           .select('*')
           .eq('project_id', params.id)
-          .eq('user_id', session.user.id);
+          .eq('user_id', user.id);
 
         if (tasksError) {
           console.error('Error fetching project tasks:', tasksError);

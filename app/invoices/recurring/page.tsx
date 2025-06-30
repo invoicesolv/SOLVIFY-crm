@@ -6,7 +6,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Search, Filter, ArrowUpDown, Mail, Save, RefreshCw, Copy, Send, TestTube } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import {
   Table,
@@ -17,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { createClient } from '@supabase/supabase-js';
 
 interface RecurringInvoice {
@@ -33,73 +32,43 @@ interface RecurringInvoice {
   status: 'draft' | 'pending' | 'sent_to_finance' | 'test_sent';
 }
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      persistSession: true,
-    }
-  }
-);
-
 export default function RecurringInvoicesPage() {
-  const { data: session } = useSession()
+  const { user, session } = useAuth();
   const router = useRouter();
   const [recurringInvoices, setRecurringInvoices] = useState<RecurringInvoice[]>([]);
   const [originalInvoices, setOriginalInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
+  // Create authenticated Supabase client
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+      },
+    }
+  );
+
   useEffect(() => {
-    if (session?.user?.id) {
+    if (user?.id && session?.access_token) {
       fetchRecurringInvoices();
       fetchOriginalInvoices();
     }
-  }, [session?.user?.id]);
+  }, [user?.id, session?.access_token]);
 
   const fetchRecurringInvoices = async () => {
     try {
-      if (!session?.user?.id) {
+      if (!user?.id || !session?.access_token) {
         toast.error('Please sign in to view recurring invoices');
         return;
       }
 
-      // Log session details for debugging
-      console.log('Session details:', {
-        user: session.user,
-        hasAccessToken: !!session.access_token
-      });
-
-      // First get the user's workspaces
-      const { data: teamMemberships, error: teamError } = await supabaseAdmin
-        .from('team_members')
-        .select(`
-          workspace_id,
-          workspaces (
-            id,
-            name
-          )
-        `)
-        .eq('user_id', session.user.id);
-
-      if (teamError) {
-        console.error('Error fetching team memberships:', teamError);
-        throw new Error('Failed to load workspace access');
-      }
-
-      if (!teamMemberships?.length) {
-        console.log('No workspaces found for user');
-        setRecurringInvoices([]);
-        setLoading(false);
-        return;
-      }
-
-      const workspaceIds = teamMemberships.map(tm => tm.workspace_id);
-      console.log('Found workspaces:', workspaceIds);
-
-      // Get the recurring invoices with customer data in a single query
-      const { data: recurringData, error: recurringError } = await supabaseAdmin
+      // Get the recurring invoices with customer data - RLS will automatically filter by workspace
+      const { data: recurringData, error: recurringError } = await supabase
         .from('recurring_invoices')
         .select(`
           *,
@@ -107,9 +76,7 @@ export default function RecurringInvoicesPage() {
             id,
             name
           )
-        `)
-        .eq('user_id', session.user.id)
-        .in('workspace_id', workspaceIds);
+        `);
 
       if (recurringError) throw recurringError;
 
@@ -129,27 +96,13 @@ export default function RecurringInvoicesPage() {
 
   const fetchOriginalInvoices = async () => {
     try {
-      if (!session?.user?.id) {
+      if (!user?.id || !session?.access_token) {
         toast.error('Please sign in to view invoices');
         return;
       }
 
-      // Get the user's default workspace
-      const { data: teamMemberships, error: teamError } = await supabaseAdmin
-        .from('team_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id)
-        .limit(1);
-
-      if (teamError) throw teamError;
-      if (!teamMemberships?.length) {
-        toast.error('No workspace found. Please create or join a workspace first.');
-        return;
-      }
-
-      const workspaceId = teamMemberships[0].workspace_id;
-
-      const { data: invoicesData, error: invoicesError } = await supabaseAdmin
+      // Get invoices with customer data - RLS will automatically filter by workspace
+      const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
         .select(`
           *,
@@ -157,8 +110,7 @@ export default function RecurringInvoicesPage() {
             id,
             name
           )
-        `)
-        .eq('workspace_id', workspaceId);
+        `);
 
       if (invoicesError) throw invoicesError;
 
@@ -171,8 +123,7 @@ export default function RecurringInvoicesPage() {
 
   const copyToRecurring = async (invoice: any) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      if (!user?.id || !session?.access_token) {
         toast.error('Please sign in to copy invoices');
         return;
       }
@@ -255,16 +206,16 @@ export default function RecurringInvoicesPage() {
 
   const sendTestInvoice = async (invoice: RecurringInvoice) => {
     try {
-      if (!session?.user?.id) {
+      if (!user?.id || !session?.access_token) {
         toast.error('Please sign in to send test invoice');
         return;
       }
 
       // Get the user's default workspace
-      const { data: teamMemberships, error: teamError } = await supabaseAdmin
+      const { data: teamMemberships, error: teamError } = await supabase
         .from('team_members')
         .select('workspace_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .limit(1);
 
       if (teamError) throw teamError;
@@ -275,7 +226,7 @@ export default function RecurringInvoicesPage() {
 
       const workspaceId = teamMemberships[0].workspace_id;
 
-      const { error } = await supabaseAdmin
+      const { error } = await supabase
         .from('recurring_invoices')
         .update({ status: 'test_sent' })
         .eq('id', invoice.id)

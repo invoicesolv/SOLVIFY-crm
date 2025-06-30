@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -21,6 +20,32 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, supabaseKey);
 }
 
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  const supabaseAdmin = getSupabaseAdmin();
+  
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   console.log('\n=== Verifying Fortnox Token ===');
   
@@ -32,15 +57,15 @@ export async function GET(req: NextRequest) {
     );
   }
   
-  // Get user ID from session
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  // Get user from JWT token
+  const user = await getUserFromToken(req);
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   
   try {
-    console.log(`Checking Fortnox token for user ID: ${session.user.id}`);
-    console.log(`User email: ${session.user.email || 'not available'}`);
+    console.log(`Checking Fortnox token for user ID: ${user.id}`);
+    console.log(`User email: ${user.email || 'not available'}`);
     
     // Check the database structure first
     console.log('Verifying settings table structure...');
@@ -66,7 +91,7 @@ export async function GET(req: NextRequest) {
       .from('settings')
       .select('*')
       .eq('service_name', 'fortnox')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single();
     
     if (error) {

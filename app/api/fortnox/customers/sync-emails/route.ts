@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -247,25 +247,48 @@ async function storeCustomerEmails(customers: any[], workspaceId: string, userId
   }
 }
 
-export async function POST(req: NextRequest) {
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
+export async function POST(request: NextRequest) {
   try {
     console.log('Starting customer email sync from Fortnox');
     
-    // Get user ID from session or headers
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id || req.headers.get('user-id');
-    const workspaceId = req.headers.get('workspace-id');
-    
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
+    
+    const workspaceId = request.headers.get('workspace-id');
     
     if (!workspaceId) {
       return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 });
     }
     
     // Get Fortnox token
-    const tokenData = await loadTokenFromSupabase(userId as string);
+    const tokenData = await loadTokenFromSupabase(user.id);
     if (!tokenData || !tokenData.access_token) {
       return NextResponse.json({ error: 'Failed to get Fortnox token' }, { status: 500 });
     }
@@ -360,7 +383,7 @@ export async function POST(req: NextRequest) {
     console.log(`Found ${customersWithEmail.length} customers with email addresses`);
     
     // Store customer emails in database
-    const result = await storeCustomerEmails(customersWithEmail, workspaceId as string, userId as string);
+    const result = await storeCustomerEmails(customersWithEmail, workspaceId as string, user.id);
     
     return NextResponse.json({
       success: result.success,

@@ -3,6 +3,7 @@ export interface ChecklistItem {
   text: string;
   done: boolean;
   deadline?: string;
+  assigned_to?: string | null;
 }
 
 export interface Task {
@@ -13,7 +14,7 @@ export interface Task {
   checklist: ChecklistItem[];
   project_id?: string;
   user_id?: string;
-  assigned_to?: string;
+  assigned_to?: string | null;
 }
 
 export interface Project {
@@ -26,5 +27,5 @@ export interface Project {
   endDate?: string;
   description: string;
   tasks: Task[];
-  assigned_to?: string;
+  assigned_to?: string | null;
 } 

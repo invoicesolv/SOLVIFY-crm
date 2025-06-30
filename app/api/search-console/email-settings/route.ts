@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user?.id) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
@@ -25,7 +24,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from('search_console_email_settings')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('site_url', siteUrl)
       .single();
 
@@ -57,8 +56,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user?.id) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
@@ -79,7 +78,7 @@ export async function POST(request: NextRequest) {
     const { data: emailSettings, error: emailError } = await supabase
       .from('search_console_email_settings')
       .upsert({
-        user_id: session.user.id,
+        user_id: user.id,
         site_url: siteUrl,
         enabled: settings.enabled,
         recipients: settings.recipients,
@@ -108,7 +107,7 @@ export async function POST(request: NextRequest) {
       const { data: cronJob, error: cronError } = await supabase
         .from('cron_jobs')
         .upsert({
-          user_id: session.user.id,
+          user_id: user.id,
           property_id: null,  // Explicitly set to null for Search Console
           site_url: siteUrl,
           job_type: 'search_console_report',
@@ -142,7 +141,7 @@ export async function POST(request: NextRequest) {
           status: 'disabled',
           updated_at: new Date().toISOString()
         })
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .eq('site_url', siteUrl)
         .eq('job_type', 'search_console_report');
 

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
+import { useWorkspace } from "@/hooks/useWorkspace";
 import { motion } from "framer-motion";
 import { 
   Users, 
@@ -55,16 +56,21 @@ const SERVICE_CATEGORIES = [
   { id: "link_building", name: "Link Building", color: "bg-cyan-500/10 text-cyan-400" }
 ];
 
-interface Workspace {
-    id: string;
-    name: string;
-}
-
 export default function LeadsPage() {
-  const { data: session } = useSession();
-  const [workspace, setWorkspace] = useState<string | null>(null);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [loadingWorkspace, setLoadingWorkspace] = useState(true);
+  const { user, session } = useAuth();
+  const { activeWorkspaceId, workspaces, isLoading: loadingWorkspace, error: workspaceError, setActiveWorkspace } = useWorkspace();
+
+  // Debug session state and clear stale localStorage
+  useEffect(() => {
+    console.log('[Leads Page] User:', user?.email || 'none');
+    console.log('[Leads Page] Session:', session ? 'present' : 'none');
+    console.log('[Leads Page] Active workspace:', activeWorkspaceId || 'none');
+    
+    // Clear any stale dashboard settings that might interfere with workspace resolution
+    if (typeof window !== 'undefined' && user?.id) {
+      localStorage.removeItem('dashboardSettings');
+    }
+  }, [user, session, activeWorkspaceId]);
   const [openDialog, setOpenDialog] = useState(false);
   const [importDialog, setImportDialog] = useState(false);
   const [importCustomersDialog, setImportCustomersDialog] = useState(false);
@@ -85,13 +91,13 @@ export default function LeadsPage() {
   // Load trial information
   useEffect(() => {
     const loadTrialInfo = async () => {
-      if (!session?.user?.id) return;
+      if (!user?.id) return;
       
       try {
         const { data, error } = await supabase
           .from('user_preferences')
           .select('plan_id, trial_end_date')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .single();
           
         if (error) {
@@ -116,49 +122,9 @@ export default function LeadsPage() {
     };
     
     loadTrialInfo();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
-  // Load workspace data
-  useEffect(() => {
-    const loadWorkspace = async () => {
-      if (!session?.user?.id) {
-        console.log('[Leads] No user session found');
-        return;
-      }
 
-      try {
-        setLoadingWorkspace(true);
-        console.log('[Leads] Loading workspace for user:', session.user.email);
-        
-        // Use the same API endpoint as other components for consistency
-        const response = await fetch('/api/workspace/leave');
-        if (!response.ok) {
-          throw new Error('Failed to fetch workspaces');
-        }
-        const data = await response.json();
-              
-        if (!data.success || !data.workspaces || data.workspaces.length === 0) {
-          console.log('[Leads] No workspaces found for user');
-          setWorkspaces([]);
-          return;
-        }
-
-        console.log('[Leads] Found workspaces:', data.workspaces);
-        setWorkspaces(data.workspaces);
-          
-        if (data.workspaces.length > 0) {
-          setWorkspace(data.workspaces[0].id);
-          console.log('[Leads] Set workspace to:', data.workspaces[0].id);
-        }
-      } catch (error) {
-        console.error("[Leads] Error loading workspaces:", error);
-      } finally {
-        setLoadingWorkspace(false);
-      }
-    };
-
-    loadWorkspace();
-  }, [session?.user?.id]);
 
   const handleMetricsChange = (newMetrics: typeof metrics) => {
     setMetrics(newMetrics);
@@ -229,8 +195,8 @@ export default function LeadsPage() {
               {/* Workspace Selector */}
               {workspaces.length > 0 && (
               <select
-                  value={workspace || ""}
-                  onChange={(e) => setWorkspace(e.target.value)}
+                  value={activeWorkspaceId || ""}
+                  onChange={(e) => setActiveWorkspace(e.target.value)}
                   className="bg-background border border-border rounded-md px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                   <option value="" disabled className="text-foreground bg-background">
@@ -247,7 +213,7 @@ export default function LeadsPage() {
               <Button 
                 className="flex items-center gap-2"
                 onClick={() => setFolderManagementDialog(true)}
-                disabled={!workspace}
+                disabled={!activeWorkspaceId}
               >
                 <FolderOpen className="h-4 w-4" />
                 Manage Folders
@@ -256,7 +222,7 @@ export default function LeadsPage() {
               <Button 
                 className="flex items-center gap-2"
                 onClick={() => setImportCustomersDialog(true)}
-                disabled={!workspace}
+                disabled={!activeWorkspaceId}
               >
                 <UserPlus className="h-4 w-4" />
                 Import Customers
@@ -265,7 +231,7 @@ export default function LeadsPage() {
               <Button 
                 className="flex items-center gap-2"
                 onClick={() => setImportDialog(true)}
-                disabled={!workspace}
+                disabled={!activeWorkspaceId}
               >
                 <Upload className="h-4 w-4" />
                 Import Leads
@@ -274,7 +240,7 @@ export default function LeadsPage() {
               <Button 
                 className="flex items-center gap-2"
                 onClick={() => setOpenDialog(true)}
-                disabled={!workspace}
+                disabled={!activeWorkspaceId}
               >
                 <Plus className="h-4 w-4" />
                 New Lead
@@ -350,7 +316,7 @@ export default function LeadsPage() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 <span className="ml-3 text-muted-foreground">Loading workspace...</span>
               </div>
-            ) : !workspace ? (
+            ) : !activeWorkspaceId ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground">No workspace found. Please check your permissions or contact support.</p>
               </div>
@@ -358,7 +324,7 @@ export default function LeadsPage() {
               <div className="flex bg-background border border-border rounded-md overflow-hidden">
                 {/* Folder Sidebar */}
                 <FolderSidebar 
-                  workspaceId={workspace}
+                  workspaceId={activeWorkspaceId}
                   selectedFolderId={selectedFolder}
                   onFolderSelect={handleFolderSelect}
                   onManageFolders={() => setFolderManagementDialog(true)}
@@ -368,12 +334,12 @@ export default function LeadsPage() {
                 <div className="flex-1">
               <LeadTable
                 ref={tableRef}
-                workspaceId={workspace}
-                    userId={session?.user?.id || ''} 
+                workspaceId={activeWorkspaceId || ''}
+                userId={user?.id || ''}
+                selectedFolder={selectedFolder}
                 onMetricsChange={handleMetricsChange}
-                    onManageFolders={() => setFolderManagementDialog(true)}
-                    selectedFolder={selectedFolder}
-                  />
+                onManageFolders={() => setFolderManagementDialog(true)}
+              />
                 </div>
               </div>
             )}
@@ -385,47 +351,35 @@ export default function LeadsPage() {
               <LeadDialog
                 open={openDialog}
                 onOpenChange={setOpenDialog}
-        workspaceId={workspace || ''} 
-        userId={session?.user?.id || ''}
-                onSuccess={() => {
-                  if (tableRef.current) {
-                    tableRef.current.loadLeads();
-                  }
-                }}
+                workspaceId={activeWorkspaceId || ''}
+                userId={user?.id || ''}
+                onSuccess={() => tableRef.current?.loadLeads()}
               />
 
       {/* Import Leads Dialog */}
       <ImportLeadsDialog
                 open={importDialog}
                 onOpenChange={setImportDialog}
-        workspaceId={workspace || ''}
-        userId={session?.user?.id || ''}
-        onSuccess={() => {
-          if (tableRef.current) {
-            tableRef.current.loadLeads();
-          }
-        }}
-      />
+                workspaceId={activeWorkspaceId || ''}
+                userId={user?.id || ''}
+                onSuccess={() => tableRef.current?.loadLeads()}
+              />
 
       {/* Import Customers Dialog */}
       <ImportCustomersDialog
         open={importCustomersDialog}
         onOpenChange={setImportCustomersDialog}
-        workspaceId={workspace || ''}
-        userId={session?.user?.id || ''}
-                onSuccess={() => {
-                  if (tableRef.current) {
-                    tableRef.current.loadLeads();
-                  }
-                }}
-              />
+        workspaceId={activeWorkspaceId || ''}
+        userId={user?.id || ''}
+        onSuccess={() => tableRef.current?.loadLeads()}
+      />
 
       {/* Folder Management Dialog */}
       <FolderManagementDialog
         open={folderManagementDialog}
         onOpenChange={setFolderManagementDialog}
-        workspaceId={workspace || ''}
-        userId={session?.user?.id || ''}
+        workspaceId={activeWorkspaceId || ''}
+        userId={user?.id || ''}
         onFoldersChanged={handleFoldersChanged}
       />
     </SidebarDemo>

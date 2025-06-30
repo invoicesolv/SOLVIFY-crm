@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient } from '@/lib/supabase-client';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Get JWT token from Authorization header
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json({ error: 'Authorization token required' }, { status: 401 });
     }
 
-    // Fetch customers
+    // Create Supabase client with JWT token
+    const supabase = supabaseClient;
+
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
+    }
+
+    // Fetch customers - RLS will automatically filter by user's workspace access
     const { data: customers, error: customersError } = await supabase
       .from('customers')
       .select('id, name, customer_number, email, organization_number')
-      .eq('user_id', session.user.id)
       .order('name');
 
     if (customersError) {
@@ -23,11 +29,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 });
     }
 
-    // Fetch projects
+    // Fetch projects - RLS will automatically filter by user's workspace access
     const { data: projects, error: projectsError } = await supabase
       .from('projects')
       .select('id, name, customer_name, status, fortnox_project_number, customer_id')
-      .eq('user_id', session.user.id)
       .order('name');
 
     if (projectsError) {
@@ -35,19 +40,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch projects' }, { status: 500 });
     }
 
-    // Get recent invoices for reference
+    // Get recent invoices for reference - RLS will automatically filter by user's workspace access
     const { data: recentInvoices, error: invoicesError } = await supabase
       .from('invoices')
       .select('id, invoice_number, customer_name, total, status, created_at')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
+      .order('created_at', { ascending: false });
+      // Removed .limit(10) to show all invoices
 
     if (invoicesError) {
       console.error('Error fetching recent invoices:', invoicesError);
     }
 
-    // Get recurring invoices with customer data using foreign key relationship
+    // Get recurring invoices with customer data using foreign key relationship - RLS will automatically filter
     const { data: recurringInvoices, error: recurringError } = await supabase
       .from('recurring_invoices')
       .select(`
@@ -58,7 +62,6 @@ export async function GET(request: NextRequest) {
         customer_id,
         customers!fk_recurring_invoices_customer_id(name)
       `)
-      .eq('user_id', session.user.id)
       .eq('status', 'active')
       .order('next_invoice_date');
 

@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,8 +19,44 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
 async function getUserDetails(userId: string) {
-  const { data, error } = await supabase
+  // First try to get from team_members table
+  const { data: teamMember, error: teamError } = await supabaseAdmin
+    .from('team_members')
+    .select('email, name')
+    .eq('user_id', userId)
+    .single();
+
+  if (!teamError && teamMember) {
+    return {
+      email: teamMember.email,
+      full_name: teamMember.name
+    };
+  }
+
+  // Fallback to users table if it exists
+  const { data, error } = await supabaseAdmin
     .from('users')
     .select('email, full_name')
     .eq('id', userId)
@@ -37,16 +71,12 @@ async function getUserDetails(userId: string) {
 }
 
 async function getTaskDetails(taskId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('project_tasks')
     .select(`
       *,
       projects:project_id (
         name
-      ),
-      assigner:user_id (
-        email,
-        full_name
       )
     `)
     .eq('id', taskId)
@@ -62,8 +92,8 @@ async function getTaskDetails(taskId: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
@@ -91,7 +121,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get assigner details
-    const assigner = await getUserDetails(session.user.id);
+    const assigner = await getUserDetails(user.id);
     if (!assigner) {
       return NextResponse.json(
         { error: 'Assigner details not found' },

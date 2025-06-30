@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { supabaseAdmin } from '@/lib/supabase';
+import { withAuth } from '@/lib/global-auth';
+import { AuthFlowDebugger } from '@/lib/auth-debug';
+
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -90,20 +92,19 @@ async function loadTokenFromSupabase(userId: string) {
 }
 
 // Endpoint to check for new customers in Fortnox
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, { user }) => {
   try {
-    // Get user ID from session or headers
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id || request.headers.get('user-id');
-    
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
-    }
+    AuthFlowDebugger.logStep('🔍 Fortnox Check API Called', true, { userId: user.id });
 
     // Get Fortnox token
-    const tokenData = await loadTokenFromSupabase(userId as string);
+    const tokenData = await loadTokenFromSupabase(user.id as string);
     if (!tokenData || !tokenData.access_token) {
-      return NextResponse.json({ error: 'Failed to get Fortnox token' }, { status: 500 });
+      AuthFlowDebugger.logStep('⚠️ No Fortnox Token Found', false, undefined, 'User has not connected Fortnox account');
+      return NextResponse.json({ 
+        error: 'Fortnox not connected', 
+        message: 'Please connect your Fortnox account first',
+        newCustomerCount: 0
+      }, { status: 200 }); // Return 200 instead of 500 to not block UI
     }
 
     // Get the supabase client
@@ -172,9 +173,12 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error checking for new customers:', error);
+    AuthFlowDebugger.logStep('❌ Fortnox Check API Error', false, undefined, 
+      error instanceof Error ? error.message : 'Unknown error'
+    );
     return NextResponse.json({ 
       error: 'Internal server error', 
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
-} 
+});

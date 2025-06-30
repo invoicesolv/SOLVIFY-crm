@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import nodemailer from 'nodemailer';
+
+export const dynamic = 'force-dynamic';
 
 // This is handled by Vercel Cron
 // In vercel.json: { "path": "/api/cron/send-project-reports", "schedule": "0 9 * * 1" }
@@ -96,7 +99,7 @@ export async function GET(request: NextRequest) {
         // Check if we have recipients to send to
         if (recipients.length > 0) {
           // Call the same API endpoint used for manual project reports
-          const response = await fetch(`${process.env.NEXTAUTH_URL || 'https://crm.solvify.se'}/api/send-project-report`, {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/api/send-project-report`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

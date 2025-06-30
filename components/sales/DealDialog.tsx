@@ -26,6 +26,9 @@ interface DealDialogProps {
     value: number;
     stage: "new" | "contacted" | "proposal" | "negotiation" | "closed_won" | "closed_lost";
     notes: string;
+    deal_type: "one_time" | "retainer";
+    retainer_duration_months?: number;
+    retainer_start_date?: string;
   };
 }
 

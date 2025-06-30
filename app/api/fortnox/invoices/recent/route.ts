@@ -1,6 +1,8 @@
-import { NextRequest } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
 import axios from 'axios';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { createClient } from '@supabase/supabase-js';
 
 // Create Supabase admin client
 function getSupabaseAdmin() {
@@ -239,24 +241,22 @@ export const dynamic = 'force-dynamic';
  * 
  * This endpoint is used as a fallback when a project has no Fortnox project number
  */
-export async function GET(req: NextRequest) {
-  console.log('\n=== Fetching Recent Fortnox Invoices ===');
-  
-  // Get user ID from the header
-  const userId = req.headers.get('user-id');
-  if (!userId) {
-    console.error('Missing user-id header');
-    return Response.json({ error: "User ID is required" }, { status: 401 });
-  }
-  
-  // Get search parameters
-  const searchParams = req.nextUrl.searchParams;
-  const limit = searchParams.get('limit') || '10';
-  
+export async function GET(request: NextRequest) {
   try {
-    const fortnoxClient = await getFortnoxClient(userId);
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    console.log('\n=== Fetching Recent Fortnox Invoices ===');
+    
+    // Get search parameters
+    const searchParams = request.nextUrl.searchParams;
+    const limit = searchParams.get('limit') || '10';
+    
+    const fortnoxClient = await getFortnoxClient(user.id);
     if (!fortnoxClient) {
-      console.error('Failed to initialize Fortnox client for user:', userId);
+      console.error('Failed to initialize Fortnox client for user:', user.id);
       return Response.json({ 
         error: "Failed to initialize Fortnox client", 
         details: "Check if you have valid Fortnox tokens in your user_fortnox_tokens table" 

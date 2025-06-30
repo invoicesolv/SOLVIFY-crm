@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 import { createClient } from '@supabase/supabase-js';
 
 // Force dynamic rendering
@@ -8,11 +8,11 @@ export const dynamic = 'force-dynamic';
 
 // LinkedIn OAuth callback
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  if (!user?.id) {
     console.error('LinkedIn OAuth callback: No user session found');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/login`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/login`));
   }
 
   const searchParams = request.nextUrl.searchParams;
@@ -21,12 +21,12 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('LinkedIn OAuth error:', error);
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=linkedin_auth_failed`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=linkedin_auth_failed`));
   }
 
   if (!code) {
     console.error('LinkedIn OAuth callback: No authorization code received');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=no_code`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=no_code`));
   }
 
   try {
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         code: code,
         client_id: process.env.LINKEDIN_CLIENT_ID!,
         client_secret: process.env.LINKEDIN_CLIENT_SECRET!,
-        redirect_uri: `${process.env.NEXTAUTH_URL}/api/oauth/linkedin/callback`,
+        redirect_uri: `${process.env.NEXT_PUBLIC_SITE_URL}/api/oauth/linkedin/callback`,
       }),
     });
 
@@ -81,9 +81,10 @@ export async function GET(request: NextRequest) {
     });
 
     // Get workspace ID for the user
-    console.log('LinkedIn OAuth: Looking up workspace for user:', session.user.id);
+    console.log('LinkedIn OAuth: Looking up workspace for user:', user.id);
     
     // Create admin client for database operations
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -93,7 +94,7 @@ export async function GET(request: NextRequest) {
     const { data: allWorkspaces, error: workspaceError } = await supabase
       .from('team_members')
       .select('workspace_id, role')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .neq('workspace_id', '4251bc40-5a36-493a-9f85-eb728c4d86fa') // Exclude deleted workspace
       .order('role', { ascending: true }) // admin comes before member
       .order('created_at', { ascending: false }); // most recent first
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!allWorkspaces || allWorkspaces.length === 0) {
-      console.error('LinkedIn OAuth: No workspace found for user:', session.user.id);
+      console.error('LinkedIn OAuth: No workspace found for user:', user.id);
       throw new Error('User is not a member of any workspace');
     }
 
@@ -118,7 +119,7 @@ export async function GET(request: NextRequest) {
     const { data: saveData, error: saveError } = await supabase
       .from('social_accounts')
       .upsert({
-        user_id: session.user.id,
+        user_id: user.id,
         workspace_id: workspaceId,
         platform: 'linkedin',
         access_token: tokenData.access_token,
@@ -208,7 +209,7 @@ export async function GET(request: NextRequest) {
                 const { data: orgInsertData, error: orgError } = await supabase
                   .from('social_accounts')
                   .upsert({
-                    user_id: session.user.id,
+                    user_id: user.id,
                     workspace_id: workspaceId,
                     platform: 'linkedin',
                     access_token: tokenData.access_token, // Use same token for organizations
@@ -249,9 +250,9 @@ export async function GET(request: NextRequest) {
     */
     
     console.log('LinkedIn OAuth: Redirecting to settings with success');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?success=linkedin_connected`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?success=linkedin_connected`));
   } catch (error) {
     console.error('LinkedIn OAuth callback error:', error);
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=linkedin_auth_failed`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=linkedin_auth_failed`));
   }
 } 

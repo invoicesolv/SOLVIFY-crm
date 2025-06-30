@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CardHeader, CardTitle, CardContent } from '@/components/ui/card-content';
 import { FileText, ArrowLeft, Copy, Pencil, Save, Loader2, Globe, ExternalLink, CheckCircle2 } from 'lucide-react';
-import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { toast } from 'sonner';
 import { marked } from 'marked';
 import Link from 'next/link';
@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
 export default function ContentViewerPage({ params }: { params: { id: string } }) {
-  const { data: session, status } = useSession();
+  const { user, session } = useAuth();
   const [content, setContent] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
   // Fetch the content by ID
   useEffect(() => {
     async function fetchContent() {
-      if (!session?.user?.id) return;
+      if (!user) return;
       
       setLoading(true);
       try {
@@ -64,10 +64,10 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
       }
     }
     
-    if (status === 'authenticated') {
+    if (user) {
       fetchContent();
     }
-  }, [params.id, session?.user?.id, status]);
+  }, [params.id, user]);
 
   // Load blog URL and check if content is published
   useEffect(() => {
@@ -103,7 +103,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
 
   // Handle saving edited content
   const handleSave = async () => {
-    if (!session?.user?.id || !content) return;
+    if (!user || !content) return;
     
     setIsSaving(true);
     try {
@@ -137,7 +137,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
 
   // Add function to handle blog publishing
   const publishToBlog = async () => {
-    if (!content || !blogUrl) return;
+    if (!content || !blogUrl || !session?.access_token) return;
     
     setPublishingToBlog(true);
     try {
@@ -145,6 +145,7 @@ export default function ContentViewerPage({ params }: { params: { id: string } }
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           contentId: content.id,

@@ -1,13 +1,13 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseAdmin } from '@/lib/supabase';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    // Get the user session
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
+    // Use the centralized auth utility
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -19,108 +19,123 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing email ID' }, { status: 400 });
     }
 
-    // Get OAuth tokens
-    const accessToken = (session as any).access_token;
-    const refreshToken = (session as any).refresh_token;
+    console.log('🔍 Looking for Gmail integration for user:', user.id);
+    
+    // Get OAuth tokens specifically for Gmail
+    const { data: integration, error: integrationError } = await supabaseAdmin
+      .rpc('get_user_integration', {
+        p_user_id: user.id,
+        p_service_name: 'google-gmail'
+      });
 
-    if (!accessToken) {
-      return NextResponse.json({ error: 'No Gmail integration found', code: 'NO_INTEGRATION' }, { status: 400 });
+    console.log('🔍 Using dedicated Gmail integration');
+
+    // Extract the actual integration data from the RPC response
+    const actualIntegration = integration?.get_user_integration || integration;
+    
+    if (integrationError || !actualIntegration?.access_token) {
+      console.log('❌ No Google integration found');
+      return NextResponse.json({ 
+        error: 'No Google integration found. Please connect your Google account in Settings.',
+        code: 'NO_GOOGLE_INTEGRATION',
+        requiresReconnect: true
+      }, { status: 400 });
     }
+
+    // Check if this integration has Gmail scopes
+    const hasGmailScopes = actualIntegration.scopes?.some((scope: string) => 
+      scope.includes('gmail') || scope.includes('mail.google.com')
+    );
+
+    if (!hasGmailScopes) {
+      return NextResponse.json({ 
+        error: 'Google integration does not have Gmail access. Please reconnect your Google account with Gmail permissions.',
+        code: 'NO_GMAIL_SCOPES',
+        requiresReconnect: true
+      }, { status: 403 });
+    }
+
+    console.log('✅ Found Google integration with Gmail scopes');
 
     // Create OAuth2 client
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      process.env.NEXTAUTH_URL + '/api/auth/callback/google'
+      process.env.NODE_ENV === 'development' 
+        ? 'http://localhost:3000/api/oauth/google/callback'
+        : 'https://crm.solvify.se/api/oauth/google/callback'
     );
 
     // Set credentials
     oauth2Client.setCredentials({
-      access_token: accessToken,
-      refresh_token: refreshToken,
+      access_token: actualIntegration.access_token,
+      refresh_token: actualIntegration.refresh_token,
     });
 
     // Create Gmail API client
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-    // Fetch the message details
+    console.log('📧 Attempting Gmail API call with FULL format...');
+    
+    // Get the full message with complete email body
     const message = await gmail.users.messages.get({
       userId: 'me',
       id: messageId,
-      format: 'full',
+      format: 'full'
     });
-
-    // Process email body - extract both plain text and HTML versions
-    let plainText = '';
-    let htmlBody = '';
-    const payload = message.data.payload;
     
-    if (payload) {
-      // Function to recursively extract the different parts of the email
-      const extractParts = (parts: any[]) => {
-        let foundText = '';
-        let foundHtml = '';
+    console.log('✅ Gmail FULL format access successful!');
+    
+    let body = '';
+    let htmlBody = '';
+    
+    // Extract full email body from full format
+    if (message.data.payload) {
+      const extractBody = (payload: any): { text: string, html: string } => {
+        let textBody = '';
+        let htmlBody = '';
         
-        for (const part of parts) {
-          if (part.mimeType === 'text/plain' && part.body && part.body.data) {
-            foundText = Buffer.from(part.body.data, 'base64').toString('utf-8');
-          } else if (part.mimeType === 'text/html' && part.body && part.body.data) {
-            foundHtml = Buffer.from(part.body.data, 'base64').toString('utf-8');
-          } else if (part.parts) {
-            const { text, html } = extractParts(part.parts);
-            if (text && !foundText) foundText = text;
-            if (html && !foundHtml) foundHtml = html;
+        if (payload.body && payload.body.data) {
+          const bodyData = Buffer.from(payload.body.data, 'base64').toString('utf-8');
+          if (payload.mimeType === 'text/plain') {
+            textBody = bodyData;
+          } else if (payload.mimeType === 'text/html') {
+            htmlBody = bodyData;
           }
         }
         
-        return { text: foundText, html: foundHtml };
-      };
-
-      // Try to get the body from parts
-      if (payload.parts) {
-        const { text, html } = extractParts(payload.parts);
-        plainText = text;
-        htmlBody = html;
-      } 
-      // If no parts, try the body directly
-      else if (payload.body && payload.body.data) {
-        // Check the MIME type of the message
-        if (payload.mimeType === 'text/plain') {
-          plainText = Buffer.from(payload.body.data, 'base64').toString('utf-8');
-        } else if (payload.mimeType === 'text/html') {
-          htmlBody = Buffer.from(payload.body.data, 'base64').toString('utf-8');
-        } else {
-          // Default to treating as plain text if we can't determine
-          plainText = Buffer.from(payload.body.data, 'base64').toString('utf-8');
+        if (payload.parts) {
+          for (const part of payload.parts) {
+            const partBody = extractBody(part);
+            if (partBody.text) textBody += partBody.text;
+            if (partBody.html) htmlBody += partBody.html;
+          }
         }
-      }
+        
+        return { text: textBody, html: htmlBody };
+      };
+      
+      const extractedBody = extractBody(message.data.payload);
+      body = extractedBody.text || message.data.snippet || '';
+      htmlBody = extractedBody.html;
     }
 
-    // If we only have HTML, do a basic conversion to get plaintext
-    if (!plainText && htmlBody) {
-      // Very basic HTML to text conversion (can be improved)
-      plainText = htmlBody
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<[^>]+>/g, '') // Remove HTML tags
-        .replace(/&nbsp;/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-
-    // Fetch message headers
+    // Extract email headers
     let from = '';
     let fromEmail = '';
+    let to = '';
     let subject = '';
     let date = '';
     
-    if (payload && payload.headers) {
-      for (const header of payload.headers) {
+    if (message.data.payload && message.data.payload.headers) {
+      for (const header of message.data.payload.headers) {
         if (header.name === 'From') {
           from = header.value || '';
           // Try to extract email from format "Name <email@example.com>"
           const emailMatch = from.match(/<([^>]+)>/);
           fromEmail = emailMatch ? emailMatch[1] : from;
+        } else if (header.name === 'To') {
+          to = header.value || '';
         } else if (header.name === 'Subject') {
           subject = header.value || '';
         } else if (header.name === 'Date') {
@@ -129,27 +144,43 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({
+    const response = {
       id: message.data.id,
       threadId: message.data.threadId,
-      body: plainText,            // Plain text version
-      htmlBody: htmlBody,         // HTML version (if available)
+      body: body,
+      htmlBody: htmlBody,
       from,
       from_email: fromEmail,
+      to,
       subject,
-      date
-    });
+      date,
+      hasFullAccess: true,
+      limitedAccess: false,
+      accessType: 'full',
+      sizeEstimate: message.data.sizeEstimate,
+      labels: message.data.labelIds || []
+    };
+
+    return NextResponse.json(response);
+
   } catch (error: any) {
-    console.error('Error fetching Gmail message:', error);
+    console.error('❌ Gmail API call failed:', error.code, error.message);
     
-    // Handle token expiration or revocation
-    if (error.message?.includes('invalid_grant') || error.message?.includes('Invalid Credentials')) {
-      return NextResponse.json({ error: 'Gmail authentication failed', code: 'INVALID_TOKEN' }, { status: 401 });
+    if (error.code === 403) {
+      return NextResponse.json({
+        error: 'Gmail access denied. Your Google account connection has insufficient permissions.',
+        code: 'GMAIL_ACCESS_DENIED',
+        requiresReconnect: true,
+        details: error.message,
+        solution: 'Please disconnect and reconnect your Google account in Settings with full Gmail permissions.'
+      }, { status: 403 });
     }
-    
-    return NextResponse.json(
-      { error: 'Failed to fetch email message: ' + error.message },
-      { status: 500 }
-    );
+
+    return NextResponse.json({
+      error: 'Gmail API error: ' + (error.message || 'Unknown error'),
+      code: 'GMAIL_API_ERROR',
+      requiresReconnect: false,
+      details: error.message
+    }, { status: 500 });
   }
-} 
+}

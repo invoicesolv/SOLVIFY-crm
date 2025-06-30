@@ -6,36 +6,29 @@ import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, Plus, Trash2, Mail, Copy } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import FortnoxSyncButton from '@/app/components/FortnoxSyncButton';
-import { getActiveWorkspaceId } from '@/lib/permission';
+import { useWorkspace } from '@/hooks/useWorkspace';
 
 export default function CustomersPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
+  const { activeWorkspaceId, isLoading: workspaceLoading, error: workspaceError } = useWorkspace();
   const [isCheckingFortnox, setIsCheckingFortnox] = useState(false);
   const [isDeletingCustomers, setIsDeletingCustomers] = useState(false);
   const [isSyncingEmails, setIsSyncingEmails] = useState(false);
   const [isRemovingNoEmails, setIsRemovingNoEmails] = useState(false);
-  const [workspaceId, setWorkspaceId] = useState<string>('');
   
-  // Fetch the active workspace ID when the component mounts
+  // Show workspace error if any
   useEffect(() => {
-    if (session?.user?.id) {
-      // For client-side, we can use localStorage to get active workspace
-      const storedWorkspaceId = typeof window !== 'undefined' 
-        ? localStorage.getItem(`workspace_${session.user.id}`) 
-        : null;
-      
-      if (storedWorkspaceId) {
-        setWorkspaceId(storedWorkspaceId);
-      }
+    if (workspaceError) {
+      toast.error(`Workspace error: ${workspaceError}`);
     }
-  }, [session?.user?.id]);
+  }, [workspaceError]);
   
   const fetchAllFortnoxCustomers = async () => {
-    if (!session?.user?.id) return;
-    if (!workspaceId) {
-      toast.error('No workspace found. Please reload the page and try again.');
+    if (!user?.id || !session?.access_token) return;
+    if (!activeWorkspaceId) {
+      toast.error('No workspace found. Please ensure you have access to a workspace.');
       return;
     }
     
@@ -43,8 +36,9 @@ export default function CustomersPage() {
       setIsCheckingFortnox(true);
       const response = await fetch('/api/fortnox/customers/all', {
         headers: {
-          'user-id': session.user.id,
-          'workspace-id': workspaceId
+          'Authorization': `Bearer ${session.access_token}`,
+          'user-id': user.id,
+          'workspace-id': activeWorkspaceId
         }
       });
       
@@ -67,9 +61,9 @@ export default function CustomersPage() {
   };
 
   const syncCustomerEmails = async () => {
-    if (!session?.user?.id) return;
-    if (!workspaceId) {
-      toast.error('No workspace found. Please reload the page and try again.');
+    if (!user?.id || !session?.access_token) return;
+    if (!activeWorkspaceId) {
+      toast.error('No workspace found. Please ensure you have access to a workspace.');
       return;
     }
     
@@ -78,8 +72,9 @@ export default function CustomersPage() {
       const response = await fetch('/api/fortnox/customers/sync-emails', {
         method: 'POST',
         headers: {
-          'user-id': session.user.id,
-          'workspace-id': workspaceId
+          'Authorization': `Bearer ${session.access_token}`,
+          'user-id': user.id,
+          'workspace-id': activeWorkspaceId
         }
       });
       
@@ -102,9 +97,9 @@ export default function CustomersPage() {
   };
 
   const deleteAllCustomers = async () => {
-    if (!session?.user?.id) return;
-    if (!workspaceId) {
-      toast.error('No workspace found. Please reload the page and try again.');
+    if (!user?.id || !session?.access_token) return;
+    if (!activeWorkspaceId) {
+      toast.error('No workspace found. Please ensure you have access to a workspace.');
       return;
     }
     
@@ -117,8 +112,9 @@ export default function CustomersPage() {
       const response = await fetch('/api/customers/delete-all', {
         method: 'DELETE',
         headers: {
-          'user-id': session.user.id,
-          'workspace-id': workspaceId
+          'Authorization': `Bearer ${session.access_token}`,
+          'user-id': user.id,
+          'workspace-id': activeWorkspaceId
         }
       });
       
@@ -140,9 +136,9 @@ export default function CustomersPage() {
   };
 
   const removeCustomersWithoutEmails = async () => {
-    if (!session?.user?.id) return;
-    if (!workspaceId) {
-      toast.error('No workspace found. Please reload the page and try again.');
+    if (!user?.id || !session?.access_token) return;
+    if (!activeWorkspaceId) {
+      toast.error('No workspace found. Please ensure you have access to a workspace.');
       return;
     }
     
@@ -152,8 +148,9 @@ export default function CustomersPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'user-id': session.user.id,
-          'workspace-id': workspaceId
+          'Authorization': `Bearer ${session.access_token}`,
+          'user-id': user.id,
+          'workspace-id': activeWorkspaceId
         }
       });
       
@@ -178,6 +175,22 @@ export default function CustomersPage() {
     }
   };
 
+  // Show loading state if workspace is still being fetched
+  if (workspaceLoading) {
+    return (
+      <SidebarDemo>
+        <div className="p-6 flex-1 overflow-auto bg-background">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <span className="ml-2">Loading workspace...</span>
+            </div>
+          </div>
+        </div>
+      </SidebarDemo>
+    );
+  }
+
   return (
     <SidebarDemo>
       <div className="p-6 flex-1 overflow-auto bg-background">
@@ -186,85 +199,89 @@ export default function CustomersPage() {
             <div>
               <h1 className="text-2xl font-bold text-foreground">Customers</h1>
               <p className="text-muted-foreground mt-1">Manage your customers</p>
+              {activeWorkspaceId && (
+                <p className="text-xs text-muted-foreground mt-1">Workspace: {activeWorkspaceId}</p>
+              )}
             </div>
             <div className="flex gap-2">
               <Button 
                 onClick={deleteAllCustomers}
-                disabled={isDeletingCustomers || !workspaceId}
+                disabled={isDeletingCustomers || !activeWorkspaceId}
                 className="bg-red-800 hover:bg-red-700 border-red-700 text-foreground"
               >
                 {isDeletingCustomers ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Deleting...
                   </>
                 ) : (
                   <>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete All Customers
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete All
                   </>
                 )}
               </Button>
+              
               <Button 
                 onClick={removeCustomersWithoutEmails}
-                disabled={isRemovingNoEmails || !workspaceId}
-                className="bg-amber-800 hover:bg-amber-700 border-amber-700 text-foreground"
+                disabled={isRemovingNoEmails || !activeWorkspaceId}
+                variant="outline"
+                className="border-orange-500 text-orange-500 hover:bg-orange-500 hover:text-white"
               >
                 {isRemovingNoEmails ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Removing...
                   </>
                 ) : (
                   <>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Delete No-Email Customers 
+                    <Mail className="w-4 h-4 mr-2" />
+                    Remove No Email
                   </>
                 )}
               </Button>
+              
               <Button 
                 onClick={syncCustomerEmails}
-                disabled={isSyncingEmails || !workspaceId}
-                className="bg-blue-800 hover:bg-blue-700 border-blue-700 text-foreground"
+                disabled={isSyncingEmails || !activeWorkspaceId}
+                variant="outline"
               >
                 {isSyncingEmails ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Syncing Emails...
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Syncing...
                   </>
                 ) : (
                   <>
-                    <Mail className="mr-2 h-4 w-4" />
+                    <RefreshCw className="w-4 h-4 mr-2" />
                     Sync Emails
                   </>
                 )}
               </Button>
+
               <Button 
                 onClick={fetchAllFortnoxCustomers}
-                disabled={isCheckingFortnox || !workspaceId}
-                className="bg-gray-200 dark:bg-muted hover:bg-gray-300 dark:hover:bg-neutral-600 border-gray-400 dark:border-border"
+                disabled={isCheckingFortnox || !activeWorkspaceId}
+                variant="outline"
               >
                 {isCheckingFortnox ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Checking Fortnox...
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Fetching...
                   </>
                 ) : (
                   <>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Refresh from Fortnox
+                    <Copy className="w-4 h-4 mr-2" />
+                    Fetch All
                   </>
                 )}
               </Button>
+              
+              <FortnoxSyncButton />
             </div>
           </div>
-          <div className="rounded-xl overflow-hidden relative">
-            <div className="absolute inset-0 bg-gradient-to-tr from-neutral-950 via-neutral-900 to-neutral-950 opacity-50"></div>
-            
-            <div className="relative z-10">
-              <CustomersView />
-            </div>
-          </div>
+          
+          <CustomersView />
         </div>
       </div>
     </SidebarDemo>

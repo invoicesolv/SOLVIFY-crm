@@ -9,11 +9,11 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state') || '';
 
   const clientId = process.env.LINKEDIN_CLIENT_ID;
-  const redirectUri = `${process.env.NEXTAUTH_URL}/api/oauth/linkedin/callback`;
+  const redirectUri = `${process.env.NEXT_PUBLIC_SITE_URL}/api/oauth/linkedin/callback`;
   
   if (!clientId) {
     console.error('LinkedIn OAuth error: Missing LINKEDIN_CLIENT_ID');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=linkedin_config_missing`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=linkedin_config_missing`));
   }
   
   // LinkedIn OAuth 2.0 scopes for posting and profile access

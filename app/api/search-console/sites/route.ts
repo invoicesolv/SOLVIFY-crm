@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 export const dynamic = 'force-dynamic';
@@ -11,33 +9,53 @@ interface SearchConsoleSite {
   permissionLevel: string;
 }
 
-export async function GET() {
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
+export async function GET(request: NextRequest) {
   try {
     console.log('[Search Console Sites API] Starting GET request handler');
     
     // Get user from session
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const user = await getUserFromToken(request);
 
-    if (!userId) {
-      console.error('[Search Console Sites API] Authentication error: No valid user ID in session');
+    if (!user) {
+      console.error('[Search Console Sites API] Authentication error: No valid user');
       return NextResponse.json(
         { error: 'User not authenticated' },
         { status: 401 }
       );
     }
 
-    console.log('[Search Console Sites API] Request received for userId:', userId);
+    console.log('[Search Console Sites API] Request received for user:', user.id);
 
     // Get the access token with proactive token refresh if needed
-    const freshToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');
+    const freshToken = await getRefreshedGoogleToken(user.id, 'google-searchconsole');
     
     // Get the current token from database
-    const { data: integration, error: tokenError } = await supabase
+    const { data: integration, error: tokenError } = await supabaseAdmin
         .from('integrations')
         .select('access_token, refresh_token, expires_at')
         .eq('service_name', 'google-searchconsole')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1);
       
@@ -84,7 +102,7 @@ export async function GET() {
       try {
         return await handleTokenRefreshOnError(
           apiError,
-          userId,
+          user.id,
           'google-searchconsole',
           async (refreshedToken) => {
             console.log('[Search Console Sites API] Retrying with refreshed token');

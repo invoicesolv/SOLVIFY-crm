@@ -1,30 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
+import { withAuth } from '@/lib/global-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// API endpoint to fetch project folders while bypassing RLS
-export async function GET(req: NextRequest) {
+export const dynamic = 'force-dynamic';
+
+/**
+ * API endpoint to get project folders
+ * 
+ * @param request NextRequest object containing query parameters
+ * @returns Promise<NextResponse> with folders array
+ */
+export const GET = withAuth(async (req: NextRequest, { user }) => {
   try {
-    // Authenticate the user
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    console.log('[Project Folders GET] Starting folder fetch for user:', user.email);
 
-    // Get workspace ID from query params
-    const url = new URL(req.url);
-    const workspaceId = url.searchParams.get('workspace_id');
+    // Get user's workspaces for manual filtering (since service role bypasses RLS)
+    const { data: userWorkspaces } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', user.id);
     
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 });
+    if (!userWorkspaces || userWorkspaces.length === 0) {
+      console.log('[Project Folders GET] No workspace access for user');
+      return NextResponse.json({ folders: [] });
+    }
+    
+    const workspaceIds = userWorkspaces.map(w => w.workspace_id);
+    console.log('[Project Folders GET] User workspaces:', workspaceIds);
+
+    // Get workspace ID from query params (optional filter)
+    const url = new URL(req.url);
+    const requestedWorkspaceId = url.searchParams.get('workspace_id');
+    
+    // If specific workspace requested, verify user has access
+    let filterWorkspaceIds = workspaceIds;
+    if (requestedWorkspaceId) {
+      if (!workspaceIds.includes(requestedWorkspaceId)) {
+        return NextResponse.json({ error: 'Access denied to workspace' }, { status: 403 });
+      }
+      filterWorkspaceIds = [requestedWorkspaceId];
     }
 
-    // Fetch folders using admin client to bypass RLS
+    // Fetch folders using admin client with manual workspace filtering
     const { data, error } = await supabaseAdmin
       .from("project_folders")
       .select("*")
-      .eq("workspace_id", workspaceId)
+      .in("workspace_id", filterWorkspaceIds)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -32,6 +53,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    console.log('[Project Folders GET] Found folders:', data?.length || 0);
     return NextResponse.json({ folders: data || [] });
   } catch (error) {
     console.error("Unexpected error fetching project folders:", error);
@@ -40,18 +62,57 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
-// API endpoint to create project folders table if it doesn't exist
-export async function POST(req: NextRequest) {
+/**
+ * API endpoint to create project folders table or add folder
+ */
+export const POST = withAuth(async (req: NextRequest, { user }) => {
   try {
-    // Authenticate the user
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    console.log('[Project Folders POST] Starting folder operation for user:', user.email);
+    
+    const body = await req.json();
+    
+    // If it's a folder creation request
+    if (body.name && body.workspace_id) {
+      // Get user's workspaces for authorization
+      const { data: userWorkspaces } = await supabaseAdmin
+        .from('team_members')
+        .select('workspace_id')
+        .eq('user_id', user.id);
+      
+      if (!userWorkspaces || userWorkspaces.length === 0) {
+        return NextResponse.json({ error: 'No workspace access' }, { status: 403 });
+      }
+      
+      const workspaceIds = userWorkspaces.map(w => w.workspace_id);
+      
+      if (!workspaceIds.includes(body.workspace_id)) {
+        return NextResponse.json({ error: 'Access denied to workspace' }, { status: 403 });
+      }
+      
+      // Create the folder
+      const { data: folder, error } = await supabaseAdmin
+        .from('project_folders')
+        .insert([{
+          name: body.name,
+          workspace_id: body.workspace_id,
+          user_id: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select('*')
+        .single();
+      
+      if (error) {
+        console.error('Error creating folder:', error);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      
+      return NextResponse.json({ folder, success: true });
     }
 
-    // Check if the table already exists
+    // Otherwise, check if the table exists (legacy functionality)
     const { error: checkError } = await supabaseAdmin
       .from('project_folders')
       .select('id')
@@ -84,7 +145,7 @@ export async function POST(req: NextRequest) {
             -- Enable RLS
             ALTER TABLE public.project_folders ENABLE ROW LEVEL SECURITY;
 
-            -- Create policies
+            -- Create policies (Note: these still use auth.uid() as they are database-level policies)
             CREATE POLICY "Users can view folders in their workspace" ON public.project_folders
               FOR SELECT USING (
                 EXISTS (
@@ -142,4 +203,4 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-} 
+});

@@ -5,12 +5,21 @@
 // 🚫 DO NOT TOUCH UNLESS ABSOLUTELY NECESSARY
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
+import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
+
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 // Facebook OAuth callback
 export async function GET(request: NextRequest) {
@@ -18,17 +27,17 @@ export async function GET(request: NextRequest) {
   console.log('🔵 [FACEBOOK OAUTH] Request URL:', request.url);
   console.log('🔵 [FACEBOOK OAUTH] Request method:', request.method);
   
-  const session = await getServerSession(authOptions);
+  const session = await getUserFromToken(request);
   console.log('🔵 [FACEBOOK OAUTH] Session check:', {
     hasSession: !!session,
-    hasUser: !!session?.user,
-    userId: session?.user?.id,
-    userEmail: session?.user?.email
+    hasUser: !!session?.id,
+    userId: session?.id,
+    userEmail: session?.user_metadata.email
   });
   
-  if (!session?.user?.id) {
+  if (!session?.id) {
     console.error('Facebook OAuth callback: No user session found');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/login`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/login`));
   }
 
   const searchParams = request.nextUrl.searchParams;
@@ -46,12 +55,12 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('🔴 [FACEBOOK OAUTH] Error from Facebook:', error);
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=facebook_auth_failed&fb_error=${encodeURIComponent(error)}`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=facebook_auth_failed&fb_error=${encodeURIComponent(error)}`));
   }
 
   if (!code) {
     console.error('🔴 [FACEBOOK OAUTH] No authorization code received');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=no_code`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=no_code`));
   }
 
   try {
@@ -60,7 +69,7 @@ export async function GET(request: NextRequest) {
     // Use consistent environment variables - prioritize FACEBOOK_* over META_*
     const clientId = process.env.FACEBOOK_APP_ID || process.env.META_CLIENT_ID;
     const clientSecret = process.env.FACEBOOK_APP_SECRET || process.env.META_CLIENT_SECRET;
-    const redirectUri = `${(process.env.NEXTAUTH_URL || '').replace(/\/$/, '')}/api/oauth/facebook/callback`;
+    const redirectUri = `${(process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '')}/api/oauth/facebook/callback`;
 
     if (!clientId || !clientSecret) {
       console.error('Facebook OAuth: Missing client credentials');
@@ -116,7 +125,6 @@ export async function GET(request: NextRequest) {
     console.log('Facebook OAuth: Fetching user profile from Facebook Graph API');
     
     // Create appsecret_proof for secure API calls
-    const crypto = require('crypto');
     const appsecret_proof = crypto
       .createHmac('sha256', clientSecret)
       .update(tokenData.access_token)
@@ -152,10 +160,10 @@ export async function GET(request: NextRequest) {
     let workspaceId = null;
     
     try {
-      const { data: workspaces, error: workspaceError } = await supabaseAdmin
+      const { data: workspaces, error: workspaceError } = await getSupabaseAdmin()
         .from('team_members')
         .select('workspace_id, workspaces(id, name)')
-        .eq('user_id', session.user.id)
+        .eq('user_id', session.id)
         .neq('workspace_id', '4251bc40-5a36-493a-9f85-eb728c4d86fa'); // Filter out deleted workspace
         
       if (workspaceError) {
@@ -184,7 +192,7 @@ export async function GET(request: NextRequest) {
       : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(); // 60 days if no expiry provided
     
     console.log('🔵 [FACEBOOK OAUTH] Attempting to save to database:', {
-      user_id: session.user.id,
+      user_id: session.id,
       workspace_id: workspaceId,
       platform: 'facebook',
       account_id: userData.id,
@@ -193,10 +201,10 @@ export async function GET(request: NextRequest) {
       token_expires_at: expiresAt
     });
 
-    const { data: insertData, error: dbError } = await supabaseAdmin
+    const { data: insertData, error: dbError } = await getSupabaseAdmin()
       .from('social_accounts')
       .upsert({
-        user_id: session.user.id,
+        user_id: session.id,
         workspace_id: workspaceId,
         platform: 'facebook',
         access_token: tokenData.access_token,
@@ -292,10 +300,10 @@ export async function GET(request: NextRequest) {
                 access_token_preview: page.access_token ? page.access_token.substring(0, 20) + '...' : 'None',
               category: page.category
               });
-            const { data: pageInsertData, error: pageError } = await supabaseAdmin
+            const { data: pageInsertData, error: pageError } = await getSupabaseAdmin()
                 .from('social_accounts')
                 .upsert({
-                  user_id: session.user.id,
+                  user_id: session.id,
                   workspace_id: workspaceId,
                   platform: 'facebook',
                   access_token: page.access_token || tokenData.access_token, // Use page token if available
@@ -349,14 +357,14 @@ export async function GET(request: NextRequest) {
     // Determine redirect based on what we actually achieved
     if (hasBusinessPermissions) {
       console.log('Facebook OAuth: Business permissions granted, ready for posting');
-      return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/social-media?success=facebook_connected&business_ready=true`));
+      return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/social-media?success=facebook_connected&business_ready=true`));
     } else {
       console.log('Facebook OAuth: Basic permissions granted, offering upgrade');
-      return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/social-media?success=facebook_connected&upgrade_needed=true`));
+      return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/social-media?success=facebook_connected&upgrade_needed=true`));
     }
   } catch (error: any) {
     console.error('Facebook OAuth callback error:', error);
     console.error('Facebook OAuth error stack:', error.stack);
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=facebook_auth_failed&details=${encodeURIComponent(error.message || 'Unknown error')}`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=facebook_auth_failed&details=${encodeURIComponent(error.message || 'Unknown error')}`));
   }
 } 

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { 
   ArrowLeft,
   Save,
@@ -449,27 +449,27 @@ Unsubscribe: {{unsubscribe_url}}`,
 };
 
 export default function NewTemplatePage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const router = useRouter();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+
   const [templateData, setTemplateData] = useState<TemplateData>({
     name: '',
     subject: '',
     html_content: '',
     plain_content: '',
     template_type: 'email',
-    category: 'Other',
+    category: 'Newsletter',
     is_active: true
   });
-  const [previewMode, setPreviewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [saving, setSaving] = useState(false);
-  const [currentTab, setCurrentTab] = useState('design');
 
   useEffect(() => {
     const initializeWorkspace = async () => {
-      if (session?.user?.id) {
+      if (user?.id) {
         try {
-          const activeWorkspaceId = await getActiveWorkspaceId(session.user.id);
+          const activeWorkspaceId = await getActiveWorkspaceId(user.id);
           setWorkspaceId(activeWorkspaceId);
         } catch (error) {
           console.error('Error getting workspace ID:', error);
@@ -478,7 +478,7 @@ export default function NewTemplatePage() {
     };
     
     initializeWorkspace();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   const loadSampleTemplate = (templateKey: keyof typeof SAMPLE_TEMPLATES) => {
     const sample = SAMPLE_TEMPLATES[templateKey];
@@ -526,19 +526,21 @@ export default function NewTemplatePage() {
     }
 
     try {
-      setSaving(true);
+      setLoading(true);
 
-      const { data, error } = await supabase
-        .from('email_templates')
-        .insert({
-          workspace_id: workspaceId,
-          user_id: session.user.id,
-          ...templateData
-        })
-        .select()
-        .single();
+      const response = await fetch('/api/email-marketing/templates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(templateData)
+      });
 
-      if (error) throw error;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save template');
+      }
 
       toast.success('Template saved successfully');
       router.push('/email-marketing/templates');
@@ -546,12 +548,12 @@ export default function NewTemplatePage() {
       console.error('Error saving template:', error);
       toast.error('Failed to save template');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
   const getPreviewWidth = () => {
-    switch (previewMode) {
+    switch (previewDevice) {
       case 'mobile': return '375px';
       case 'tablet': return '768px';
       default: return '100%';
@@ -579,13 +581,13 @@ export default function NewTemplatePage() {
             </div>
             
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setCurrentTab('preview')}>
+              <Button variant="outline" onClick={() => {}}>
                 <Eye className="h-4 w-4 mr-2" />
                 Preview
               </Button>
-              <Button onClick={saveTemplate} disabled={saving}>
+              <Button onClick={saveTemplate} disabled={loading}>
                 <Save className="h-4 w-4 mr-2" />
-                {saving ? 'Saving...' : 'Save Template'}
+                {loading ? 'Saving...' : 'Save Template'}
               </Button>
             </div>
           </div>
@@ -731,7 +733,7 @@ export default function NewTemplatePage() {
 
           {/* Main Content */}
           <div className="flex-1 flex flex-col">
-            <Tabs value={currentTab} onValueChange={setCurrentTab} className="flex-1 flex flex-col">
+            <Tabs value="design" className="flex-1 flex flex-col">
               <div className="border-b border-border px-6 py-3">
                 <TabsList>
                   <TabsTrigger value="design">Design</TabsTrigger>
@@ -811,23 +813,23 @@ export default function NewTemplatePage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
-                      variant={previewMode === 'desktop' ? 'default' : 'outline'}
+                      variant={previewDevice === 'desktop' ? 'default' : 'outline'}
                       size="sm"
-                      onClick={() => setPreviewMode('desktop')}
+                      onClick={() => setPreviewDevice('desktop')}
                     >
                       <Monitor className="h-4 w-4" />
                     </Button>
                     <Button
-                      variant={previewMode === 'tablet' ? 'default' : 'outline'}
+                      variant={previewDevice === 'tablet' ? 'default' : 'outline'}
                       size="sm"
-                      onClick={() => setPreviewMode('tablet')}
+                      onClick={() => setPreviewDevice('tablet')}
                     >
                       <Tablet className="h-4 w-4" />
                     </Button>
                     <Button
-                      variant={previewMode === 'mobile' ? 'default' : 'outline'}
+                      variant={previewDevice === 'mobile' ? 'default' : 'outline'}
                       size="sm"
-                      onClick={() => setPreviewMode('mobile')}
+                      onClick={() => setPreviewDevice('mobile')}
                     >
                       <Smartphone className="h-4 w-4" />
                     </Button>

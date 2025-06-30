@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -170,7 +170,7 @@ async function fetchInvoicesForRange(tokenData: any, startDate: string, endDate:
   }
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
   console.log('\n=== Fetching Fortnox Invoices by Date Range ===');
   
   const supabaseAdmin = getSupabaseAdmin();
@@ -182,7 +182,7 @@ export async function GET(req: NextRequest) {
   }
   
   // Get parameters
-  const searchParams = req.nextUrl.searchParams;
+  const searchParams = request.nextUrl.searchParams;
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
   
@@ -194,33 +194,14 @@ export async function GET(req: NextRequest) {
     );
   }
   
-  // First try to get user ID from headers (for compatibility with frontend)
-  const workspaceId = req.headers.get('workspace-id');
-  const headerUserId = req.headers.get('user-id');
-  
-  // If headers don't have the user ID, try to get it from the session
-  let sessionUserId: string | undefined;
   try {
-    const session = await getServerSession(authOptions);
-    sessionUserId = session?.user?.id;
-    console.log('Got user ID from session:', sessionUserId);
-  } catch (e) {
-    console.error('Error getting session:', e);
-  }
-  
-  // Final user ID to use
-  const finalUserId = headerUserId || sessionUserId;
-  
-  if (!finalUserId) {
-    console.error('No user ID found in headers or session');
-    return NextResponse.json({ error: 'Unauthorized: User not authenticated', details: 'Please log in or provide a user-id header' }, { status: 401 });
-  }
-  
-  console.log(`Processing request for user ID: ${finalUserId}`);
-  
-  try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     // Load Fortnox token
-    const tokenData = await loadTokenFromSupabase(finalUserId);
+    const tokenData = await loadTokenFromSupabase(user.id);
     
     if (!tokenData || !tokenData.access_token) {
       console.error('No Fortnox token found for user');

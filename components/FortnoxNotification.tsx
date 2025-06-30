@@ -3,39 +3,39 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, X } from "lucide-react";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import FortnoxRefreshButton from "@/components/FortnoxRefreshButton";
 
 export default function FortnoxNotification() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [showNotification, setShowNotification] = useState(false);
   const [customerCount, setCustomerCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   
   useEffect(() => {
     // Check for new customers when component mounts
-    if (session?.user?.id) {
+    if (user?.id) {
       checkForNewCustomers();
     }
     
     // Set up periodic check (every 30 minutes)
     const interval = setInterval(() => {
-      if (session?.user?.id) {
+      if (user?.id) {
         checkForNewCustomers();
       }
     }, 30 * 60 * 1000);
     
     return () => clearInterval(interval);
-  }, [session?.user?.id]);
+  }, [user?.id]);
   
   const checkForNewCustomers = async () => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     
     try {
       setIsLoading(true);
       const response = await fetch('/api/fortnox/customers/check', {
         headers: {
-          'user-id': session.user.id
+          'user-id': user.id
         }
       });
       

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
 
 // Fortnox API URL
@@ -125,6 +127,11 @@ function findValidEmail(customer: FortnoxCustomer): string | null {
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     console.log("=== Starting fix-missing-emails operation ===");
     
     // Get workspace ID from query params

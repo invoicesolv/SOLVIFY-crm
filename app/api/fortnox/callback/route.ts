@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox credentials
 const CLIENT_ID = '4LhJwn68IpdR';
@@ -69,6 +69,27 @@ async function saveTokenToSupabase(token: any, userId: string) {
   }
 }
 
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
   // Check if Supabase is properly initialized
@@ -79,8 +100,8 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const user = await getUserFromToken(req);
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -124,7 +145,7 @@ export async function GET(req: NextRequest) {
       console.log('Access token received');
       
       // Save to Supabase with user ID
-      await saveTokenToSupabase(tokenData, session.user.id);
+      await saveTokenToSupabase(tokenData, user.id);
       
       // Redirect back to the settings page
       return NextResponse.redirect(new URL('/settings', req.url));

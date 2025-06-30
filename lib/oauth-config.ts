@@ -5,13 +5,13 @@ export const OAUTH_CONFIG = {
   // Google OAuth endpoints
   google: {
     // Main authentication callback (for login/register)
-    mainCallback: '/api/auth/callback/google',
+    mainCallback: '/api/oauth/google/callback',
     
     // Service-specific callbacks (for additional scopes/permissions)
     serviceCallbacks: {
-      analytics: '/api/auth/callback/google-analytics',
-      calendar: '/api/auth/callback/google-calendar',
-      searchConsole: '/api/auth/callback/google-searchconsole'
+      analytics: '/api/oauth/google/callback',
+      calendar: '/api/oauth/google/callback',
+      searchConsole: '/api/oauth/google/callback'
     }
   }
 };

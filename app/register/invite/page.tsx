@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import ReCAPTCHA from 'react-google-recaptcha';
 
 // reCAPTCHA site key from Google

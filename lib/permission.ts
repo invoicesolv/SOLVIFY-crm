@@ -12,26 +12,148 @@ setInterval(() => {
   permissionCache.clear();
 }, 5 * 60 * 1000); // Clear every 5 minutes
 
+// Complete permissions object for reference
+const ALL_PERMISSIONS: Record<string, boolean> = {
+  // Dashboard
+  view_dashboard: true,
+  view_dashboard_analytics: true,
+  
+  // Projects & Tasks
+  view_projects: true,
+  edit_projects: true,
+  view_tasks: true,
+  edit_tasks: true,
+  
+  // CRM
+  view_customers: true,
+  edit_customers: true,
+  view_leads: true,
+  edit_leads: true,
+  view_sales: true,
+  edit_sales: true,
+  view_gmail_hub: true,
+  edit_gmail_hub: true,
+  
+  // Finance
+  view_invoices: true,
+  edit_invoices: true,
+  view_recurring_invoices: true,
+  edit_recurring_invoices: true,
+  view_invoice_reminders: true,
+  edit_invoice_reminders: true,
+  
+  // Marketing
+  view_marketing: true,
+  edit_marketing: true,
+  view_email_marketing: true,
+  edit_email_marketing: true,
+  view_social_media: true,
+  edit_social_media: true,
+  view_analytics: true,
+  view_search_console: true,
+  edit_search_console: true,
+  view_domains: true,
+  edit_domains: true,
+  view_content_generator: true,
+  edit_content_generator: true,
+  
+  // Calendar & Communication
+  view_calendar: true,
+  edit_calendar: true,
+  view_notifications: true,
+  edit_notifications: true,
+  view_chat: true,
+  edit_chat: true,
+  use_chatbot: true,
+  
+  // Automation
+  view_automation: true,
+  edit_automation: true,
+  view_scheduled_tasks: true,
+  edit_scheduled_tasks: true,
+  
+  // Profile & Settings
+  view_profile: true,
+  edit_profile: true,
+  view_settings: true,
+  edit_settings: true,
+  
+  // Administration
+  admin: true,
+  canInviteUsers: true,
+  canManageWorkspace: true
+};
+
 // Permission keys type
 export type PermissionKey = 
+  // Dashboard
+  | 'view_dashboard'
+  | 'view_dashboard_analytics'
+  
+  // Projects & Tasks
   | 'view_projects' 
   | 'edit_projects' 
+  | 'view_tasks'
+  | 'edit_tasks'
+  
+  // CRM
   | 'view_customers' 
   | 'edit_customers' 
-  | 'view_invoices' 
-  | 'view_calendar' 
-  | 'view_analytics'
-  | 'view_domains'
-  | 'edit_domains'
-  | 'admin'
-  | 'canInviteUsers'
-  | 'canManageWorkspace'
-  | 'edit_calendar'
-  | 'view_sales'
-  | 'edit_sales'
   | 'view_leads'
   | 'edit_leads'
-  | 'use_chatbot';
+  | 'view_sales'
+  | 'edit_sales'
+  | 'view_gmail_hub'
+  | 'edit_gmail_hub'
+  
+  // Finance
+  | 'view_invoices' 
+  | 'edit_invoices'
+  | 'view_recurring_invoices'
+  | 'edit_recurring_invoices'
+  | 'view_invoice_reminders'
+  | 'edit_invoice_reminders'
+  
+  // Marketing
+  | 'view_marketing'
+  | 'edit_marketing'
+  | 'view_email_marketing'
+  | 'edit_email_marketing'
+  | 'view_social_media'
+  | 'edit_social_media'
+  | 'view_analytics'
+  | 'view_search_console'
+  | 'edit_search_console'
+  | 'view_domains'
+  | 'edit_domains'
+  | 'view_content_generator'
+  | 'edit_content_generator'
+  
+  // Calendar & Communication
+  | 'view_calendar' 
+  | 'edit_calendar'
+  | 'view_notifications'
+  | 'edit_notifications'
+  | 'view_chat'
+  | 'edit_chat'
+  | 'use_chatbot'
+  
+  // Automation
+  | 'view_automation'
+  | 'edit_automation'
+  | 'view_scheduled_tasks'
+  | 'edit_scheduled_tasks'
+  
+  // Profile & Settings
+  | 'view_profile'
+  | 'edit_profile'
+  | 'view_settings'
+  | 'edit_settings'
+  
+  // Administration
+  | 'admin'
+  | 'canInviteUsers'
+  | 'canManageWorkspace';
 
 /**
  * NOTE: Uses supabaseAdmin client to bypass RLS for internal checks.
@@ -74,27 +196,8 @@ export async function checkPermission(
     }
     
     if (workspace?.owner_id === userId) {
-      // Cache owner permissions
-      const ownerPermissions = {
-        view_projects: true,
-        edit_projects: true,
-        view_customers: true,
-        edit_customers: true,
-        view_invoices: true,
-        view_calendar: true,
-        view_analytics: true,
-        view_domains: true,
-        edit_domains: true,
-        admin: true,
-        canInviteUsers: true,
-        canManageWorkspace: true,
-        edit_calendar: true,
-        view_sales: true,
-        edit_sales: true,
-        view_leads: true,
-        edit_leads: true,
-        use_chatbot: true
-      };
+      // Cache owner permissions - owners have all permissions
+      const ownerPermissions = ALL_PERMISSIONS as Record<PermissionKey, boolean>;
       
       permissionCache.set(cacheKey, {
         permissions: ownerPermissions,
@@ -124,26 +227,7 @@ export async function checkPermission(
       // If user is admin, they have all permissions
       if (teamMember?.is_admin) {
         // Cache admin permissions
-        const adminPermissions = {
-          view_projects: true,
-          edit_projects: true,
-          view_customers: true,
-          edit_customers: true,
-          view_invoices: true,
-          view_calendar: true,
-          view_analytics: true,
-          view_domains: true,
-          edit_domains: true,
-          admin: true,
-          canInviteUsers: true,
-          canManageWorkspace: true,
-          edit_calendar: true,
-          view_sales: true,
-          edit_sales: true,
-          view_leads: true,
-          edit_leads: true,
-          use_chatbot: true
-        };
+        const adminPermissions = ALL_PERMISSIONS as Record<PermissionKey, boolean>;
         
         permissionCache.set(cacheKey, {
           permissions: adminPermissions,
@@ -178,26 +262,7 @@ export async function checkPermission(
         // If user is admin, they have all permissions
         if (emailMember.is_admin) {
           // Cache admin permissions
-          const adminPermissions = {
-            view_projects: true,
-            edit_projects: true,
-            view_customers: true,
-            edit_customers: true,
-            view_invoices: true,
-            view_calendar: true,
-            view_analytics: true,
-            view_domains: true,
-            edit_domains: true,
-            admin: true,
-            canInviteUsers: true,
-            canManageWorkspace: true,
-            edit_calendar: true,
-            view_sales: true,
-            edit_sales: true,
-            view_leads: true,
-            edit_leads: true,
-            use_chatbot: true
-          };
+          const adminPermissions = ALL_PERMISSIONS as Record<PermissionKey, boolean>;
           
           permissionCache.set(cacheKey, {
             permissions: adminPermissions,
@@ -241,25 +306,75 @@ export async function getUserPermissions(
 ): Promise<Record<PermissionKey, boolean>> {
   // Define default permissions at the function scope
   const defaultPermissions: Record<PermissionKey, boolean> = {
-      view_projects: false,
-      edit_projects: false,
-      view_customers: false,
-      edit_customers: false,
-      view_invoices: false,
-      view_calendar: false,
-    edit_calendar: false,
-      view_analytics: false,
-      view_domains: false,
-      edit_domains: false,
-    view_sales: false,
-    edit_sales: false,
+    // Dashboard
+    view_dashboard: false,
+    view_dashboard_analytics: false,
+    
+    // Projects & Tasks
+    view_projects: false,
+    edit_projects: false,
+    view_tasks: false,
+    edit_tasks: false,
+    
+    // CRM
+    view_customers: false,
+    edit_customers: false,
     view_leads: false,
     edit_leads: false,
+    view_sales: false,
+    edit_sales: false,
+    view_gmail_hub: false,
+    edit_gmail_hub: false,
+    
+    // Finance
+    view_invoices: false,
+    edit_invoices: false,
+    view_recurring_invoices: false,
+    edit_recurring_invoices: false,
+    view_invoice_reminders: false,
+    edit_invoice_reminders: false,
+    
+    // Marketing
+    view_marketing: false,
+    edit_marketing: false,
+    view_email_marketing: false,
+    edit_email_marketing: false,
+    view_social_media: false,
+    edit_social_media: false,
+    view_analytics: false,
+    view_search_console: false,
+    edit_search_console: false,
+    view_domains: false,
+    edit_domains: false,
+    view_content_generator: false,
+    edit_content_generator: false,
+    
+    // Calendar & Communication
+    view_calendar: false,
+    edit_calendar: false,
+    view_notifications: false,
+    edit_notifications: false,
+    view_chat: false,
+    edit_chat: false,
     use_chatbot: false,
-      admin: false,
-      canInviteUsers: false,
-      canManageWorkspace: false
-    };
+    
+    // Automation
+    view_automation: false,
+    edit_automation: false,
+    view_scheduled_tasks: false,
+    edit_scheduled_tasks: false,
+    
+    // Profile & Settings
+    view_profile: false,
+    edit_profile: false,
+    view_settings: false,
+    edit_settings: false,
+    
+    // Administration
+    admin: false,
+    canInviteUsers: false,
+    canManageWorkspace: false
+  };
 
   if (!userId || !workspaceId) {
     return defaultPermissions;

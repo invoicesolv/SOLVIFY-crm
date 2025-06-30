@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json(
         { error: 'Not authenticated' },
         { status: 401 }
@@ -16,7 +15,7 @@ export async function GET(request: NextRequest) {
     }
 
     const siteUrl = request.nextUrl.searchParams.get('siteUrl');
-    console.log('Fetching cron jobs for:', { userId: session.user.id, siteUrl });
+    console.log('Fetching cron jobs for:', { userId: user.id, siteUrl });
 
     if (!siteUrl) {
       return NextResponse.json(
@@ -29,7 +28,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabase
       .from('cron_jobs')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('site_url', siteUrl)
       .eq('job_type', 'search_console_report')
       .order('updated_at', { ascending: false });

@@ -2,19 +2,18 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { MessageSquare, Calendar, FolderOpen, Users, X } from 'lucide-react'
+import { MessageSquare, Calendar, FolderOpen, Users, X, Bot } from 'lucide-react'
 import { ChatInterface } from '@/components/ui/chat-interface'
 import { CalendarSidebar } from '@/components/ui/calendar-sidebar'
 import { ProjectSidebar } from '@/components/ui/project-sidebar'
+import { ChatWindow } from '@/components/ChatWindow'
 import { SidebarDemo } from '@/components/ui/code.demo'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
-import { Tables } from '@/lib/database.types'
-import { useSession } from 'next-auth/react'
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation'
 import { useNotifications } from '@/lib/notification-context'
 import { cn } from '@/lib/utils'
 
-type ViewType = 'chat' | 'calendar' | 'projects'
+type ViewType = 'chat' | 'calendar' | 'projects' | 'ai-assistant'
 
 type WorkspaceUser = {
   id: string
@@ -24,7 +23,7 @@ type WorkspaceUser = {
 }
 
 export default function ChatPage() {
-  const { data: session, status } = useSession()
+  const { user, session } = useAuth()
   const router = useRouter()
   const [activeView, setActiveView] = useState<ViewType>('chat')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -39,55 +38,21 @@ export default function ChatPage() {
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/auth/signin')
+    if (!user && session === null) {
+      router.push('/login')
       return
     }
-  }, [status, router])
+  }, [user, session, router])
 
-  // Get active workspace using the same logic as other pages
+  // Get active workspace using API only (skip localStorage to avoid stale data)
   const getActiveWorkspace = async () => {
-    // First try localStorage dashboardSettings
-    const dashboardSettings = localStorage.getItem('dashboardSettings');
-    if (dashboardSettings) {
-      try {
-        const settings = JSON.parse(dashboardSettings);
-        if (settings.activeWorkspace) {
-          console.log('Chat: Found active workspace in dashboardSettings:', settings.activeWorkspace);
-          return settings.activeWorkspace;
-        }
-      } catch (e) {
-        console.error('Chat: Error parsing dashboard settings:', e);
-      }
-    }
-    
-    // Then try localStorage user-specific preference
-    const userData = localStorage.getItem('supabase.auth.token');
-    let userId = null;
-    if (userData) {
-      try {
-        const parsed = JSON.parse(userData);
-        userId = parsed?.currentSession?.user?.id;
-        
-        if (userId) {
-          const workspaceKey = `workspace_${userId}`;
-          const storedWorkspace = localStorage.getItem(workspaceKey);
-          if (storedWorkspace) {
-            console.log('Chat: Found active workspace in localStorage:', storedWorkspace);
-            return storedWorkspace;
-          }
-        }
-      } catch (e) {
-        console.error('Chat: Error getting user ID from localStorage:', e);
-      }
-    }
-    
-    // Last resort: Ask API to determine workspace
     try {
+      console.log('Chat: Fetching active workspace from API...');
       const response = await fetch('/api/user/active-workspace', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
           'Cache-Control': 'no-cache',
         }
       });
@@ -96,12 +61,17 @@ export default function ChatPage() {
         const data = await response.json();
         if (data.workspaceId) {
           console.log('Chat: Found active workspace from API:', data.workspaceId);
-          // Save this for future use
-          if (userId) {
-            localStorage.setItem(`workspace_${userId}`, data.workspaceId);
+          // Clear any stale localStorage data and save the correct workspace
+          if (user?.id) {
+            localStorage.removeItem('dashboardSettings'); // Clear potentially stale data
+            localStorage.setItem(`workspace_${user.id}`, data.workspaceId);
           }
           return data.workspaceId;
         }
+      } else {
+        console.error('Chat: Error response from active-workspace API:', response.status, response.statusText);
+        const errorData = await response.json().catch(() => null);
+        console.error('Chat: API error details:', errorData);
       }
     } catch (e) {
       console.error('Chat: Error fetching workspace from API:', e);
@@ -116,7 +86,7 @@ export default function ChatPage() {
       setIsLoading(true)
       setError(null)
       
-      console.log('Chat: Initializing data for user:', session?.user?.id)
+      console.log('Chat: Initializing data for user:', user?.id)
       
       // Get active workspace using the same logic as other pages
       const activeWorkspaceId = await getActiveWorkspace();
@@ -127,52 +97,61 @@ export default function ChatPage() {
         return
       }
 
-      // Get workspace details
-      const { data: workspaceDetails, error: workspaceError } = await supabaseAdmin
-        .from('workspaces')
-        .select('id, name')
-        .eq('id', activeWorkspaceId)
-        .single();
+      // Get workspace details using API
+      const workspaceResponse = await fetch(`/api/workspaces/${activeWorkspaceId}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
 
-      if (workspaceError || !workspaceDetails) {
-        console.error('Chat: Error fetching workspace details:', workspaceError)
+      if (!workspaceResponse.ok) {
+        console.error('Chat: Error fetching workspace details:', workspaceResponse.statusText)
         setError('Failed to load workspace details.')
         return
       }
 
-      const workspaceId = workspaceDetails.id
-      const workspaceName = workspaceDetails.name
+      const workspaceData = await workspaceResponse.json();
+      if (!workspaceData.workspace) {
+        console.error('Chat: No workspace data received')
+        setError('Failed to load workspace details.')
+        return
+      }
+
+      const workspaceId = workspaceData.workspace.id
+      const workspaceName = workspaceData.workspace.name
       
       console.log('Chat: Using workspace:', { workspaceId, workspaceName })
       setWorkspaceId(workspaceId)
       setWorkspaceName(workspaceName)
 
-      // Now get all team members for this workspace to populate the user list
-      const { data: teamMembers, error: teamError } = await supabaseAdmin
-        .from('team_members')
-        .select('user_id, name, email, is_admin')
-        .eq('workspace_id', workspaceId)
+      // Now get all team members for this workspace using API
+      const membersResponse = await fetch(`/api/workspaces/${workspaceId}/members`, {
+        method: 'GET',
+        credentials: 'include',
+      });
 
-      console.log('Chat: Team members query result:', { teamMembers, teamError })
-
-      if (teamError) {
-        console.error('Error fetching team members:', teamError)
-        setError(`Failed to load team members: ${teamError.message}`)
+      if (!membersResponse.ok) {
+        console.error('Chat: Error fetching team members:', membersResponse.statusText)
+        setError('Failed to load team members.')
         return
       }
 
-      if (!teamMembers || teamMembers.length === 0) {
+      const membersData = await membersResponse.json();
+      const teamMembers = membersData.members || [];
+
+      console.log('Chat: Team members query result:', { teamMembers })
+
+      if (teamMembers.length === 0) {
         console.error('No team members found in workspace')
         setError('No team members found in this workspace.')
         return
       }
 
       // Set current user (the session user)
-      setCurrentUserId(session?.user?.id || '')
+      setCurrentUserId(user?.id || '')
 
       // Set other users from the same workspace (excluding current user)
       const otherUsers: WorkspaceUser[] = teamMembers
-        .filter(member => member.user_id !== session?.user?.id)
+        .filter(member => member.user_id !== user?.id)
         .map((member, index) => ({
           id: member.user_id,
           name: member.name || member.email || 'Unknown User',
@@ -184,7 +163,7 @@ export default function ChatPage() {
       console.log('Chat: Initialization complete:', {
         workspaceId,
         workspaceName,
-        currentUserId: session?.user?.id,
+        currentUserId: user?.id,
         otherUsersCount: otherUsers.length,
         totalTeamMembers: teamMembers.length
       })
@@ -195,23 +174,19 @@ export default function ChatPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [session?.user?.id])
+  }, [user?.id, session?.access_token])
 
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id) {
+    if (user && user.id) {
       initializeData()
     }
-  }, [status, session?.user?.id, initializeData])
+  }, [user, initializeData])
 
-  // Mark all messages as read when chat page loads
-  useEffect(() => {
-    if (status === 'authenticated') {
-      markAllAsRead()
-    }
-  }, [status, markAllAsRead])
+  // Note: Chat notifications are handled separately from task notifications
+  // No need to auto-mark task notifications as read when visiting chat page
 
   // Show loading while checking authentication
-  if (status === 'loading') {
+  if (!user && session === null) {
     return (
       <SidebarDemo>
         <div className="flex-1 flex items-center justify-center">
@@ -246,6 +221,7 @@ export default function ChatPage() {
 
   const views = [
     { id: 'chat' as ViewType, label: 'Team Chat', icon: MessageSquare },
+    { id: 'ai-assistant' as ViewType, label: 'AI Assistant', icon: Bot },
     { id: 'calendar' as ViewType, label: 'Calendar', icon: Calendar },
     { id: 'projects' as ViewType, label: 'Projects', icon: FolderOpen },
   ]
@@ -504,6 +480,67 @@ export default function ChatPage() {
               <p className="text-sm text-muted-foreground">Track project progress</p>
             </div>
             <ProjectSidebar workspaceId={workspaceId} currentUserId={currentUserId} isMainView={true} />
+          </div>
+        )
+      case 'ai-assistant':
+        return (
+          <div className="flex-1 flex flex-col">
+            <div className="bg-background border-b border-border px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                    <Bot className="h-5 w-5 text-blue-500" />
+                    AI Assistant
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Intelligent automation with Claude reasoning
+                  </p>
+                </div>
+                
+                {/* Workspace Display */}
+                <div className="flex items-center space-x-3">
+                  <div className="bg-muted rounded-lg px-4 py-2 flex items-center">
+                    <span className="text-foreground font-medium">
+                      {workspaceName || 'Loading workspace...'}
+                    </span>
+                  </div>
+                
+                  {/* View Toggle Buttons */}
+                  <div className="flex bg-muted rounded-lg p-1">
+                    {views.map((view) => {
+                      const Icon = view.icon
+                      return (
+                        <motion.button
+                          key={view.id}
+                          onClick={() => setActiveView(view.id)}
+                          className={`relative px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                            activeView === view.id
+                              ? 'text-primary'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                        >
+                          {activeView === view.id && (
+                            <motion.div
+                              layoutId="activeTab"
+                              className="absolute inset-0 bg-background rounded-md shadow-sm"
+                              initial={false}
+                              transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                          )}
+                          <div className="relative flex items-center gap-2">
+                            <Icon className="h-4 w-4" />
+                            <span className="hidden sm:inline">{view.label}</span>
+                          </div>
+                        </motion.button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <ChatWindow fullPage={true} />
           </div>
         )
       default:

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -92,6 +93,11 @@ async function loadTokenFromSupabase(userId: string) {
 // API endpoint to link a local customer with a Fortnox customer
 export async function POST(request: NextRequest) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { localId, fortnoxNumber } = body;
     
@@ -103,16 +109,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Fortnox customer number is required' }, { status: 400 });
     }
     
-    // Get user ID from session or headers
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id || request.headers.get('user-id');
-    
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
-    }
-    
     // Get Fortnox token
-    const tokenData = await loadTokenFromSupabase(userId as string);
+    const tokenData = await loadTokenFromSupabase(user.id);
     if (!tokenData || !tokenData.access_token) {
       return NextResponse.json({ error: 'Failed to get Fortnox token' }, { status: 500 });
     }

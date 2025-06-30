@@ -1,75 +1,48 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession, signIn, signOut } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client'; // Use the new hook
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { useRouter } from 'next/navigation';
 
 export default function SessionDebug() {
-  const { data: session, status, update } = useSession();
-  const [supabaseSession, setSupabaseSession] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const { session, user, isLoading } = useAuth();
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const router = useRouter();
 
-  // Fetch Supabase session and workspace data
+  // Fetch workspace data when user is available
   useEffect(() => {
-    const fetchData = async () => {
-      if (status !== 'authenticated') return;
+    const fetchWorkspaces = async () => {
+      if (!user?.id) return;
       
       setLoading(true);
       try {
-        // Get current Supabase session
-        const { data: { session: sbSession }, error } = await supabase.auth.getSession();
-        setSupabaseSession(sbSession);
-        
-        // Fetch profile by email to verify ID mapping
-        if (session?.user?.email) {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('email', session.user.email)
-            .single();
-            
-          setProfile(profileData || null);
+        const { data: workspacesData } = await supabase
+          .from('workspaces')
+          .select('*')
+          .eq('owner_id', user.id);
           
-          // Fetch workspaces using profile ID (should be the same as session.user.id)
-          if (profileData?.id) {
-            const { data: workspacesData } = await supabase
-              .from('workspaces')
-              .select('*')
-              .eq('owner_id', profileData.id);
-              
-            setWorkspaces(workspacesData || []);
-          }
-        }
+        setWorkspaces(workspacesData || []);
       } catch (e) {
-        console.error('Error fetching debug data:', e);
+        console.error('Error fetching workspace data:', e);
       } finally {
         setLoading(false);
       }
     };
     
-    fetchData();
-  }, [session, status]);
+    fetchWorkspaces();
+  }, [user]);
   
-  const handleForceRefresh = async () => {
-    setLoading(true);
-    try {
-      await update(); // Update NextAuth session
-      router.refresh(); // Refresh the page
-    } catch (e) {
-      console.error('Failed to refresh session:', e);
-    } finally {
-      setLoading(false);
-    }
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
   };
-  
+
   const createDefaultWorkspace = async () => {
-    if (!profile?.id) {
-      alert('No valid profile ID found - cannot create workspace');
+    if (!user?.id) {
+      alert('No valid user ID found - cannot create workspace');
       return;
     }
     
@@ -79,7 +52,7 @@ export default function SessionDebug() {
         .from('workspaces')
         .insert([{
           name: 'Default Workspace',
-          owner_id: profile.id, // Always use profile.id, not session.user.id
+          owner_id: user.id,
           created_at: new Date().toISOString(),
           is_personal: true
         }])
@@ -96,10 +69,9 @@ export default function SessionDebug() {
       const { data: refreshedWorkspaces } = await supabase
         .from('workspaces')
         .select('*')
-        .eq('owner_id', profile.id);
+        .eq('owner_id', user.id);
         
       setWorkspaces(refreshedWorkspaces || []);
-      router.refresh();
     } catch (e) {
       console.error('Error creating workspace:', e);
       alert(`Failed to create workspace: ${e instanceof Error ? e.message : String(e)}`);
@@ -108,13 +80,19 @@ export default function SessionDebug() {
     }
   };
 
-  if (status !== 'authenticated') {
-    return null; // Don't render for unauthenticated users
+  if (isLoading) {
+    return (
+        <div className="fixed bottom-4 right-4 z-50">
+            <button className="bg-gray-600 text-foreground px-4 py-2 rounded shadow-lg">
+                Loading Auth...
+            </button>
+        </div>
+    );
   }
 
-  // Check for ID consistency issues
-  const idMatches = profile?.id === session?.user?.id;
-  const idMatchClass = idMatches ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400 font-bold";
+  if (!session) {
+    return null; // Don't render for unauthenticated users
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
@@ -122,7 +100,7 @@ export default function SessionDebug() {
         onClick={() => setExpanded(!expanded)}
         className="bg-blue-600 hover:bg-blue-700 text-foreground px-4 py-2 rounded shadow-lg flex items-center"
       >
-        {expanded ? 'Hide' : 'Debug'} Session {!idMatches && '⚠️'}
+        {expanded ? 'Hide' : 'Debug'} Session
       </button>
       
       {expanded && (
@@ -130,46 +108,16 @@ export default function SessionDebug() {
           <h3 className="text-foreground font-bold">Session Debug</h3>
           
           <div className="mt-3">
-            <h4 className="text-foreground dark:text-neutral-300 font-medium">NextAuth Status: <span className="text-green-400">{status}</span></h4>
-            <div className="mt-1 text-muted-foreground text-sm">
-              Session User ID: <span className={idMatchClass}>{session?.user?.id || 'N/A'}</span>
-            </div>
-            <div className="text-muted-foreground text-sm">
-              Email: <span className="text-foreground">{session?.user?.email || 'N/A'}</span>
-            </div>
-          </div>
-          
-          <div className="mt-3">
-            <h4 className="text-foreground dark:text-neutral-300 font-medium">Supabase Profile</h4>
-            {profile ? (
-              <>
-                <div className="text-muted-foreground text-sm">
-                  Profile ID: <span className={idMatchClass}>{profile.id}</span>
-                </div>
-                <div className="text-muted-foreground text-sm">
-                  Email: <span className="text-foreground">{profile.email}</span>
-                </div>
-                {!idMatches && (
-                  <div className="text-red-400 text-xs mt-1 font-medium">
-                    ⚠️ ID MISMATCH DETECTED - Session and Profile IDs don't match!
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-red-400 text-sm">No profile found</div>
-            )}
-          </div>
-          
-          <div className="mt-3">
             <h4 className="text-foreground dark:text-neutral-300 font-medium">Supabase Session</h4>
             <div className="mt-1 text-muted-foreground text-sm">
-              Status: <span className="text-foreground">{supabaseSession ? 'Active' : 'None'}</span>
+              Status: <span className="text-green-400">Authenticated</span>
             </div>
-            {supabaseSession?.user && (
-              <div className="text-muted-foreground text-sm">
-                Supabase User ID: <span className="text-foreground">{supabaseSession.user.id}</span>
-              </div>
-            )}
+            <div className="text-muted-foreground text-sm">
+              User ID: <span className="text-green-400">{user?.id || 'N/A'}</span>
+            </div>
+            <div className="text-muted-foreground text-sm">
+              Email: <span className="text-foreground">{user?.email || 'N/A'}</span>
+            </div>
           </div>
           
           <div className="mt-3">
@@ -187,16 +135,8 @@ export default function SessionDebug() {
             )}
           </div>
           
-          <div className="mt-4 flex gap-2">
-            <button 
-              onClick={handleForceRefresh}
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 text-foreground px-3 py-1 text-sm rounded disabled:opacity-50"
-            >
-              {loading ? 'Loading...' : 'Force Refresh'}
-            </button>
-            
-            {workspaces.length === 0 && profile && (
+          <div className="mt-4 flex gap-2 flex-wrap">
+            {workspaces.length === 0 && user && (
               <button 
                 onClick={createDefaultWorkspace}
                 disabled={loading}
@@ -207,14 +147,7 @@ export default function SessionDebug() {
             )}
             
             <button 
-              onClick={() => router.push('/login-debug')}
-              className="bg-gray-300 dark:bg-muted-foreground hover:bg-gray-200 dark:bg-muted text-foreground px-3 py-1 text-sm rounded"
-            >
-              Login Debug
-            </button>
-            
-            <button 
-              onClick={() => signOut()}
+              onClick={handleSignOut}
               className="bg-red-600 hover:bg-red-700 text-foreground px-3 py-1 text-sm rounded"
             >
               Sign Out

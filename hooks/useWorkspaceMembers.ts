@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useSession } from 'next-auth/react';
+import { useState, useEffect, useCallback } from 'react';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { useAuth } from '@/lib/auth-client';
 
 export interface WorkspaceMember {
   id: string;
@@ -20,65 +20,41 @@ export interface WorkspaceMember {
  * @returns Object containing workspace members, loading state, and error
  */
 export function useWorkspaceMembers() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    async function fetchWorkspaceMembers() {
-      if (!session?.user?.id) {
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        console.log('[Workspace] Fetching workspaces for user ID:', session.user.id);
-        
-        // Get user's workspaces
-        const { data: userWorkspaces, error: workspacesError } = await supabase
-          .from('team_members')
-          .select('workspace_id')
-          .eq('user_id', session.user.id);
-
-        if (workspacesError) {
-          console.error('[Workspace] Error fetching user workspaces:', workspacesError);
-          throw workspacesError;
-        }
-
-        if (!userWorkspaces || userWorkspaces.length === 0) {
-          console.log('[Workspace] No workspaces found for user');
-          setMembers([]);
-          setIsLoading(false);
-          return;
-        }
-
-        const workspaceIds = userWorkspaces.map(w => w.workspace_id);
-        console.log('[Workspace] Found workspaces:', workspaceIds);
-
-        // Get all members from user's workspaces
-        const { data: teamMembers, error: membersError } = await supabase
-          .from('team_members')
-          .select('*')
-          .in('workspace_id', workspaceIds);
-
-        if (membersError) {
-          console.error('[Workspace] Error fetching team members:', membersError);
-          throw membersError;
-        }
-
-        console.log('[Workspace] Fetched team members:', teamMembers?.length || 0);
-        setMembers(teamMembers || []);
-      } catch (err) {
-        console.error('[Workspace] Error:', err);
-        setError(err instanceof Error ? err : new Error('Failed to fetch workspace members'));
-      } finally {
-        setIsLoading(false);
-      }
+  const fetchWorkspaceMembers = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
     }
 
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const { data: teamMembers, error: membersError } = await supabase
+        .from('team_members')
+        .select('*');
+
+      if (membersError) {
+        throw membersError;
+      }
+
+      setMembers(teamMembers || []);
+    } catch (err) {
+      console.error('[Workspace] Error fetching members:', err);
+      setError(err instanceof Error ? err : new Error('Failed to fetch workspace members'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
     fetchWorkspaceMembers();
-  }, [session?.user?.id]);
+  }, [fetchWorkspaceMembers]);
 
   return { members, isLoading, error };
 } 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogHeader, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ interface CreateCustomerDialogProps {
 }
 
 export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: CreateCustomerDialogProps) {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -74,9 +74,15 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error('Please sign in to create a customer');
       setErrorMessage('Authentication required. Please sign in.');
+      return;
+    }
+
+    if (!session?.access_token) {
+      toast.error('Authentication session required');
+      setErrorMessage('Authentication session required. Please sign in again.');
       return;
     }
 
@@ -95,6 +101,7 @@ export function CreateCustomerDialog({ open, onOpenChange, onCustomerCreated }: 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify(formData),
       });

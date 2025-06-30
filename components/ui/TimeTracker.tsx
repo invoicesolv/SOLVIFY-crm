@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Play, Square, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
-import { useSession } from 'next-auth/react';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { useAuth } from '@/lib/auth-client';
 import { getActiveWorkspaceId } from '@/lib/permission';
 import { toast } from 'sonner';
 
@@ -22,7 +22,7 @@ export function TimeTracker({
   subtaskLabel,
   className 
 }: TimeTrackerProps) {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [isTracking, setIsTracking] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0); // in seconds
@@ -33,7 +33,7 @@ export function TimeTracker({
 
   // Define fetchTodayTotal function before it's used in useEffect
   const fetchTodayTotal = async () => {
-    if (!session?.user?.id || !taskId) return 0;
+    if (!user?.id || !taskId) return 0;
     
     try {
       const today = new Date();
@@ -42,7 +42,7 @@ export function TimeTracker({
       const query = supabase
         .from('time_tracking')
         .select('duration_minutes')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .eq('task_id', taskId);
       
       if (subtaskId !== undefined) {
@@ -72,13 +72,13 @@ export function TimeTracker({
   // Check if there's an active tracking session when component mounts
   useEffect(() => {
     const checkActiveTracking = async () => {
-      if (!session?.user?.id || !taskId) return false;
+      if (!user?.id || !taskId) return false;
       
       try {
         const { data, error } = await supabase
           .from('time_tracking')
           .select('*')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .eq('task_id', taskId)
           .is('end_time', null)
           .maybeSingle();
@@ -111,7 +111,7 @@ export function TimeTracker({
     };
 
     checkActiveTracking();
-  }, [session, taskId, subtaskId]);
+  }, [user, taskId, subtaskId]);
 
   // Update elapsed time while tracking
   useEffect(() => {
@@ -131,11 +131,11 @@ export function TimeTracker({
   }, [isTracking, startTime]);
 
   const startTracking = async () => {
-    if (!session?.user?.id || !taskId || isTracking) return;
+    if (!user?.id || !taskId || isTracking) return;
     
     setIsLoading(true);
     try {
-      const workspaceId = await getActiveWorkspaceId(session.user.id);
+      const workspaceId = await getActiveWorkspaceId(user.id);
       if (!workspaceId) {
         toast.error('No active workspace found');
         return;
@@ -151,7 +151,7 @@ export function TimeTracker({
           task_id: taskId,
           subtask_index: subtaskId,
           description: subtaskLabel || 'Time tracking', 
-          user_id: session.user.id,
+          user_id: user.id,
           workspace_id: workspaceId,
           start_time: now.toISOString(),
           is_billable: true

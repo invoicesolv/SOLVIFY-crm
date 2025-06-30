@@ -9,7 +9,7 @@ import { Upload, Search, Save, RefreshCw, CheckSquare, Loader2, AlertOctagon, Ch
 import { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogHeader, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
@@ -64,7 +64,7 @@ interface ExtendedCustomer {
 }
 
 export function CustomersView({ className }: CustomersViewProps) {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   // Use any type to avoid type checking issues
   const { customers, isLoading, error, refetch }: { customers: any[], isLoading: boolean, error: any, refetch: () => void } = useCustomers() as any;
   const [search, setSearch] = useState("");
@@ -89,20 +89,20 @@ export function CustomersView({ className }: CustomersViewProps) {
 
   // Debug output for user ID
   useEffect(() => {
-    if (session?.user) {
+    if (user) {
       console.log('[Debug] Customers view rendered for user:', {
-        id: session.user.id,
-        email: session.user.email 
+        id: user.id,
+        email: user.email 
       });
     }
-  }, [session?.user]);
+  }, [user]);
 
   const filteredCustomers = Array.isArray(customers) ? customers.filter((customer: ExtendedCustomer) => 
     customer && customer.name && customer.name.toLowerCase().includes(search.toLowerCase())
   ) : [];
 
   const handleSaveAll = async () => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error('Please sign in to save customers');
       return;
     }
@@ -110,14 +110,14 @@ export function CustomersView({ className }: CustomersViewProps) {
     setIsSaving(true);
     try {
       console.log('Session details:', {
-        user: session?.user,
-        accessToken: session.access_token,
-        hasRefreshToken: !!session.access_token
+        user: user,
+        accessToken: session?.access_token,
+        hasRefreshToken: !!session?.access_token
       });
 
       const supabaseAdmin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
         {
           auth: {
             persistSession: false
@@ -125,11 +125,16 @@ export function CustomersView({ className }: CustomersViewProps) {
         }
       );
 
+      if (!session?.access_token) {
+        toast.error('Authentication session required');
+        return;
+      }
+
       // Get user's default workspace
       const { data: workspace, error: workspaceError } = await supabaseAdmin
         .from('team_members')
         .select('workspace_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .single();
 
       if (workspaceError) {
@@ -141,7 +146,7 @@ export function CustomersView({ className }: CustomersViewProps) {
       const customersToSave = Array.isArray(customers) ? customers.map(customer => ({
         ...customer,
         workspace_id: workspace.workspace_id,
-        user_id: session.user.id
+        user_id: user.id
       })) : [];
 
       const { error } = await supabaseAdmin
@@ -162,7 +167,7 @@ export function CustomersView({ className }: CustomersViewProps) {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error('Please sign in to import customers');
       return;
     }
@@ -187,15 +192,20 @@ export function CustomersView({ className }: CustomersViewProps) {
     formData.append('file', file);
 
     try {
+      if (!session?.access_token) {
+        toast.error('Authentication session required');
+        return;
+      }
+
       console.log('Session details:', {
-        user: session?.user,
+        user: user,
         accessToken: session.access_token,
         hasRefreshToken: !!session.access_token
       });
 
       const supabaseAdmin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
         {
           auth: {
             persistSession: false
@@ -207,7 +217,7 @@ export function CustomersView({ className }: CustomersViewProps) {
       const { data: workspace, error: workspaceError } = await supabaseAdmin
         .from('team_members')
         .select('workspace_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .single();
 
       if (workspaceError) {
@@ -217,7 +227,7 @@ export function CustomersView({ className }: CustomersViewProps) {
 
       // Add workspace information to the form data
       formData.append('workspace_id', workspace.workspace_id);
-      formData.append('user_id', session.user.id);
+      formData.append('user_id', user.id);
 
       const response = await fetch('/api/customers/import', {
         method: 'POST',
@@ -234,22 +244,27 @@ export function CustomersView({ className }: CustomersViewProps) {
   };
 
   const checkForNewData = async () => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error('Please sign in to check for new customers');
       return;
     }
 
     setIsRefreshing(true);
     try {
+      if (!session?.access_token) {
+        toast.error('Authentication session required');
+        return;
+      }
+
       console.log('Session details:', {
-        user: session?.user,
+        user: user,
         accessToken: session.access_token,
         hasRefreshToken: !!session.access_token
       });
 
       const supabaseAdmin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
         {
           auth: {
             persistSession: false
@@ -261,7 +276,7 @@ export function CustomersView({ className }: CustomersViewProps) {
       const { data: workspace, error: workspaceError } = await supabaseAdmin
         .from('team_members')
         .select('workspace_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .single();
 
       if (workspaceError) {
@@ -273,7 +288,7 @@ export function CustomersView({ className }: CustomersViewProps) {
       const response = await fetch('/api/fortnox/customers', {
         headers: {
           'workspace-id': workspace.workspace_id,
-          'user-id': session.user.id
+          'user-id': user.id
         }
       });
 
@@ -305,7 +320,7 @@ export function CustomersView({ className }: CustomersViewProps) {
             customer_number: customer.CustomerNumber,
             email: customer.Email,
             workspace_id: workspace.workspace_id,
-            user_id: session.user.id
+            user_id: user.id
           }));
 
           const { error: saveError } = await supabaseAdmin
@@ -354,7 +369,7 @@ export function CustomersView({ className }: CustomersViewProps) {
   };
 
   const confirmDelete = async () => {
-    if (!customerToDelete || !session?.user?.id) return;
+    if (!customerToDelete || !user?.id) return;
     
     setDeletingCustomerId(customerToDelete.id);
     try {
@@ -384,8 +399,13 @@ export function CustomersView({ className }: CustomersViewProps) {
 
   // Add function to sync customer emails from Fortnox
   const syncCustomerEmails = async () => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error('Please sign in to sync customer emails');
+      return;
+    }
+
+    if (!session?.access_token) {
+      toast.error('Authentication session required');
       return;
     }
 
@@ -395,7 +415,7 @@ export function CustomersView({ className }: CustomersViewProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'user-id': session.user.id
+          'Authorization': `Bearer ${session.access_token}`
         }
       });
 
@@ -438,7 +458,7 @@ export function CustomersView({ className }: CustomersViewProps) {
     );
   }
 
-  if (!session?.user) {
+  if (!user) {
     return (
       <div className="flex items-center justify-center h-full w-full bg-background text-muted-foreground">
         <p>Please sign in to view customers.</p>
@@ -706,7 +726,7 @@ export function CustomersView({ className }: CustomersViewProps) {
                     value="invoices" 
                     className={cn(
                       "flex-1 rounded-none border-b-2 py-3 border-transparent data-[state=active]:border-purple-500",
-                      "hover:bg-gray-200 dark:bg-muted/20 data-[state=active]:bg-gray-200 dark:bg-muted/20"
+                      "hover:bg-gray-200 data-[state=active]:bg-gray-200 dark:bg-muted/20"
                     )}
                   >
                     <BarChart3 className="h-4 w-4 mr-2 text-purple-400" />
@@ -716,7 +736,7 @@ export function CustomersView({ className }: CustomersViewProps) {
                     value="tasks" 
                     className={cn(
                       "flex-1 rounded-none border-b-2 py-3 border-transparent data-[state=active]:border-blue-500",
-                      "hover:bg-gray-200 dark:bg-muted/20 data-[state=active]:bg-gray-200 dark:bg-muted/20"
+                      "hover:bg-gray-200 data-[state=active]:bg-gray-200 dark:bg-muted/20"
                     )}
                   >
                     <CheckSquare className="h-4 w-4 mr-2 text-green-600 dark:text-green-400" />
@@ -726,7 +746,7 @@ export function CustomersView({ className }: CustomersViewProps) {
                     value="projects" 
                     className={cn(
                       "flex-1 rounded-none border-b-2 py-3 border-transparent data-[state=active]:border-yellow-500",
-                      "hover:bg-gray-200 dark:bg-muted/20 data-[state=active]:bg-gray-200 dark:bg-muted/20"
+                      "hover:bg-gray-200 data-[state=active]:bg-gray-200 dark:bg-muted/20"
                     )}
                   >
                     <Folder className="h-4 w-4 mr-2 text-yellow-400" />
@@ -833,7 +853,7 @@ export function CustomersView({ className }: CustomersViewProps) {
               ) : (
                 <div className="space-y-4">
                   {selectedCustomer?.completed_tasks?.map((task: CompletedTask) => (
-                    <div key={task.id} className="bg-background rounded-md p-4 border border-border dark:border-border hover:border-gray-400 dark:border-border transition-colors">
+                    <div key={task.id} className="bg-background rounded-md p-4 border border-border hover:border-gray-400 dark:border-border transition-colors">
                       <div className="flex justify-between mb-2">
                         <h3 className="text-md font-medium text-foreground">{task.title}</h3>
                         <span className="text-sm text-foreground0">
@@ -874,7 +894,7 @@ export function CustomersView({ className }: CustomersViewProps) {
               ) : (
                 <div className="space-y-4">
                   {selectedCustomer?.linked_projects?.map((project) => (
-                    <div key={project.id} className="bg-background rounded-md overflow-hidden border border-border dark:border-border hover:border-gray-400 dark:border-border transition-colors">
+                    <div key={project.id} className="bg-background rounded-md overflow-hidden border border-border hover:border-gray-400 dark:border-border transition-colors">
                       <div className="flex justify-between items-center p-4">
                         <div>
                           <h3 className="text-md font-medium text-foreground flex items-center">

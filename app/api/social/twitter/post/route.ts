@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { content, workspaceId, selectedAccountId } = await request.json();
@@ -26,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('🐦 [X POST] Starting tweet creation:', {
-      userId: session.user.id,
+      userId: user.id,
       workspaceId: workspaceId,
       selectedAccountId: selectedAccountId,
       contentLength: content.length

@@ -1,28 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 export const dynamic = 'force-dynamic';
 
-// Provide search console overview data for the dashboard
-export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized: No valid session' }, { status: 401 });
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
   }
 
+  const token = authHeader.substring(7);
+  
   try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
+// Provide search console overview data for the dashboard
+export async function GET(request: NextRequest) {
+  try {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     // Get the user's ID
-    const userId = session.user.id;
+    const userId = user.id;
 
     // Proactively refresh token if needed
     const freshToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');
 
     // Get the access token from the integrations table
-    const { data: integration, error: tokenError } = await supabase
+    const { data: integration, error: tokenError } = await supabaseAdmin
       .from('integrations')
       .select('access_token')
       .eq('user_id', userId)
@@ -45,7 +67,7 @@ export async function GET(req: NextRequest) {
     const accessToken = freshToken || integration.access_token;
 
     // Get user's configured Search Console site
-    const { data: searchSettings, error: settingsError } = await supabase
+    const { data: searchSettings, error: settingsError } = await supabaseAdmin
       .from('user_settings')
       .select('default_search_console_site')
       .eq('user_id', userId)

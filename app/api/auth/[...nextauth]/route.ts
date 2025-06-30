@@ -1,208 +1,201 @@
-import NextAuth from "next-auth";
-import authOptions from "@/lib/auth";
-import { cookies } from 'next/headers';
-import { Session } from "next-auth";
-import { JWT } from "next-auth/jwt";
-import type { User, Account, AdapterUser, DefaultSession } from "next-auth";
+import NextAuth from 'next-auth'
+import GoogleProvider from 'next-auth/providers/google'
+import CredentialsProvider from 'next-auth/providers/credentials'
+import { createClient } from '@supabase/supabase-js'
 
-// Add types for extended session
-interface ExtendedUser {
-  id: string;
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
+// Validate required environment variables
+if (!process.env.NEXTAUTH_SECRET) {
+  console.error('❌ NEXTAUTH_SECRET is not set')
+  throw new Error('NEXTAUTH_SECRET environment variable is required')
 }
 
-interface ExtendedSession extends Session {
-  user?: ExtendedUser;
-  expires: string;
-  supabaseAccessToken?: string;
-  access_token?: string;
+if (!process.env.GOOGLE_CLIENT_ID) {
+  console.error('❌ GOOGLE_CLIENT_ID is not set')
 }
 
-// Add debugging
-console.log("[API] NextAuth initialization");
-
-// Force development URL to match local environment
-if (process.env.NODE_ENV === 'development') {
-  const port = process.env.PORT || 3000;
-  const developmentUrl = `http://localhost:${port}`;
-  console.log(`[API] Development environment detected, overriding NEXTAUTH_URL to ${developmentUrl}`);
-  process.env.NEXTAUTH_URL = developmentUrl;
+if (!process.env.GOOGLE_CLIENT_SECRET) {
+  console.error('❌ GOOGLE_CLIENT_SECRET is not set')
 }
 
-console.log("[API] Environment:", {
-  nodeEnv: process.env.NODE_ENV,
-  nextAuthUrl: process.env.NEXTAUTH_URL,
-  hasSecret: !!process.env.NEXTAUTH_SECRET,
-  dbUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-  siteUrl: process.env.NEXT_PUBLIC_SITE_URL,
-  timestamp: new Date().toISOString()
-});
+console.log('✅ NextAuth environment variables check:')
+console.log('- NEXTAUTH_SECRET:', process.env.NEXTAUTH_SECRET ? 'SET' : 'MISSING')
+console.log('- NEXTAUTH_URL:', process.env.NEXTAUTH_URL || 'NOT SET')
+console.log('- GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'SET' : 'MISSING')
+console.log('- GOOGLE_CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'SET' : 'MISSING')
 
-// Add more detailed auth debug logging
-console.log('[NextAuth Route] Auth options loaded from @/lib/auth');
-console.log("[AUTH DEBUG] Route enabled with providers:", 
-  Array.isArray(authOptions.providers) 
-    ? authOptions.providers.map(p => p.id || 'unknown').join(', ') 
-    : 'none'
-);
+// Create Supabase client for storing integrations
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
-const handler = NextAuth({
-  ...authOptions,
-  debug: true,
-  callbacks: {
-    ...authOptions.callbacks,
-    async signIn({ user, account, profile }) {
-      console.log("[API/AUTH DEBUG] signIn callback started", { 
-        hasUser: !!user?.email, 
-        hasUserId: !!user?.id,
-        provider: account?.provider,
-        hasAccessToken: !!account?.access_token,
-        hasRefreshToken: !!account?.refresh_token,
-        scope: account?.scope,
-        timestamp: new Date().toISOString()
-      });
-      
-      if (account?.provider === 'google') {
-        console.log("[API/AUTH DEBUG] Google account details:", {
-          type: account.type,
-          token_type: account.token_type,
-          scope: account.scope,
-          expires_at: account.expires_at,
-          id_token_available: !!account.id_token,
-        });
-        
-        if (!account.refresh_token) {
-          console.warn("[API/AUTH DEBUG] ⚠️ No refresh_token received from Google!");
-          console.warn("[API/AUTH DEBUG] This may happen if the user has already authorized the application.");
-          console.warn("[API/AUTH DEBUG] Check that 'prompt=consent' and 'access_type=offline' are being passed to the Google auth request.");
+const authOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
+  providers: [
+    CredentialsProvider({
+      name: 'credentials',
+      credentials: {
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' }
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error('Email and password are required')
         }
-      }
-      
-      try {
-        // Call the original signIn function
-        const result = await authOptions.callbacks?.signIn?.({ user, account, profile });
-        
-        console.log("[API/AUTH DEBUG] signIn callback result:", result);
-        console.log("[API/AUTH DEBUG] signIn user data:", {
-          hasId: !!user?.id,
-          hasEmail: !!user?.email,
-          hasName: !!user?.name,
-          hasImage: !!user?.image,
-          provider: account?.provider,
-          providerType: account?.type
-        });
-        
-        // Explicitly set cookie to ensure session persistence
-        if (result === true && user?.id) {
-          console.log("[API/AUTH DEBUG] Setting user session cookie");
-          
-          // Debug cookie storage
-          try {
-            const cookieStore = cookies();
-            const allCookies = cookieStore.getAll().map(c => c.name);
-            console.log("[API/AUTH DEBUG] Cookies after signin:", allCookies);
-          } catch (cookieErr) {
-            console.error("[API/AUTH DEBUG] Error checking cookies:", cookieErr);
+
+        try {
+          // Authenticate directly with Supabase using signInWithPassword
+          const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: credentials.email,
+            password: credentials.password
+          })
+
+          if (signInError || !authData.user) {
+            console.error('Supabase auth error:', signInError?.message)
+            throw new Error('Invalid email or password')
           }
-        }
-        
-        // Ensure we return a boolean or string (not undefined)
-        return result === true || typeof result === 'string' ? result : false;
-      } catch (error) {
-        console.error("[API/AUTH DEBUG] signIn callback error:", error instanceof Error ? {
-          message: error.message,
-          stack: error.stack
-        } : error);
-        return false;
-      }
-    },
-    
-    // Fix the JWT callback
-    async jwt({ token, user, account }) {
-      console.log("[API/AUTH DEBUG] JWT callback:", {
-        hasToken: !!token,
-        hasUser: !!user,
-        hasAccount: !!account,
-        tokenId: token?.sub,
-        userId: user?.id
-      });
-      
-      // Add raw account debugging
-      if (account) {
-        console.log("[API/AUTH DEBUG] Account object in JWT callback:", {
-          provider: account.provider,
-          type: account.type,
-          providerAccountId: account.providerAccountId,
-          access_token_available: !!account.access_token,
-          refresh_token_available: !!account.refresh_token,
-          token_type: account.token_type,
-          scope: account.scope,
-          id_token_available: !!account.id_token,
-          expires_at: account.expires_at,
-        });
-      }
-      
-      // Call the original JWT function from authOptions
-      if (authOptions.callbacks?.jwt) {
-        try {
-          const newToken = await authOptions.callbacks.jwt({ token, user, account });
-          console.log("[API/AUTH DEBUG] JWT result:", {
-            hasTokenAfter: !!newToken,
-            tokenId: newToken?.sub,
-            hasAccessToken: !!newToken?.access_token
-          });
-          
-          return newToken;
-        } catch (error) {
-          console.error("[API/AUTH DEBUG] Error in JWT callback:", error);
-          return token;
-        }
-      }
-      
-      return token;
-    },
-    
-    // Fix the session callback
-    async session({ session, token }) {
-      console.log("[API/AUTH DEBUG] Session callback:", {
-        hasSession: !!session,
-        hasToken: !!token,
-        sessionUserId: session?.user?.id,
-        tokenId: token?.sub
-      });
-      
-      // Call the original session function with correct handling
-      if (authOptions.callbacks?.session) {
-        try {
-          // Create parameters to match required interface
-          const params = { 
-            session: session as Session, 
-            token, 
-            // Adapting the parameters to match what's expected
-            user: undefined as unknown as AdapterUser,
-            newSession: session,
-            trigger: "update" as const
-          };
-          
-          const newSession = await authOptions.callbacks.session(params);
-          console.log("[API/AUTH DEBUG] Session result:", {
-            hasSessionAfter: !!newSession,
-            sessionUserIdAfter: newSession?.user?.id,
-            hasAccessToken: !!(newSession as ExtendedSession)?.access_token
-          });
-          
-          return newSession;
-        } catch (error) {
-          console.error("[API/AUTH DEBUG] Error in session callback:", error);
-          return session;
-        }
-      }
-      
-      return session;
-    }
-  }
-});
 
-export { handler as GET, handler as POST };
+          console.log('Supabase auth successful for user:', authData.user.email)
+
+          // Return user object for NextAuth
+          return {
+            id: authData.user.id,
+            email: authData.user.email!,
+            name: authData.user.user_metadata?.full_name || authData.user.user_metadata?.name || authData.user.email,
+            image: authData.user.user_metadata?.avatar_url || null
+          }
+        } catch (error) {
+          console.error('Auth error:', error)
+          throw new Error('Invalid email or password')
+        }
+      }
+    }),
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope: [
+            'openid',
+            'email',
+            'profile',
+            'https://www.googleapis.com/auth/analytics.readonly',
+            'https://www.googleapis.com/auth/gmail.readonly',
+            'https://www.googleapis.com/auth/webmasters.readonly',
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/calendar.events'
+          ].join(' ')
+        }
+      }
+    })
+  ],
+  callbacks: {
+    async session({ session, token }) {
+      // Add user ID to session from token
+      if (session.user && token.sub) {
+        session.user.id = token.sub
+      }
+      return session
+    },
+    async jwt({ token, account, profile, user }) {
+      // Store user ID in token
+      if (user) {
+        token.sub = user.id
+      }
+      // Store Google tokens for API access
+      if (account) {
+        token.accessToken = account.access_token
+        token.refreshToken = account.refresh_token
+      }
+      return token
+    }
+  },
+  events: {
+    async signIn({ user, account, profile }) {
+      // Store Google integration tokens in your integrations table
+      if (account?.provider === 'google' && account.access_token) {
+        try {
+          // Store Gmail integration
+          await supabase
+            .from('integrations')
+            .upsert({
+              user_id: user.id,
+              service_name: 'gmail',
+              access_token: account.access_token,
+              refresh_token: account.refresh_token,
+              token_expires_at: account.expires_at ? new Date(account.expires_at * 1000).toISOString() : null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,service_name' })
+
+          // Store Google Analytics integration
+          await supabase
+            .from('integrations')
+            .upsert({
+              user_id: user.id,
+              service_name: 'google-analytics',
+              access_token: account.access_token,
+              refresh_token: account.refresh_token,
+              token_expires_at: account.expires_at ? new Date(account.expires_at * 1000).toISOString() : null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,service_name' })
+
+          // Store Search Console integration
+          await supabase
+            .from('integrations')
+            .upsert({
+              user_id: user.id,
+              service_name: 'search-console',
+              access_token: account.access_token,
+              refresh_token: account.refresh_token,
+              token_expires_at: account.expires_at ? new Date(account.expires_at * 1000).toISOString() : null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,service_name' })
+
+          // Store Google Calendar integration
+          await supabase
+            .from('integrations')
+            .upsert({
+              user_id: user.id,
+              service_name: 'google-calendar',
+              access_token: account.access_token,
+              refresh_token: account.refresh_token,
+              token_expires_at: account.expires_at ? new Date(account.expires_at * 1000).toISOString() : null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,service_name' })
+
+          console.log('Google integrations stored successfully for user:', user.id)
+        } catch (error) {
+          console.error('Error storing Google integrations:', error)
+        }
+      }
+    }
+  },
+  pages: {
+    signIn: '/login',
+    error: '/login?error=auth_error',
+  },
+  session: {
+    strategy: 'jwt',
+  },
+  // Remove custom cookie configuration - let NextAuth handle it automatically
+  debug: process.env.NODE_ENV === 'development',
+  logger: {
+    error(code, metadata) {
+      console.error('NextAuth Error:', code, metadata)
+    },
+    warn(code) {
+      console.warn('NextAuth Warning:', code)
+    },
+    debug(code, metadata) {
+      console.log('NextAuth Debug:', code, metadata)
+    },
+  },
+}
+
+const handler = NextAuth(authOptions)
+
+export { handler as GET, handler as POST, authOptions }

@@ -1,35 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { withAuth } from '@/lib/global-auth';
+import { supabaseAdmin } from '@/lib/supabase';
 
-export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+export const dynamic = 'force-dynamic';
 
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+export const GET = withAuth(async (request: NextRequest, { user }) => {
   try {
-    // Get request parameters
-    const searchParams = req.nextUrl.searchParams;
-    const workspaceId = searchParams.get('workspaceId');
-    
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'Missing workspaceId parameter' }, { status: 400 });
-    }
+    console.log('[Tasks GET] Starting tasks fetch for user:', user.email, user.id);
 
-    // Fetch tasks from the project_tasks table
-    const { data: tasks, error } = await supabase
+    // Get user's workspaces for manual filtering (since service role bypasses RLS)
+    const { data: userWorkspaces } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', user.id);
+    
+    if (!userWorkspaces || userWorkspaces.length === 0) {
+      console.log('[Tasks GET] No workspace access for user');
+      return NextResponse.json({ 
+        tasks: [],
+        success: true 
+      });
+    }
+    
+    const workspaceIds = userWorkspaces.map(w => w.workspace_id);
+    console.log('[Tasks GET] Filtering tasks by workspace IDs:', workspaceIds);
+
+    // Fetch tasks from project_tasks table with manual workspace filtering
+    const { data: tasks, error } = await supabaseAdmin
       .from('project_tasks')
-      .select('id, title, status, progress, due_date, deadline, checklist, workspace_id, assigned_to, user_id')
-      .eq('workspace_id', workspaceId)
+      .select(`
+        id, title, status, progress, due_date, deadline, checklist, 
+        workspace_id, assigned_to, user_id, project_id, created_at,
+        projects (id, name, customer_name)
+      `)
+      .in('workspace_id', workspaceIds) // Manual workspace filtering
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching tasks:', error);
+      console.error('[Tasks GET] Error fetching tasks:', error);
       return NextResponse.json({ error: 'Failed to fetch tasks' }, { status: 500 });
     }
+
+    console.log('[Tasks GET] Found tasks:', tasks?.length || 0);
 
     // Transform tasks to match expected interface in dashboard component
     const formattedTasks = tasks?.map(task => ({
@@ -39,12 +51,23 @@ export async function GET(req: NextRequest) {
       progress: task.progress || 0,
       status: task.status || 'pending',
       project_id: task.project_id || null,
-      checklist: task.checklist || []
+      project_name: task.projects?.name || 'Unknown Project',
+      customer_name: task.projects?.customer_name || null,
+      checklist: task.checklist || [],
+      assigned_to: task.assigned_to,
+      workspace_id: task.workspace_id
     })) || [];
 
-    return NextResponse.json({ tasks: formattedTasks });
+    console.log('[Tasks GET] Formatted tasks:', formattedTasks.length);
+
+    return NextResponse.json({ 
+      tasks: formattedTasks,
+      success: true 
+    });
   } catch (error) {
-    console.error('Error in tasks API:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('[Tasks GET] Unexpected error:', error);
+    return NextResponse.json({ 
+      error: 'Internal server error' 
+    }, { status: 500 });
   }
-} 
+});

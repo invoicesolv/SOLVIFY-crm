@@ -1,8 +1,8 @@
 import { google } from 'googleapis';
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 // Add proper type definition for the session with access_token
@@ -16,23 +16,17 @@ interface ExtendedSession {
   expires?: string;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Get user from session
-    const session = await getServerSession(authOptions) as ExtendedSession;
-    const userId = session?.user?.id;
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User not authenticated' },
-        { status: 401 }
-      );
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     console.log('[GA4 API] Getting user Google token...');
     
     // Check if analytics token needs to be refreshed
-    const refreshedToken = await getRefreshedGoogleToken(userId, 'google-analytics');
+    const refreshedToken = await getRefreshedGoogleToken(user.id, 'google-analytics');
     if (refreshedToken) {
       console.log('[GA4 API] Using refreshed Analytics token');
       // Use refreshed token for the API call
@@ -47,10 +41,10 @@ export async function GET() {
     const googleServices = ['google-analytics', 'google', 'google-gmail', 'google-searchconsole'];
     
     for (const serviceName of googleServices) {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('integrations')
         .select('access_token, expires_at')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .eq('service_name', serviceName)
         .order('created_at', { ascending: false })
         .limit(1);
@@ -69,9 +63,9 @@ export async function GET() {
     }
     
     // If still no token, try from session
-    if (!googleToken && session.access_token) {
+    if (!googleToken && user.access_token) {
       console.log('[GA4 API] Using access token from session');
-      googleToken = session.access_token;
+      googleToken = user.access_token;
     }
     
     if (!googleToken) {
@@ -90,7 +84,7 @@ export async function GET() {
       try {
         return await handleTokenRefreshOnError(
           apiError,
-          userId,
+          user.id,
           'google-analytics',
           async (newToken) => {
             console.log('[GA4 API] Retrying with refreshed token');
@@ -131,13 +125,22 @@ async function fetchGA4PropertiesWithToken(accessToken: string) {
   
   // Get all GA4 properties from account summaries
   const properties = (response.data.accountSummaries || []).flatMap(account => {
-    return (account.propertySummaries || []).map(property => ({
-      id: property.property || '',
-      displayName: property.displayName || '',
-      accountName: account.displayName || '',
-      accountId: account.account || '',
-      propertyType: 'GA4'
-    }));
+    return (account.propertySummaries || []).map(property => {
+      const propertyData = {
+        id: property.property || '',
+        displayName: property.displayName || property.property || 'Unnamed Property',
+        accountName: account.displayName || '',
+        accountId: account.account || '',
+        propertyType: 'GA4'
+      };
+      
+      console.log('[GA4 API] Property data:', {
+        originalProperty: property,
+        processedProperty: propertyData
+      });
+      
+      return propertyData;
+    });
   });
 
   console.log(`[GA4 API] Found ${properties.length} GA4 properties`);

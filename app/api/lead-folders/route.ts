@@ -1,43 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
+import { withAuth, getUserWorkspaces } from '@/lib/global-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
-// API endpoint to fetch lead folders while bypassing RLS
-export async function GET(req: NextRequest) {
+export const dynamic = 'force-dynamic';
+
+export const GET = withAuth(async (request: NextRequest, { user }) => {
   try {
-    // Authenticate the user
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    console.log('[Lead Folders API] Processing GET request');
+    console.log(`[Lead Folders API] Authenticated user: ${user.id}`);
 
-    // Get workspace ID from query params
-    const url = new URL(req.url);
-    const workspaceId = url.searchParams.get('workspace_id');
+    // Get query parameters
+    const url = new URL(request.url);
+    const requestedWorkspaceId = url.searchParams.get('workspace_id');
+
+    // Get user's workspaces to verify access
+    const workspaces = await getUserWorkspaces(user.id);
     
-    if (!workspaceId) {
-      return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 });
+    if (!workspaces || workspaces.length === 0) {
+      return NextResponse.json({ 
+        folders: [],
+        error: 'No active workspace found for user'
+      }, { status: 200 });
     }
 
-    // Fetch folders using admin client to bypass RLS
-    const { data, error } = await supabaseAdmin
-      .from("lead_folders")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .order("created_at", { ascending: false });
+    // Use requested workspace if provided and user has access, otherwise use first workspace
+    let workspaceId = workspaces[0].id;
+    if (requestedWorkspaceId) {
+      const hasAccess = workspaces.some(ws => ws.id === requestedWorkspaceId);
+      if (hasAccess) {
+        workspaceId = requestedWorkspaceId;
+      } else {
+        console.warn(`[Lead Folders API] User ${user.id} doesn't have access to workspace ${requestedWorkspaceId}`);
+      }
+    }
+    
+    console.log(`[Lead Folders API] Using workspace: ${workspaceId}`);
 
-    if (error) {
-      console.error("Error fetching folders:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    // Fetch folders with workspace filtering
+    const { data: folders, error: foldersError } = await supabaseAdmin
+      .from('lead_folders')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .order('created_at', { ascending: false });
+
+    if (foldersError) {
+      console.error('[Lead Folders API] Error fetching folders:', foldersError);
+      return NextResponse.json({ error: 'Failed to fetch folders' }, { status: 500 });
     }
 
-    return NextResponse.json({ folders: data || [] });
+    console.log(`[Lead Folders API] Successfully fetched ${folders?.length || 0} folders`);
+    return NextResponse.json({ 
+      folders: folders || [],
+      workspaceId // Include workspace ID in response for debugging/verification
+    });
+
   } catch (error) {
-    console.error("Unexpected error fetching folders:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
+    console.error('[Lead Folders API] Unexpected error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-} 
+});

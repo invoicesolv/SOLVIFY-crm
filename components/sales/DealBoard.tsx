@@ -30,19 +30,24 @@ import {
 
 type DealStage = "new" | "contacted" | "proposal" | "negotiation" | "closed_won" | "closed_lost";
 
+type DealType = "one_time" | "retainer";
+
 interface Deal {
   id: string;
   lead_name: string;
   company: string;
   email: string;
   phone: string;
-  value: number;
+  value: number; // For one-time deals or monthly retainer amount
   stage: DealStage;
   notes: string;
   created_at: string;
   updated_at: string;
   workspace_id: string;
   user_id: string;
+  deal_type: DealType; // New field to distinguish deal types
+  retainer_duration_months?: number; // For retainer deals: how many months
+  retainer_start_date?: string; // When the retainer starts
 }
 
 const STAGES: { id: DealStage; name: string; color: string }[] = [
@@ -67,7 +72,13 @@ const CURRENCIES = [
 interface DealBoardProps {
   workspaceId: string;
   userId: string;
-  onMetricsChange?: (metrics: { totalRevenue: number; totalDeals: number }) => void;
+  onMetricsChange?: (metrics: { 
+    totalRevenue: number; 
+    totalDeals: number;
+    monthlyRecurringRevenue: number;
+    annualizedRevenue: number;
+    currency: { value: string; symbol: string; label: string; prefix: boolean };
+  }) => void;
 }
 
 const formatCurrency = (amount: number, currency: typeof CURRENCIES[0]) => {
@@ -80,22 +91,73 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
   const [loading, setLoading] = useState(true);
   const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
   const [draggedDeal, setDraggedDeal] = useState<string | null>(null);
-  const [currency, setCurrency] = useState(CURRENCIES[0]);
+  const [currency, setCurrency] = useState(() => {
+    // Load saved currency from localStorage or default to USD
+    if (typeof window !== 'undefined') {
+      const savedCurrency = localStorage.getItem('sales-default-currency');
+      if (savedCurrency) {
+        const found = CURRENCIES.find(c => c.value === savedCurrency);
+        return found || CURRENCIES[0];
+      }
+    }
+    return CURRENCIES[0];
+  });
   const [dealToDelete, setDealToDelete] = useState<Deal | null>(null);
+
+  // Calculate deal value based on type (one-time vs retainer)
+  const calculateDealValue = (deal: Deal) => {
+    if (deal.deal_type === 'retainer' && deal.retainer_duration_months) {
+      return deal.value * deal.retainer_duration_months; // Monthly amount * number of months
+    }
+    return deal.value; // One-time deal value
+  };
+
+  // Calculate monthly recurring revenue for retainer deals
+  const calculateMonthlyRecurringRevenue = (deals: Deal[]) => {
+    return deals
+      .filter(deal => deal.deal_type === 'retainer' && deal.stage !== 'closed_lost')
+      .reduce((sum, deal) => sum + deal.value, 0);
+  };
 
   // Memoize the metrics calculation to prevent unnecessary recalculations
   const currentMetrics = useMemo(() => {
-    if (deals.length === 0) return { totalRevenue: 0, totalDeals: 0 };
+    if (deals.length === 0) return { 
+      totalRevenue: 0, 
+      totalDeals: 0, 
+      monthlyRecurringRevenue: 0,
+      annualizedRevenue: 0
+    };
+    
+    const totalRevenue = deals.reduce((sum, deal) => sum + calculateDealValue(deal), 0);
+    const monthlyRecurringRevenue = calculateMonthlyRecurringRevenue(deals);
+    const annualizedRevenue = totalRevenue + (monthlyRecurringRevenue * 12);
+    
     return {
-      totalRevenue: deals.reduce((sum, deal) => sum + deal.value, 0),
-      totalDeals: deals.length
+      totalRevenue,
+      totalDeals: deals.length,
+      monthlyRecurringRevenue,
+      annualizedRevenue
     };
   }, [deals]);
 
   // Update parent component with metrics only when they actually change
   useEffect(() => {
-    onMetricsChange?.(currentMetrics);
-  }, [currentMetrics.totalRevenue, currentMetrics.totalDeals]);
+    onMetricsChange?.({
+      ...currentMetrics,
+      currency
+    });
+  }, [currentMetrics.totalRevenue, currentMetrics.totalDeals, currentMetrics.monthlyRecurringRevenue, currentMetrics.annualizedRevenue, currency]);
+
+  // Handle currency change and save to localStorage
+  const handleCurrencyChange = (value: string) => {
+    const newCurrency = CURRENCIES.find(c => c.value === value) || CURRENCIES[0];
+    setCurrency(newCurrency);
+    
+    // Save to localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sales-default-currency', value);
+    }
+  };
 
   const loadDeals = useCallback(async () => {
     if (!workspaceId) return;
@@ -159,7 +221,7 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
   const calculateStageTotal = (stageId: DealStage) => {
     return deals
       .filter(d => d.stage === stageId)
-      .reduce((sum, deal) => sum + deal.value, 0);
+      .reduce((sum, deal) => sum + calculateDealValue(deal), 0);
   };
 
   const handleDeleteDeal = async () => {
@@ -209,7 +271,7 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
             <div className="relative z-10 m-[1px] bg-muted rounded-lg hover:bg-muted transition-colors duration-300">
         <Select
           value={currency.value}
-          onValueChange={(value) => setCurrency(CURRENCIES.find(c => c.value === value) || CURRENCIES[0])}
+          onValueChange={handleCurrencyChange}
         >
                 <SelectTrigger className="w-32 border-0 bg-transparent text-foreground">
             <SelectValue placeholder="Select currency" />
@@ -281,6 +343,11 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
                             <h3 className="font-medium text-sm text-foreground overflow-hidden text-ellipsis whitespace-nowrap pr-6">
                               {deal.lead_name}
                             </h3>
+                            {deal.deal_type === 'retainer' && (
+                              <span className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">
+                                MRR
+                              </span>
+                            )}
                           </div>
                           
                           <div className="text-xs text-muted-foreground">
@@ -288,16 +355,24 @@ export function DealBoard({ workspaceId, userId, onMetricsChange }: DealBoardPro
                           </div>
                           
                           <div className="flex items-center justify-between mt-1">
-                            <div className="text-sm font-medium text-foreground flex items-center">
-                              {currency.prefix && <DollarSign className="h-3 w-3 mr-0.5" />}
-                              {formatCurrency(deal.value, currency)}
-                        </div>
+                            <div className="text-sm font-medium text-foreground flex flex-col items-start">
+                              <div className="flex items-center">
+                                {currency.prefix && <DollarSign className="h-3 w-3 mr-0.5" />}
+                                {formatCurrency(deal.value, currency)}
+                                {deal.deal_type === 'retainer' && <span className="text-xs text-muted-foreground ml-1">/mo</span>}
+                              </div>
+                              {deal.deal_type === 'retainer' && deal.retainer_duration_months && (
+                                <div className="text-xs text-muted-foreground">
+                                  {formatCurrency(calculateDealValue(deal), currency)} total ({deal.retainer_duration_months}mo)
+                                </div>
+                              )}
+                            </div>
                             
                             <div className="text-xs opacity-70 flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(deal.created_at).toLocaleDateString()}
-                        </div>
-                      </div>
+                              <Calendar className="h-3 w-3" />
+                              {new Date(deal.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
                         </div>
                       </AnimatedBorderCard>
                   </AlertDialog>

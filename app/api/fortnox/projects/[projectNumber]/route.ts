@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -110,36 +110,19 @@ async function fetchProjectByNumber(tokenData: any, projectNumber: string) {
 }
 
 export async function GET(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: { projectNumber: string } }
 ) {
   console.log(`\n=== Fetching Fortnox Project: ${params.projectNumber} ===`);
   
-  // Get user ID from session or request header
-  let userId: string | null = null;
-  
-  // First try to get from the session
-  const session = await getServerSession(authOptions);
-  if (session?.user?.id) {
-    userId = session.user.id;
-    console.log('Using user ID from session:', userId);
-  } else {
-    // If no session, check for user-id header (for client-side API calls)
-    userId = req.headers.get('user-id');
-    console.log('Using user ID from header:', userId);
-  }
-  
-  if (!userId) {
-    console.error('No user ID found in session or header');
-    return NextResponse.json({ error: 'Unauthorized - No user ID' }, { status: 401 });
-  }
-  
-  const finalUserId = userId;
-  const projectNumber = params.projectNumber;
-  
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Load Fortnox token
-    const tokenData = await loadTokenFromSupabase(finalUserId);
+    const tokenData = await loadTokenFromSupabase(user.id);
     
     if (!tokenData || !tokenData.access_token) {
       console.error('No Fortnox token found for user');
@@ -150,11 +133,11 @@ export async function GET(
     }
     
     // Fetch the specific project from Fortnox
-    const project = await fetchProjectByNumber(tokenData, projectNumber);
+    const project = await fetchProjectByNumber(tokenData, params.projectNumber);
     
     if (!project) {
       return NextResponse.json({ 
-        error: `Project with number ${projectNumber} not found` 
+        error: `Project with number ${params.projectNumber} not found` 
       }, { status: 404 });
     }
     

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { withAuth } from '@/lib/global-auth';
 import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,7 +150,9 @@ function getDateRange(range: string): { startDate: string; endDate: string } {
   };
 }
 
-export async function POST(request: NextRequest) {
+// Remove local implementations - using centralized auth-utils and supabaseAdmin
+
+export const POST = withAuth(async (request: NextRequest, { user }) => {
   try {
     console.log('[Search Console API] Starting POST request handler');
     const { startDate, endDate, siteUrl } = await request.json();
@@ -162,18 +163,6 @@ export async function POST(request: NextRequest) {
       siteUrl,
       requestUrl: request.url
     });
-    
-    // Get user from session
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-
-    if (!userId) {
-      console.error('[Search Console API] Authentication error: No valid user ID in session');
-      return NextResponse.json(
-        { error: 'User not authenticated' },
-        { status: 401 }
-      );
-    }
 
     // Calculate date range based on input
     const dates = typeof startDate === 'string' && startDate.includes('days') 
@@ -184,22 +173,36 @@ export async function POST(request: NextRequest) {
       startDate: dates.startDate,
       endDate: dates.endDate,
       siteUrl,
-      userId
+      userId: user.id
     });
 
     // Get the access token with proactive token refresh if needed
-    const freshToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');
+    const freshToken = await getRefreshedGoogleToken(user.id, 'google-searchconsole');
     
-    // Get the current token from database
-    const { data: integration, error: tokenError } = await supabase
-        .from('integrations')
-        .select('access_token, refresh_token, expires_at')
-        .eq('service_name', 'google-searchconsole')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(1);
+    // Get user's workspace IDs for proper RLS filtering
+    const { data: teamMemberships, error: teamError } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', user.id);
+
+    if (teamError || !teamMemberships || teamMemberships.length === 0) {
+      console.error('[Search Console API] Error fetching user workspace:', teamError);
+      return NextResponse.json(
+        { error: 'User workspace not found' },
+        { status: 403 }
+      );
+    }
+
+    const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
+
+    // Get the current token from database using RPC to bypass RLS
+    const { data: integration, error: tokenError } = await supabaseAdmin
+        .rpc('get_user_integration', {
+          p_user_id: user.id,
+          p_service_name: 'google-searchconsole'
+        });
       
-    if (tokenError || !integration || integration.length === 0) {
+    if (tokenError || !integration) {
       console.error('[Search Console API] No Search Console integration found:', tokenError);
       return NextResponse.json(
         { 
@@ -212,7 +215,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Use the freshly refreshed token if available, otherwise use the stored token
-    const accessToken = freshToken || integration[0].access_token;
+    const accessToken = freshToken || integration.access_token;
 
     if (!accessToken) {
       console.error('[Search Console API] No valid access token available');
@@ -266,7 +269,7 @@ export async function POST(request: NextRequest) {
       try {
         return await handleTokenRefreshOnError(
           apiError,
-          userId,
+          user.id,
           'google-searchconsole',
           async (refreshedToken) => {
             const sites = await fetchSearchConsoleSites(refreshedToken);
@@ -315,7 +318,7 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+});
 
 async function fetchSearchConsoleSites(accessToken: string) {
   const response = await fetch(

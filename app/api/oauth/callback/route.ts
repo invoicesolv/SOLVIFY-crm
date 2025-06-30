@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox credentials
 const CLIENT_ID = '4LhJwn68IpdR';
@@ -59,8 +59,9 @@ export async function GET(req: NextRequest) {
   // Log that we received a callback
   console.log('Received Fortnox OAuth callback at the API route');
 
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  // Get user from JWT token
+  const user = await getUserFromToken(req);
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
       console.log('Access token received');
       
       // Save to Supabase with user ID
-      await saveTokenToSupabase(tokenData, session.user.id);
+      await saveTokenToSupabase(tokenData, user.id);
       
       // Redirect back to the settings page
       return NextResponse.redirect(new URL('/settings', req.url));

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { parse } from 'csv-parse/sync';
 
 export const dynamic = 'force-dynamic';
@@ -17,19 +15,14 @@ export async function POST(
       contentType: request.headers.get('content-type')
     });
 
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      console.log('Authentication failed: No session or user ID');
-      return NextResponse.json(
-        { error: 'Not authenticated' },
-        { status: 401 }
-      );
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     console.log('User authenticated:', {
-      userId: session.user.id,
-      email: session.user.email
+      userId: user.id,
+      email: user.email
     });
 
     // Validate source
@@ -97,7 +90,7 @@ export async function POST(
           organicKeywords: parseInt(record['Total Keywords'] || '0'),
           source: 'ahrefs',
           lastUpdated: new Date().toISOString(),
-          user_id: session.user.id,
+          user_id: user.id,
           // Additional metrics from your CSV
           urlRating: parseFloat(record['URL Rating'] || '0'),
           ahrefsRank: parseInt(record['Ahrefs Rank'] || '0'),
@@ -116,7 +109,7 @@ export async function POST(
           organicKeywords: parseInt(record['Referenced URLs'] || record.RefURLs || '0'),
           source: 'majestic',
           lastUpdated: new Date().toISOString(),
-          user_id: session.user.id
+          user_id: user.id
         };
       }
     });

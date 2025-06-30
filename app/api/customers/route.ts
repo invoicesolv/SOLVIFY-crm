@@ -1,31 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { withAuth } from '@/lib/global-auth';
+import { supabaseAdmin } from '@/lib/supabase';
 
-// Create Supabase admin client
-function getSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-  
-  if (!supabaseUrl || !supabaseKey) {
-    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-    return null;
-  }
-  
-  return createClient(supabaseUrl, supabaseKey);
-}
+export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
+export const GET = withAuth(async (request: NextRequest, { user }) => {
   try {
-    // Get user ID from session or headers
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id || request.headers.get('user-id');
+    console.log(`[Customers API] Fetching customers for user: ${user.email} (${user.id})`);
     
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    // NextAuth: No RLS context needed, using manual workspace filtering
+    
     // Get query parameters for pagination and filtering
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1');
@@ -37,24 +21,31 @@ export async function GET(request: NextRequest) {
     // Calculate offset based on page number
     const offset = (page - 1) * pageSize;
     
-    // Initialize Supabase client
-    const supabase = getSupabaseAdmin();
-    if (!supabase) {
-      return NextResponse.json({ error: 'Failed to initialize database connection' }, { status: 500 });
+    // Get user's workspace for manual filtering and workspace info
+    const { data: userWorkspaces } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id, workspaces(id, name)')
+      .eq('user_id', user.id);
+    
+    if (!userWorkspaces || userWorkspaces.length === 0) {
+      console.error('[Customers API] No workspace access for user');
+      return NextResponse.json({ error: 'No workspace found for user' }, { status: 404 });
     }
     
-    // Clear schema cache to avoid column not found errors
-    try {
-      await supabase.rpc('pg_stat_clear_snapshot');
-    } catch (cacheError) {
-      console.error('Error clearing schema cache:', cacheError);
-      // Continue anyway
-    }
+    const workspaceIds = userWorkspaces.map(w => w.workspace_id);
+    const workspaceInfo = userWorkspaces[0]?.workspaces;
+    const workspaceId = workspaceIds[0]; // Use first workspace for backward compatibility
+    console.log(`[Customers API] User workspaces:`, workspaceIds, 'Current workspace:', workspaceInfo);
     
-    // Build query with filtering if search parameter is provided
-    let query = supabase
+    // Build query with manual workspace filtering (service role bypasses RLS)
+    let query = supabaseAdmin
       .from('customers')
-      .select('*', { count: 'exact' });
+      .select(`
+        *,
+        projects (*),
+        invoices (*)
+      `, { count: 'exact' })
+      .eq('workspace_id', workspaceId); // Manual workspace filtering
     
     if (search) {
       query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,customer_number.ilike.%${search}%`);
@@ -74,6 +65,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 });
     }
     
+    console.log(`[Customers API] Found ${customers?.length || 0} customers (total: ${count})`);
+    
     // Calculate total pages
     const totalPages = count ? Math.ceil(count / pageSize) : 0;
     
@@ -85,6 +78,13 @@ export async function GET(request: NextRequest) {
         totalPages,
         totalCount: count || 0,
         hasMore: page < totalPages
+      },
+      debug: {
+        userEmail: user.email,
+        userId: user.id,
+        customerCount: customers?.length || 0,
+        workspaceInfo: workspaceInfo,
+        workspaceIds: workspaceIds
       }
     });
   } catch (error) {
@@ -94,4 +94,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+});

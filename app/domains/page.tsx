@@ -36,7 +36,7 @@ import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import punycode from 'punycode';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { checkPermission } from '@/lib/permission';
 
@@ -84,7 +84,7 @@ interface SortConfig {
 }
 
 export default function DomainsPage() {
-  const { data: session, status } = useSession();
+  const { user, session } = useAuth();
   const router = useRouter();
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [hasEditPermission, setHasEditPermission] = useState<boolean>(false);
@@ -123,13 +123,17 @@ export default function DomainsPage() {
   // Check user's permission to view and edit domains
   useEffect(() => {
     const checkUserPermissions = async () => {
-      if (!session?.user?.id || !session?.user?.email) return;
+      if (!user?.id || !user?.email || !session?.access_token) return;
       
       try {
         setPermissionLoading(true);
         
         // Get workspace using API endpoint
-        const response = await fetch('/api/workspace/leave');
+        const response = await fetch('/api/workspace/leave', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch workspaces');
         }
@@ -149,13 +153,13 @@ export default function DomainsPage() {
         
         // Continue with permission checking...
         const viewPermission = await checkPermission(
-          session.user.id,
+          user.id,
           workspaceId,
           'view_domains'
         );
         
         const editPermission = await checkPermission(
-          session.user.id,
+          user.id,
           workspaceId,
           'edit_domains'
         );
@@ -171,7 +175,7 @@ export default function DomainsPage() {
     };
     
     checkUserPermissions();
-  }, [session?.user?.id, activeWorkspace]);
+  }, [user?.id, activeWorkspace, session?.access_token]);
 
   // Function to load project connections for existing domains
   const loadProjectConnections = async () => {
@@ -962,7 +966,7 @@ domain.com,75,12000,18000,1200,8000`;
   };
 
   // Render content based on permissions
-  if (status === 'loading' || permissionLoading) {
+  if (loading || permissionLoading) {
     return (
       <SidebarDemo>
         <div className="p-6 flex justify-center">

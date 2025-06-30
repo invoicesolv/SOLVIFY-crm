@@ -1,40 +1,41 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
-import { getServerSession } from 'next-auth'
-import authOptions from "@/lib/auth";
+import { createClient } from '@supabase/supabase-js'
+import { getUserFromToken } from '@/lib/auth-utils'
 
 export const dynamic = 'force-dynamic';
 
-// Define the Session user type with expected properties
-interface SessionUser {
-  id?: string;
-  name?: string;
-  email?: string;
-  image?: string;
-}
+// Using Supabase authentication - no NextAuth types needed
 
-// Extend the Session type
-declare module "next-auth" {
-  interface Session {
-    user: SessionUser;
-    access_token: string;
-    refresh_token: string;
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
   }
+  
+  return createClient(supabaseUrl, supabaseKey);
 }
 
-export async function POST(req: Request) {
+// Using imported getUserFromToken from auth-utils
+
+export async function POST(request: NextRequest) {
   try {
     console.log('Stripe checkout API called')
     
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
       console.log('No authenticated session found')
-      return new NextResponse('Unauthorized', { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
-    console.log('User session found:', session.user.email)
+    console.log('User session found:', user.email)
 
-    const body = await req.json()
+    const body = await request.json()
     console.log('Request body:', body)
     
     const { priceId } = body
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
     
     if (!actualPriceId) {
       console.log('No price ID available')
-      return new NextResponse('Price ID is required', { status: 400 })
+      return NextResponse.json({ error: 'Price ID is required' }, { status: 400 })
     }
 
     console.log('Creating checkout session with priceId:', actualPriceId)
@@ -62,9 +63,9 @@ export async function POST(req: Request) {
         ],
         success_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001'}/dashboard?payment=success`,
         cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001'}/dashboard?payment=canceled`,
-        customer_email: session.user.email || undefined,
+        customer_email: user.email || undefined,
         metadata: {
-          userId: session.user.id || 'anonymous', // Provide a default value for undefined
+          userId: user.id || 'anonymous', // Provide a default value for undefined
         },
       })
       
@@ -79,10 +80,10 @@ export async function POST(req: Request) {
       })
     } catch (stripeError) {
       console.error('Error creating Stripe session:', stripeError)
-      return new NextResponse('Error creating checkout session', { status: 500 })
+      return NextResponse.json({ error: 'Error creating checkout session' }, { status: 500 })
     }
   } catch (error) {
     console.error('Error creating checkout session:', error)
-    return new NextResponse('Internal Error', { status: 500 })
+    return NextResponse.json({ error: 'Internal Error' }, { status: 500 })
   }
 } 

@@ -1,5 +1,4 @@
-import { supabase } from './supabase';
-import { useSession } from 'next-auth/react';
+import { supabaseAdmin } from './supabase';
 
 interface ServiceSettings {
   service_name: string;
@@ -15,7 +14,7 @@ export async function saveServiceSettings(settings: ServiceSettings) {
       throw new Error('User ID is required to save service settings');
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('integrations')
       .upsert(
         {
@@ -43,11 +42,26 @@ export async function getServiceSettings(serviceName: string, userId: string) {
       throw new Error('User ID is required to get service settings');
     }
 
-    const { data, error } = await supabase
+    // Get user's workspace IDs for proper RLS filtering
+    const { data: teamMemberships, error: teamError } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', userId);
+
+    if (teamError || !teamMemberships || teamMemberships.length === 0) {
+      console.error('Error fetching user workspace for settings:', teamError);
+      return null;
+    }
+
+    const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
+
+    const { data, error } = await supabaseAdmin
       .from('integrations')
       .select('*')
       .eq('service_name', serviceName)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .in('workspace_id', userWorkspaceIds) // 🔒 CRITICAL: Workspace-based filtering
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error getting service settings:', error);
@@ -72,11 +86,25 @@ export async function deleteServiceSettings(serviceName: string, userId: string)
       throw new Error('User ID is required to delete service settings');
     }
 
-    const { error } = await supabase
+    // Get user's workspace IDs for proper RLS filtering
+    const { data: teamMemberships, error: teamError } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', userId);
+
+    if (teamError || !teamMemberships || teamMemberships.length === 0) {
+      console.error('Error fetching user workspace for delete:', teamError);
+      throw new Error('User workspace not found');
+    }
+
+    const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
+
+    const { error } = await supabaseAdmin
       .from('integrations')
       .delete()
       .eq('service_name', serviceName)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .in('workspace_id', userWorkspaceIds); // 🔒 CRITICAL: Workspace-based filtering
 
     if (error) throw error;
     return true;
@@ -92,7 +120,7 @@ export async function enableServiceIntegration(serviceName: string, userId: stri
       throw new Error('User ID is required to enable service integration');
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('integrations')
       .insert([
         {

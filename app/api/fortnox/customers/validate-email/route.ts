@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -129,6 +130,11 @@ async function getCustomerEmailFromDatabase(customerNumber: string) {
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Get customer number from query parameters
     const searchParams = request.nextUrl.searchParams;
     const customerNumber = searchParams.get('customerNumber');
@@ -137,21 +143,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Customer number is required' }, { status: 400 });
     }
 
-    // Get user ID from session or headers
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id || request.headers.get('user-id');
-    
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
-    }
-
     // First check if we have the email in our database
     let customerEmail = await getCustomerEmailFromDatabase(customerNumber);
     
     // If not found in database, get it from Fortnox API
     if (!customerEmail) {
       // Get Fortnox token
-      const tokenData = await loadTokenFromSupabase(userId as string);
+      const tokenData = await loadTokenFromSupabase(user.id);
       if (!tokenData || !tokenData.access_token) {
         return NextResponse.json({ error: 'Failed to get Fortnox token' }, { status: 500 });
       }

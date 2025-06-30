@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { createClient } from '@supabase/supabase-js';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 import crypto from 'crypto';
 
 export async function GET(request: NextRequest) {
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-  const session = await getServerSession(authOptions);
+  const supabase = supabaseClient;
+  const user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
@@ -20,7 +16,7 @@ const supabase = createClient(
     const { data: allFacebookAccounts, error: dbError } = await supabase
       .from('social_accounts')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('platform', 'facebook')
       .order('created_at', { ascending: false });
 
@@ -34,7 +30,7 @@ const supabase = createClient(
       FACEBOOK_CLIENT_SECRET: process.env.FACEBOOK_CLIENT_SECRET ? 'EXISTS' : 'MISSING',
       META_CLIENT_SECRET: process.env.META_CLIENT_SECRET ? 'EXISTS' : 'MISSING',
       FACEBOOK_APP_SECRET: process.env.FACEBOOK_APP_SECRET ? 'EXISTS' : 'MISSING',
-      NEXTAUTH_URL: process.env.NEXTAUTH_URL || 'MISSING'
+      NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || 'MISSING'
     };
 
     // Categorize accounts
@@ -76,13 +72,10 @@ const supabase = createClient(
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-  const session = await getServerSession(authOptions);
+  const supabase = supabaseClient;
+  const user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
@@ -91,7 +84,7 @@ export async function POST(request: NextRequest) {
     const { data: pageAccounts, error: pageError } = await supabase
       .from('social_accounts')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('platform', 'facebook')
       .ilike('account_name', '%(Page)')
       .limit(1);
@@ -140,7 +133,7 @@ export async function POST(request: NextRequest) {
     const { error: createError } = await supabase
       .from('social_accounts')
       .upsert({
-        user_id: session.user.id,
+        user_id: user.id,
         workspace_id: pageAccount.workspace_id,
         platform: 'facebook',
         access_token: pageAccount.access_token, // Use same token as page

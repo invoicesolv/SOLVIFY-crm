@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import { 
   Mail, 
@@ -16,7 +16,11 @@ import {
   MousePointer,
   UserX,
   TrendingUp,
-  Settings
+  Settings,
+  Trash2,
+  Square,
+  CheckSquare,
+  StopCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -29,6 +33,7 @@ import { toast } from 'sonner';
 
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { cn } from '@/lib/utils';
+import { EmailMarketingNav } from '@/components/email-marketing/EmailMarketingNav';
 
 interface Campaign {
   id: string;
@@ -64,7 +69,7 @@ interface EmailStats {
 }
 
 export default function EmailMarketingPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [contactLists, setContactLists] = useState<ContactList[]>([]);
@@ -78,10 +83,14 @@ export default function EmailMarketingPage() {
   });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingCampaign, setDeletingCampaign] = useState<string | null>(null);
+  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [abortingSend, setAbortingSend] = useState<string | null>(null);
 
   useEffect(() => {
     const initializeWorkspace = async () => {
-      if (session?.user?.id) {
+      if (user?.id) {
         try {
           const response = await fetch('/api/workspace/leave');
           if (response.ok) {
@@ -98,7 +107,7 @@ export default function EmailMarketingPage() {
     };
     
     initializeWorkspace();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (workspaceId) {
@@ -133,8 +142,14 @@ export default function EmailMarketingPage() {
       if (listsError) throw listsError;
       setContactLists(listsData || []);
 
-      // Calculate stats
-      const totalContacts = listsData?.reduce((sum, list) => sum + list.active_contacts, 0) || 0;
+      // Calculate stats - count all contacts in workspace, not just those in lists
+      const { data: allContacts, error: contactsError } = await supabase
+        .from('email_contacts')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('status', 'active');
+
+      const totalContacts = allContacts?.length || 0;
       const totalSent = campaignsData?.reduce((sum, campaign) => sum + campaign.sent_count, 0) || 0;
       const totalOpened = campaignsData?.reduce((sum, campaign) => sum + campaign.opened_count, 0) || 0;
       const totalClicked = campaignsData?.reduce((sum, campaign) => sum + campaign.clicked_count, 0) || 0;
@@ -192,6 +207,129 @@ export default function EmailMarketingPage() {
     campaign.subject.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const deleteCampaign = async (campaignId: string) => {
+    if (!confirm('Are you sure you want to delete this campaign? This action cannot be undone.')) {
+      return;
+    }
+
+    setDeletingCampaign(campaignId);
+    try {
+      const response = await fetch(`/api/email-marketing/campaigns/${campaignId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to delete campaign');
+      }
+
+      toast.success('Campaign deleted successfully');
+      // Remove the campaign from the local state
+      setCampaigns(prev => prev.filter(campaign => campaign.id !== campaignId));
+    } catch (error) {
+      console.error('Error deleting campaign:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete campaign');
+    } finally {
+      setDeletingCampaign(null);
+    }
+  };
+
+  const bulkDeleteCampaigns = async () => {
+    if (selectedCampaigns.length === 0) {
+      toast.error('Please select campaigns to delete');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedCampaigns.length} campaign(s)? This action cannot be undone.`)) {
+      return;
+    }
+
+    setBulkDeleting(true);
+    try {
+      const deletePromises = selectedCampaigns.map(campaignId =>
+        fetch(`/api/email-marketing/campaigns/${campaignId}`, {
+          method: 'DELETE'
+        })
+      );
+
+      const results = await Promise.allSettled(deletePromises);
+      
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast.success(`${successCount} campaign(s) deleted successfully`);
+        // Remove deleted campaigns from local state
+        setCampaigns(prev => prev.filter(campaign => !selectedCampaigns.includes(campaign.id)));
+        setSelectedCampaigns([]);
+      }
+
+      if (errorCount > 0) {
+        toast.error(`Failed to delete ${errorCount} campaign(s)`);
+      }
+    } catch (error) {
+      console.error('Error bulk deleting campaigns:', error);
+      toast.error('Failed to delete campaigns');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const abortCampaignSend = async (campaignId: string) => {
+    if (!confirm('Are you sure you want to abort sending this campaign? This will stop the campaign immediately.')) {
+      return;
+    }
+
+    setAbortingSend(campaignId);
+    try {
+      const response = await fetch(`/api/email-marketing/campaigns/${campaignId}/abort`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Failed to abort campaign');
+      }
+
+      toast.success('Campaign sending aborted successfully');
+      // Update campaign status in local state
+      setCampaigns(prev => prev.map(campaign => 
+        campaign.id === campaignId 
+          ? { ...campaign, status: 'paused' }
+          : campaign
+      ));
+    } catch (error) {
+      console.error('Error aborting campaign:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to abort campaign');
+    } finally {
+      setAbortingSend(null);
+    }
+  };
+
+  const toggleCampaignSelection = (campaignId: string) => {
+    setSelectedCampaigns(prev => 
+      prev.includes(campaignId)
+        ? prev.filter(id => id !== campaignId)
+        : [...prev, campaignId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedCampaigns.length === filteredCampaigns.length) {
+      setSelectedCampaigns([]);
+    } else {
+      setSelectedCampaigns(filteredCampaigns.map(campaign => campaign.id));
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -202,6 +340,7 @@ export default function EmailMarketingPage() {
 
   return (
     <SidebarDemo>
+      <EmailMarketingNav />
       <div className="p-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -210,9 +349,15 @@ export default function EmailMarketingPage() {
             <p className="text-muted-foreground">Create, send, and track email campaigns</p>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/email-marketing/automation">
+            <Link href="/email-marketing/settings">
               <Button variant="outline" className="flex items-center gap-2">
                 <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+            </Link>
+            <Link href="/email-marketing/automation">
+              <Button variant="outline" className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
                 Automation
               </Button>
             </Link>
@@ -321,6 +466,51 @@ export default function EmailMarketingPage() {
                     </Button>
                   </div>
                 </div>
+                {filteredCampaigns.length > 0 && (
+                  <div className="flex items-center justify-between pt-4 border-t border-border/50">
+                    <div className="flex items-center gap-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={toggleSelectAll}
+                        className="flex items-center gap-2"
+                      >
+                        {selectedCampaigns.length === filteredCampaigns.length ? (
+                          <CheckSquare className="h-4 w-4" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                        {selectedCampaigns.length === filteredCampaigns.length ? 'Deselect All' : 'Select All'}
+                      </Button>
+                      {selectedCampaigns.length > 0 && (
+                        <span className="text-sm text-muted-foreground">
+                          {selectedCampaigns.length} selected
+                        </span>
+                      )}
+                    </div>
+                    {selectedCampaigns.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={bulkDeleteCampaigns}
+                        disabled={bulkDeleting}
+                        className="text-red-600 hover:bg-red-50 border-red-300"
+                      >
+                        {bulkDeleting ? (
+                          <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent mr-2" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Selected ({selectedCampaigns.length})
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
                 {filteredCampaigns.length === 0 ? (
@@ -347,26 +537,42 @@ export default function EmailMarketingPage() {
                     {filteredCampaigns.map((campaign) => (
                       <div
                         key={campaign.id}
-                        className="flex items-center justify-between p-4 border border-border/50 rounded-lg hover:bg-muted/50 transition-colors backdrop-blur-sm"
+                        className={`flex items-center justify-between p-4 border border-border/50 rounded-lg hover:bg-muted/50 transition-colors backdrop-blur-sm ${
+                          selectedCampaigns.includes(campaign.id) ? 'ring-2 ring-primary/20 bg-primary/5' : ''
+                        }`}
                       >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <h4 className="font-medium text-foreground">{campaign.name}</h4>
-                            <Badge className={getStatusColor(campaign.status)}>
-                              {campaign.status}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground mt-1">{campaign.subject}</p>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                            <span>{campaign.total_recipients} recipients</span>
-                            {campaign.sent_count > 0 && (
-                              <>
-                                <span>•</span>
-                                <span>{((campaign.opened_count / campaign.sent_count) * 100).toFixed(1)}% opened</span>
-                                <span>•</span>
-                                <span>{((campaign.clicked_count / campaign.sent_count) * 100).toFixed(1)}% clicked</span>
-                              </>
+                        <div className="flex items-center gap-3 flex-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleCampaignSelection(campaign.id)}
+                            className="p-1 h-auto"
+                          >
+                            {selectedCampaigns.includes(campaign.id) ? (
+                              <CheckSquare className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Square className="h-4 w-4" />
                             )}
+                          </Button>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3">
+                              <h4 className="font-medium text-foreground">{campaign.name}</h4>
+                              <Badge className={getStatusColor(campaign.status)}>
+                                {campaign.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-1">{campaign.subject}</p>
+                            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                              <span>{campaign.total_recipients} recipients</span>
+                              {campaign.sent_count > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span>{((campaign.opened_count / campaign.sent_count) * 100).toFixed(1)}% opened</span>
+                                  <span>•</span>
+                                  <span>{((campaign.clicked_count / campaign.sent_count) * 100).toFixed(1)}% clicked</span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="text-right">
@@ -375,11 +581,42 @@ export default function EmailMarketingPage() {
                              campaign.scheduled_at ? `Scheduled: ${formatDate(campaign.scheduled_at)}` :
                              `Created: ${formatDate(campaign.created_at)}`}
                           </p>
-                          <Link href={`/email-marketing/campaigns/${campaign.id}`}>
-                            <Button variant="ghost" size="sm" className="mt-2">
-                              View Details
+                          <div className="flex items-center gap-2 mt-2">
+                            <Link href={`/email-marketing/campaigns/${campaign.id}`}>
+                              <Button variant="ghost" size="sm">
+                                View Details
+                              </Button>
+                            </Link>
+                            {campaign.status === 'sending' && (
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => abortCampaignSend(campaign.id)}
+                                disabled={abortingSend === campaign.id}
+                                className="text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                                title="Abort sending"
+                              >
+                                {abortingSend === campaign.id ? (
+                                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-600 border-t-transparent" />
+                                ) : (
+                                  <StopCircle className="h-4 w-4" />
+                                )}
+                              </Button>
+                            )}
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => deleteCampaign(campaign.id)}
+                              disabled={deletingCampaign === campaign.id}
+                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                            >
+                              {deletingCampaign === campaign.id ? (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
                             </Button>
-                          </Link>
+                          </div>
                         </div>
                       </div>
                     ))}

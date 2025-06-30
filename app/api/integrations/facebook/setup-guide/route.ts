@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
         environment_variables: {
           FACEBOOK_APP_ID: 'Your App ID from step 2',
           FACEBOOK_APP_SECRET: 'Your App Secret from step 2',
-          NEXTAUTH_URL: 'https://crm.solvify.se'
+          NEXT_PUBLIC_SITE_URL: 'https://crm.solvify.se'
         },
         deployment_instructions: {
           vercel: 'Add via Vercel Dashboard > Project > Settings > Environment Variables',

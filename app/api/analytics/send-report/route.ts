@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
-import { supabase } from '@/lib/supabase';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,9 +43,9 @@ const transporter = nodemailer.createTransport({
 
 export async function POST(request: NextRequest) {
   try {
-    const { propertyId, recipients, analyticsData, isTest, dateRange } = await request.json();
+    const { propertyId, propertyName, recipients, analyticsData, isTest, dateRange } = await request.json();
     
-    console.log('Received request:', { propertyId, recipients, isTest, dateRange });
+    console.log('Received request:', { propertyId, propertyName, recipients, isTest, dateRange });
     
     // Log the bySource data structure for debugging
     console.log('bySource data structure:', {
@@ -66,8 +65,8 @@ export async function POST(request: NextRequest) {
     
     // Only require authentication for non-test emails and when not authorized via cron secret
     if (!isTest && !isCronAuth) {
-      const session = await getServerSession(authOptions);
-      const userId = session?.user?.id;
+      const user = await getUserFromToken(request);
+      const userId = user?.id;
 
       if (!userId) {
         return NextResponse.json(
@@ -101,90 +100,312 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    // Get property name
-    const { data: properties } = await supabase
-      .from('analytics_properties')
-      .select('name')
-      .eq('property_id', propertyId)
-      .single();
+    // Use property name from request, fallback to a meaningful default if not provided
+    const finalPropertyName = propertyName || 
+                              (propertyId ? `Property ${propertyId.replace('properties/', '')}` : 'Your Property');
+    console.log('Property name processing:', {
+      received_propertyName: propertyName,
+      finalPropertyName: finalPropertyName,
+      propertyName_type: typeof propertyName,
+      propertyName_length: propertyName?.length
+    });
 
-    const propertyName = properties?.name || 'Your Property';
-    console.log('Property name:', propertyName);
-
-    // Create email content with a more professional template
+    // Create email content with modern design matching the app UI
     const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;">
-        <h1 style="color: #333;">${propertyName} - Analytics Report</h1>
-        
-        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h2 style="color: #444;">Overview</h2>
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
-            <div>
-              <h3 style="color: #666;">User Metrics</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li>Total Users: ${analyticsData.overview.totalUsers}</li>
-                <li>Active Users: ${analyticsData.overview.activeUsers}</li>
-                <li>New Users: ${analyticsData.overview.newUsers}</li>
-              </ul>
-            </div>
-            <div>
-              <h3 style="color: #666;">Performance Metrics</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li>Page Views: ${analyticsData.overview.pageViews}</li>
-                <li>Sessions: ${analyticsData.overview.sessions}</li>
-                <li>Bounce Rate: ${analyticsData.overview.bounceRate.toFixed(1)}%</li>
-                <li>Engagement Rate: ${analyticsData.overview.engagementRate.toFixed(1)}%</li>
-                <li>Avg Duration: ${Math.floor(analyticsData.overview.avgSessionDuration / 60)}m ${Math.floor(analyticsData.overview.avgSessionDuration % 60)}s</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        <!-- Device Distribution Chart -->
-        <div style="background: linear-gradient(to bottom right, #4a3a59, #222); padding: 20px; border-radius: 8px; margin: 20px 0; color: white;">
-          <h2 style="color: white; font-weight: bold; margin-bottom: 20px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3);">Device Distribution</h2>
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${finalPropertyName} - Analytics Report</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
           
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <!-- Visual representation of device distribution -->
-            <div style="width: 60%;">
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  ${(() => {
-                    // Process device data safely
-                    const deviceData = analyticsData.byDevice || {};
-                    const deviceEntries = Object.entries(deviceData);
-                    const totalUsers = deviceEntries.reduce((sum, [_, deviceStats]) => {
-                      const stats = deviceStats as any;
-                      return sum + (stats.users || 0);
-                    }, 0);
-                    
-                    // Define colors based on device type
-                    const colors = [
-                      'rgb(0, 204, 255)',    // Electric blue
-                      'rgb(255, 64, 87)',    // Hot pink
-                      'rgb(113, 255, 78)',   // Neon green
-                      'rgb(255, 215, 0)',    // Gold
-                      'rgb(211, 92, 255)'    // Violet
-                    ];
-                    
-                    // Create cells for each device
-                    return deviceEntries.map(([device, deviceStats], index) => {
-                      const stats = deviceStats as any;
-                      const users = stats.users || 0;
-                      const percentage = totalUsers > 0 ? (users / totalUsers) * 100 : 0;
-                      
-                      return `<td style="width: ${percentage}%; background-color: ${colors[index % colors.length]}; height: 30px; border-radius: 0;"></td>`;
-                    }).join('');
-                  })()}
-                </tr>
-              </table>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          
+          body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            background: #f8fafc;
+            color: #1e293b;
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+          }
+          
+          .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+          }
+          
+          .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+          }
+          
+          .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(255,255,255,0.1) 100%);
+            animation: shimmer 3s ease-in-out infinite;
+          }
+          
+          @keyframes shimmer {
+            0%, 100% { transform: translateX(-100%); }
+            50% { transform: translateX(100%); }
+          }
+          
+          .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #ffffff;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 1;
+          }
+          
+          .header p {
+            font-size: 1.1rem;
+            color: #ffffff;
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+          }
+          
+          .content {
+            padding: 40px;
+          }
+          
+          .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+          }
+          
+          .metric-card {
+            background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+          }
+          
+          .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea, #764ba2, #f093fb, #f5576c);
+            background-size: 200% 100%;
+            animation: gradient 3s ease infinite;
+          }
+          
+          @keyframes gradient {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+          }
+          
+          .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+          }
+          
+          .metric-label {
+            color: #64748b;
+            font-size: 0.9rem;
+            font-weight: 500;
+          }
+          
+          .section {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 30px;
+            margin: 30px 0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+          }
+          
+          .section h2 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+          }
+          
+          .device-chart {
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            border: 1px solid #cbd5e1;
+          }
+          
+          .progress-bar {
+            background: #f1f5f9;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin: 10px 0;
+            border: 1px solid #e2e8f0;
+          }
+          
+          .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+          }
+          
+          .device-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #e2e8f0;
+          }
+          
+          .device-item:last-child {
+            border-bottom: none;
+          }
+          
+          .device-icon {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            opacity: 0.8;
+          }
+          
+          .footer {
+            background: #f8fafc;
+            padding: 30px 40px;
+            text-align: center;
+            border-top: 1px solid #e2e8f0;
+          }
+          
+          .footer p {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin: 5px 0;
+          }
+          
+          .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            padding: 14px 28px;
+            border-radius: 12px;
+            font-weight: 600;
+            margin: 20px 0;
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+          }
+          
+          .conversion-card {
+            background: linear-gradient(145deg, #fef7ff 0%, #fdf2f8 100%);
+            border: 1px solid #f3e8ff;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.05);
+          }
+          
+          .stats-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+          }
+          
+          .highlight {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: 600;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>${finalPropertyName}</h1>
+            <p>Analytics Report • ${formatDateRange(dateRange)}</p>
+          </div>
+          
+          <div class="content">
+            <!-- Overview Metrics -->
+            <div class="section">
+              <h2>📊 Overview</h2>
+              <div class="metrics-grid">
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.totalUsers.toLocaleString()}</div>
+                  <div class="metric-label">Total Users</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.activeUsers.toLocaleString()}</div>
+                  <div class="metric-label">Active Users</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.newUsers.toLocaleString()}</div>
+                  <div class="metric-label">New Users</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.pageViews.toLocaleString()}</div>
+                  <div class="metric-label">Page Views</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.sessions.toLocaleString()}</div>
+                  <div class="metric-label">Sessions</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.bounceRate.toFixed(1)}%</div>
+                  <div class="metric-label">Bounce Rate</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.engagementRate.toFixed(1)}%</div>
+                  <div class="metric-label">Engagement Rate</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${Math.floor(analyticsData.overview.avgSessionDuration / 60)}m ${Math.floor(analyticsData.overview.avgSessionDuration % 60)}s</div>
+                  <div class="metric-label">Avg Duration</div>
+                </div>
+              </div>
             </div>
             
-            <!-- Legend -->
-            <div style="width: 35%;">
-              <table style="width: 100%; border-collapse: collapse;">
+            <!-- Device Distribution -->
+            <div class="section">
+              <h2>📱 Device Distribution</h2>
+              <div class="device-chart">
                 ${(() => {
-                  // Process device data safely
                   const deviceData = analyticsData.byDevice || {};
                   const deviceEntries = Object.entries(deviceData);
                   const totalUsers = deviceEntries.reduce((sum, [_, deviceStats]) => {
@@ -192,150 +413,129 @@ export async function POST(request: NextRequest) {
                     return sum + (stats.users || 0);
                   }, 0);
                   
-                  // Define colors
-                  const colors = [
-                    'rgb(0, 204, 255)',    // Electric blue
-                    'rgb(255, 64, 87)',    // Hot pink
-                    'rgb(113, 255, 78)',   // Neon green
-                    'rgb(255, 215, 0)',    // Gold
-                    'rgb(211, 92, 255)'    // Violet
-                  ];
+                  const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'];
+                  const deviceIcons = {
+                    mobile: '📱',
+                    desktop: '💻',
+                    tablet: '📱',
+                    default: '📱'
+                  };
                   
-                  // Create rows for each device
                   return deviceEntries.map(([device, deviceStats], index) => {
                     const stats = deviceStats as any;
                     const users = stats.users || 0;
                     const percentage = totalUsers > 0 ? (users / totalUsers) * 100 : 0;
+                    const icon = deviceIcons[device as keyof typeof deviceIcons] || deviceIcons.default;
                     
                     return `
-                      <tr>
-                        <td style="padding-bottom: 10px;">
+                      <div class="device-item">
                           <div style="display: flex; align-items: center;">
-                            <div style="width: 15px; height: 15px; background-color: ${colors[index % colors.length]}; margin-right: 10px; border-radius: 3px;"></div>
-                            <div style="flex-grow: 1;">${device.charAt(0).toUpperCase() + device.slice(1)}</div>
-                            <div style="font-weight: bold;">${users} (${percentage.toFixed(1)}%)</div>
+                          <span style="font-size: 1.2rem; margin-right: 12px;">${icon}</span>
+                          <span style="font-weight: 500;">${device.charAt(0).toUpperCase() + device.slice(1)}</span>
+                        </div>
+                        <div style="flex: 1; margin: 0 20px;">
+                          <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${percentage}%; background: ${colors[index % colors.length]};"></div>
                           </div>
-                        </td>
-                      </tr>
+                        </div>
+                        <div style="font-weight: 600; color: #1e293b;">
+                          <span class="highlight">${users.toLocaleString()}</span>
+                          <span style="opacity: 0.7; margin-left: 8px;">(${percentage.toFixed(1)}%)</span>
+                        </div>
+                      </div>
                     `;
                   }).join('');
                 })()}
-              </table>
+              </div>
             </div>
-          </div>
-        </div>
-        
-        <!-- Traffic by Source Chart -->
-        <div style="background: linear-gradient(to bottom right, #59452a, #222); padding: 20px; border-radius: 8px; margin: 20px 0; color: white;">
-          <h2 style="color: white; font-weight: bold; margin-bottom: 20px; text-shadow: 1px 1px 3px rgba(0,0,0,0.3);">Traffic by Source</h2>
-          
-          <table style="width: 100%; border-collapse: collapse;">
+            <!-- Traffic Sources -->
+            <div class="section">
+              <h2>🌐 Traffic Sources</h2>
+              <div style="space-y: 12px;">
             ${(() => {
-              // Process source data safely
               const sourceData = analyticsData.bySource || {};
-              // Convert to array of objects for easier manipulation
               const sources = Object.entries(sourceData)
-                .map(([source, sourceStats]) => {
-                  // Properly extract the sessions value
-                  // Source metrics should have a 'sessions' property
-                  return {
-                    name: source.charAt(0).toUpperCase() + source.slice(1),
-                    sessions: (sourceStats as any)?.sessions || 0
-                  };
-                })
+                    .map(([source, sourceStats]) => ({
+                      name: source === '(direct)' ? 'Direct' : source.charAt(0).toUpperCase() + source.slice(1),
+                      sessions: (sourceStats as any)?.sessions || 0,
+                      icon: source === '(direct)' ? '🔗' : source.includes('google') ? '🔍' : source.includes('facebook') ? '📘' : '🌐'
+                    }))
                 .sort((a, b) => b.sessions - a.sessions)
-                .slice(0, 8); // Limit to top 8 sources
-              
-              // Add console logging to debug
-              console.log('Traffic sources processed for email:', sources);
+                    .slice(0, 6);
               
               const maxSessions = Math.max(...sources.map(s => s.sessions), 1);
-              
-              // Define colors for sources
-              const colors = [
-                'rgb(0, 224, 255)',     // Electric blue
-                'rgb(255, 69, 87)',     // Hot pink
-                'rgb(123, 255, 90)',    // Neon green
-                'rgb(255, 230, 20)',    // Bright yellow
-                'rgb(221, 102, 255)',   // Bright purple
-                'rgb(255, 138, 20)',    // Bright orange
-                'rgb(10, 230, 200)',    // Bright teal
-                'rgb(255, 130, 210)'    // Bright pink
-              ];
-              
-              // Create rows for each source
+                  const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe'];
+                  
               return sources.map((source, index) => {
                 const percentage = (source.sessions / maxSessions) * 100;
                 return `
-                  <tr>
-                    <td style="padding-bottom: 12px;">
-                      <div style="display: flex; align-items: center;">
-                        <div style="width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px;">
-                          ${source.name}
+                                             <div style="display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid #e2e8f0;">
+                         <span style="font-size: 1.2rem; margin-right: 12px;">${source.icon}</span>
+                         <div style="min-width: 120px; font-weight: 500; color: #1e293b;">${source.name}</div>
+                        <div style="flex: 1; margin: 0 20px;">
+                          <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${percentage}%; background: ${colors[index % colors.length]};"></div>
                         </div>
-                        <div style="flex-grow: 1; height: 25px; position: relative;">
-                          <div style="position: absolute; top: 0; left: 0; height: 100%; width: ${percentage}%; background-color: ${colors[index % colors.length]}; border-radius: 4px; border: 2px solid white;"></div>
                         </div>
-                        <div style="width: 80px; text-align: right; font-weight: bold; margin-left: 10px;">
-                          ${source.sessions.toLocaleString()}
+                                                 <div style="font-weight: 600; color: #1e293b;">
+                           <span class="highlight">${source.sessions.toLocaleString()}</span>
                         </div>
                       </div>
-                    </td>
-                  </tr>
                 `;
               }).join('');
             })()}
-          </table>
         </div>
+            </div>
 
-        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h2 style="color: #444;">Conversion Details</h2>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
-            <div>
-              <h3 style="color: #666;">Total Conversions</h3>
-              <p style="font-size: 1.5em; margin: 0;">${analyticsData.overview.conversions}</p>
+            <!-- Conversions -->
+            <div class="section">
+              <h2>💰 Conversions</h2>
+              <div class="metrics-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 30px;">
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.conversions.toLocaleString()}</div>
+                  <div class="metric-label">Total Conversions</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value">${analyticsData.overview.conversionRate.toFixed(2)}%</div>
+                  <div class="metric-label">Conversion Rate</div>
             </div>
-            <div>
-              <h3 style="color: #666;">Conversion Rate</h3>
-              <p style="font-size: 1.5em; margin: 0;">${analyticsData.overview.conversionRate.toFixed(2)}%</p>
-            </div>
-            <div>
-              <h3 style="color: #666;">Total Revenue</h3>
-              <p style="font-size: 1.5em; margin: 0;">$${analyticsData.overview.revenue.toLocaleString()}</p>
+                <div class="metric-card">
+                  <div class="metric-value">$${analyticsData.overview.revenue.toLocaleString()}</div>
+                  <div class="metric-label">Total Revenue</div>
             </div>
           </div>
 
           ${analyticsData.overview.conversionEvents?.map((event: ConversionEvent) => `
-            <div style="background: #fff; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                <h3 style="color: #444; margin: 0;">${event.name}</h3>
+                <div class="conversion-card">
+                  <div class="stats-row">
+                    <h3 style="margin: 0; font-size: 1.2rem;">${event.name}</h3>
                 <div>
-                  <span style="color: #666;">${event.count} conversions</span>
-                  ${event.value ? `<span style="color: #666; margin-left: 10px;">$${event.value.toLocaleString()} value</span>` : ''}
+                      <span class="highlight">${event.count} conversions</span>
+                      ${event.value ? `<span style="margin-left: 15px; opacity: 0.8;">$${event.value.toLocaleString()}</span>` : ''}
                 </div>
               </div>
               
               ${analyticsData.byConversion?.[event.name] ? `
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 15px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
                   <div>
-                    <h4 style="color: #666; margin: 0 0 10px 0;">By Device</h4>
+                        <h4 style="margin: 0 0 15px 0; opacity: 0.8;">By Device</h4>
                     ${Object.entries(analyticsData.byConversion[event.name].byDevice as Record<string, ConversionStats>)
                       .map(([device, stats]) => `
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                          <span style="color: #666;">${device}</span>
-                          <span style="color: #444;">${stats.count}</span>
+                            <div class="stats-row" style="margin: 8px 0;">
+                              <span>${device.charAt(0).toUpperCase() + device.slice(1)}</span>
+                              <span class="highlight">${stats.count}</span>
                         </div>
                       `).join('')}
                   </div>
                   <div>
-                    <h4 style="color: #666; margin: 0 0 10px 0;">By Source</h4>
+                        <h4 style="margin: 0 0 15px 0; opacity: 0.8;">By Source</h4>
                     ${Object.entries(analyticsData.byConversion[event.name].bySource as Record<string, ConversionStats>)
                       .sort((a, b) => b[1].count - a[1].count)
-                      .slice(0, 5)
+                          .slice(0, 4)
                       .map(([source, stats]) => `
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                          <span style="color: #666;">${source || '(direct)'}</span>
-                          <span style="color: #444;">${stats.count}</span>
+                            <div class="stats-row" style="margin: 8px 0;">
+                              <span>${source || 'Direct'}</span>
+                              <span class="highlight">${stats.count}</span>
                         </div>
                       `).join('')}
                   </div>
@@ -345,27 +545,57 @@ export async function POST(request: NextRequest) {
           `).join('')}
         </div>
 
-        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h2 style="color: #444;">Device Breakdown</h2>
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
-            ${Object.entries(analyticsData.byDevice as Record<string, DeviceStats>).map(([device, stats]) => `
-              <div>
-                <h3 style="color: #666;">${device.charAt(0).toUpperCase() + device.slice(1)}</h3>
-                <ul style="list-style: none; padding: 0;">
-                  <li>Sessions: ${stats.sessions}</li>
-                  <li>Page Views: ${stats.pageViews}</li>
-                  <li>Conversions: ${stats.conversions || 0}</li>
-                </ul>
+            <!-- Device Performance -->
+            <div class="section">
+              <h2>📊 Device Performance</h2>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+                ${Object.entries(analyticsData.byDevice as Record<string, DeviceStats>).map(([device, stats]) => {
+                  const deviceIcons = { mobile: '📱', desktop: '💻', tablet: '📱' };
+                  const icon = deviceIcons[device as keyof typeof deviceIcons] || '📱';
+                  
+                  return `
+                                         <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.05);">
+                       <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                         <span style="font-size: 1.5rem; margin-right: 10px;">${icon}</span>
+                         <h3 style="margin: 0; font-size: 1.1rem; color: #1e293b;">${device.charAt(0).toUpperCase() + device.slice(1)}</h3>
+                       </div>
+                      <div style="space-y: 8px;">
+                        <div class="stats-row">
+                          <span>Sessions</span>
+                          <span class="highlight">${stats.sessions.toLocaleString()}</span>
+                        </div>
+                        <div class="stats-row">
+                          <span>Page Views</span>
+                          <span class="highlight">${stats.pageViews.toLocaleString()}</span>
+                        </div>
+                        <div class="stats-row">
+                          <span>Conversions</span>
+                          <span class="highlight">${(stats.conversions || 0).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
               </div>
-            `).join('')}
+            </div>
+
+            <!-- CTA Section -->
+            <div style="text-align: center; margin: 40px 0;">
+              <a href="https://crm.solvify.se/analytics" class="cta-button">
+                View Full Analytics Dashboard
+              </a>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="footer">
+            <p>🚀 This report was automatically generated by <strong>Solvify Analytics</strong></p>
+            <p>To modify your email preferences, please visit your Analytics Dashboard settings</p>
+            <p style="margin-top: 15px; opacity: 0.5;">© ${new Date().getFullYear()} Solvify. All rights reserved.</p>
           </div>
         </div>
-
-        <div style="color: #666; font-size: 0.9em; margin-top: 20px;">
-          <p>This report was automatically generated by Solvify Analytics.</p>
-          <p>To modify your email preferences, please visit your Analytics Dashboard settings.</p>
-        </div>
-      </div>
+      </body>
+      </html>
     `;
 
     console.log('Attempting to send email to:', recipients);
@@ -383,7 +613,7 @@ export async function POST(request: NextRequest) {
     const info = await transporter.sendMail({
       from: process.env.EMAIL_USER || 'kevin@solvify.se',
       to: recipients,
-      subject: `${isTest ? '[TEST] ' : ''}${propertyName} - Analytics Report (${formatDateRange(dateRange)})`,
+      subject: `${isTest ? '[TEST] ' : ''}${finalPropertyName} - Analytics Report (${formatDateRange(dateRange)})`,
       html,
     });
 

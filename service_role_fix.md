@@ -8,7 +8,7 @@ This file contains the implementation to fix the service role key exposure issue
 // File: /app/api/customers/route.ts
 
 import { NextResponse } from "next/server";
-import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
@@ -179,7 +179,7 @@ To properly secure the service role key, we need to update the environment varia
 ```typescript
 // File: /lib/admin-client.ts
 
-import { createClient } from '@supabase/supabase-js';
+import { supabaseClient } from '@/lib/supabase-client';
 
 // This function should ONLY be used in server-side code (API routes, Server Components, etc.)
 export function createAdminClient() {

@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Mail } from "lucide-react";
 import { useState } from "react";
 import { Task } from "@/types/project";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { toast } from "sonner";
 
 interface ReportButtonsProps {
@@ -11,18 +11,23 @@ interface ReportButtonsProps {
 }
 
 export function ReportButtons({ projectName, tasks }: ReportButtonsProps) {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [isSendingReport, setIsSendingReport] = useState(false);
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [emails, setEmails] = useState<string>("");
 
   const sendReport = async (isTest: boolean) => {
-    if (!session?.user?.email) {
+    if (!user?.email) {
       toast.error('You must be logged in to send reports');
       return;
     }
 
-    const emailList = isTest ? [session.user.email] : emails.split('\n').filter(email => email.trim());
+    if (!session?.access_token) {
+      toast.error('Authentication required to send reports');
+      return;
+    }
+
+    const emailList = isTest ? [user.email] : emails.split('\n').filter(email => email.trim());
 
     if (!isTest && emailList.length === 0) {
       toast.error('Please enter at least one email address');
@@ -35,6 +40,7 @@ export function ReportButtons({ projectName, tasks }: ReportButtonsProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           projectName,
@@ -51,7 +57,7 @@ export function ReportButtons({ projectName, tasks }: ReportButtonsProps) {
       }
 
       toast.success(isTest 
-        ? `Test report sent to ${session.user.email}`
+        ? `Test report sent to ${user.email}`
         : `Report sent to ${emailList.length} recipient${emailList.length === 1 ? '' : 's'}`
       );
       setShowEmailInput(false);

@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
   const clientId = process.env.FACEBOOK_APP_ID;
   
   const baseUrl = process.env.NODE_ENV === 'development' 
-    ? 'http://localhost:3000' 
-    : (process.env.NEXTAUTH_URL || 'https://crm.solvify.se');
+    ? process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'
+    : (process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se');
   const cleanBaseUrl = baseUrl.replace(/\/$/, '');
   const redirectUri = `${cleanBaseUrl}/api/oauth/instagram-business/callback`;
 

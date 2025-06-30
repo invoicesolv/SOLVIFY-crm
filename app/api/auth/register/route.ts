@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import Stripe from "stripe"
-import { supabase } from '@/lib/supabase'
+import { supabaseClient as supabase } from '@/lib/supabase-client'
 import nodemailer from 'nodemailer'
 import axios from 'axios' // Added for reCAPTCHA verification
 
@@ -259,6 +259,48 @@ export async function POST(req: Request) {
         trial_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() // 14 days from now
       })
 
+    // Create workspace for the user
+    let workspaceId: string | null = null;
+    try {
+      // Create a new workspace for the user
+      const { data: workspace, error: workspaceError } = await supabase
+        .from('workspaces')
+        .insert({
+          name: `${company || name.trim()}'s Workspace`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+
+      if (workspaceError) {
+        console.error('Error creating workspace:', workspaceError);
+      } else if (workspace) {
+        workspaceId = workspace.id;
+        console.log('Created workspace:', workspaceId, 'for user:', authData.user.id);
+
+        // Add user as admin member of the workspace
+        const { error: memberError } = await supabase
+          .from('team_members')
+          .insert({
+            user_id: authData.user.id,
+            workspace_id: workspaceId,
+            role: 'admin',
+            email: email,
+            created_at: new Date().toISOString()
+          });
+
+        if (memberError) {
+          console.error('Error adding user to workspace:', memberError);
+        } else {
+          console.log('Added user to workspace as admin:', authData.user.id, workspaceId);
+        }
+      }
+    } catch (error) {
+      console.error('Error in workspace setup:', error);
+      // Continue with registration even if workspace creation fails
+    }
+
     // Track the registration event
     try {
       await supabase
@@ -272,7 +314,8 @@ export async function POST(req: Request) {
             email,
             company,
             plan_id: planId,
-            stripe_customer_id: stripeCustomerId
+            stripe_customer_id: stripeCustomerId,
+            workspace_id: workspaceId
           }
         });
     } catch (error) {

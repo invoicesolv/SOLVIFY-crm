@@ -1,31 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
-import { google } from 'googleapis';
+import { withAuth } from '@/lib/global-auth';
+import { supabaseAdmin } from '@/lib/supabase';
+
+export const dynamic = 'force-dynamic';
 
 // Provide analytics overview data for the dashboard
-export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+export const GET = withAuth(async (req: NextRequest, { user }) => {
+  return await handleAnalyticsRequest(user);
+});
 
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized: No valid session' }, { status: 401 });
-  }
+// Also support POST requests from dashboard
+export const POST = withAuth(async (req: NextRequest, { user }) => {
+  return await handleAnalyticsRequest(user);
+});
 
+// Shared handler for both GET and POST
+async function handleAnalyticsRequest(user: any) {
   try {
-    // Get the user's ID
-    const userId = session.user.id;
 
     // Get the access token from the integrations table
-    const { data: integration, error: tokenError } = await supabase
+    const { data: integration, error: tokenError } = await supabaseAdmin
       .from('integrations')
       .select('access_token')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .eq('service_name', 'google-analytics')
       .maybeSingle();
 
     if (tokenError || !integration?.access_token) {
-      console.error('No Analytics integration found for user:', userId);
+      console.error('No Analytics integration found for user:', user.id);
       return NextResponse.json({
         analytics: {
           pageviews: 0,
@@ -37,10 +39,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Get user's configured Google Analytics property
-    const { data: analyticsSettings, error: settingsError } = await supabase
+    const { data: analyticsSettings, error: settingsError } = await supabaseAdmin
       .from('user_settings')
       .select('default_analytics_property')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .maybeSingle();
 
     const propertyId = analyticsSettings?.default_analytics_property || '313420483'; // Fallback to default

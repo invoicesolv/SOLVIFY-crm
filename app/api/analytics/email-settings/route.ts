@@ -1,14 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json(
-        { error: 'Not authenticated' },
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
@@ -22,10 +42,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Get settings from Supabase
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('analytics_email_settings')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('property_id', propertyId)
       .single();
 
@@ -54,16 +74,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      console.log('[API /analytics/email-settings] User not authenticated');
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json(
-        { error: 'Not authenticated' },
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
-    const userId = session.user.id;
-    console.log(`[API /analytics/email-settings] Authenticated user: ${userId}`);
 
     const { propertyId, settings } = await request.json();
     console.log('[API /analytics/email-settings] Request received:', { propertyId, settings });
@@ -84,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     const analyticsEmailSettingsPayload = {
-      user_id: userId,
+      user_id: user.id,
       property_id: propertyId,
       enabled: settings.enabled,
       recipients: settings.recipients, // Ensure this is an array of strings
@@ -94,7 +112,7 @@ export async function POST(request: NextRequest) {
     };
     console.log('[API /analytics/email-settings] Upserting to analytics_email_settings with payload:', analyticsEmailSettingsPayload);
 
-    const { data: emailSettings, error: emailError } = await supabase
+    const { data: emailSettings, error: emailError } = await supabaseAdmin
       .from('analytics_email_settings')
       .upsert(analyticsEmailSettingsPayload, {
         onConflict: 'user_id,property_id'
@@ -127,7 +145,7 @@ export async function POST(request: NextRequest) {
 
     if (settings.enabled) {
       const cronJobPayload = {
-        user_id: userId,
+        user_id: user.id,
           property_id: propertyId,
           job_type: 'analytics_report',
           status: 'active',
@@ -141,7 +159,7 @@ export async function POST(request: NextRequest) {
       };
       console.log('[API /analytics/email-settings] Upserting to cron_jobs with payload:', cronJobPayload);
 
-      const { data: cronJob, error: cronError } = await supabase
+      const { data: cronJob, error: cronError } = await supabaseAdmin
         .from('cron_jobs')
         .upsert(cronJobPayload, {
           onConflict: 'user_id,property_id,job_type'
@@ -159,13 +177,13 @@ export async function POST(request: NextRequest) {
       console.log('[API /analytics/email-settings] Cron job created/updated:', cronJob);
     } else {
       console.log('[API /analytics/email-settings] Settings disabled, attempting to disable cron job.');
-      const { error: disableError } = await supabase
+      const { error: disableError } = await supabaseAdmin
         .from('cron_jobs')
         .update({
           status: 'disabled',
           updated_at: new Date().toISOString()
         })
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .eq('property_id', propertyId)
         .eq('job_type', 'analytics_report');
 

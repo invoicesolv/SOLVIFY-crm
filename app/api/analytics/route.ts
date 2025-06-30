@@ -1,10 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 export const dynamic = 'force-dynamic';
+
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  const supabaseAdmin = getSupabaseAdmin();
+  
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 // Add helper function for date formatting
 function formatDate(date: Date): string {
@@ -41,19 +78,14 @@ function getDateRange(range: string): { startDate: string; endDate: string } {
 
 export async function POST(request: NextRequest) {
   try {
-    const { startDate, endDate, propertyId, siteUrl } = await request.json();
-    
-    // Get user from session
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'User not authenticated' },
-        { status: 401 }
-      );
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { startDate, endDate, propertyId, siteUrl } = await request.json();
+    
     // Calculate date range based on input
     const dates = typeof startDate === 'string' && startDate.includes('days') 
       ? getDateRange(startDate)
@@ -64,7 +96,7 @@ export async function POST(request: NextRequest) {
       endDate: dates.endDate,
       propertyId,
       siteUrl,
-      userId,
+      userId: user.id,
       isPropertyIdProvided: !!propertyId
     });
 
@@ -77,101 +109,59 @@ export async function POST(request: NextRequest) {
     };
     const missingTokens: string[] = [];
 
-    // MULTI-LAYERED TOKEN RETRIEVAL APPROACH
-    console.log(`[Analytics API] Using multi-layered token retrieval approach for user ${userId}`);
+    // Use simplified token retrieval with supabaseAdmin
+    console.log(`[Analytics API] Using simplified token retrieval approach for user ${user.id}`);
     
-    // 1. Try RPC function first (direct lookup from database function with user ID)
-    const { data: savedTokens, error: tokenError } = await supabase.rpc('get_service_token', { 
-      service_name: 'google-analytics', 
-      current_user_id: userId 
-    });
-    
-    if (savedTokens && savedTokens.length > 0) {
-      console.log(`[Analytics API] Found direct token via RPC for analytics for user ${userId}`);
-      tokens['google-analytics'] = savedTokens[0].access_token;
-      
-      // If we have analytics token, try to use the same for search console
-      const { data: searchTokens, error: searchError } = await supabase.rpc('get_service_token', { 
-        service_name: 'google-searchconsole',
-        current_user_id: userId
-      });
-      
-      if (searchTokens && searchTokens.length > 0) {
-        console.log(`[Analytics API] Found direct token for search console for user ${userId}`);
-        tokens['google-searchconsole'] = searchTokens[0].access_token;
-      } else {
-        // Use analytics token as fallback for search console
-        console.log(`[Analytics API] Using analytics token for search console as fallback for user ${userId}`);
-        tokens['google-searchconsole'] = tokens['google-analytics'];
-      }
-    } else {
-      // 2. Try direct session access token if available
-      if (session.access_token) {
-        console.log(`[Analytics API] Using session access token as fallback`);
-        tokens['google-analytics'] = session.access_token;
-        tokens['google-searchconsole'] = session.access_token;
-      } else {
-        // 3. Try standard integrations table lookup
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
+    }
+
+    // Get user's workspace ID for proper RLS filtering
+    const { data: teamMemberships, error: teamError } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', user.id);
+
+    if (teamError || !teamMemberships || teamMemberships.length === 0) {
+      console.error('[Analytics API] Error fetching user workspace:', teamError);
+      return NextResponse.json(
+        { error: 'User workspace not found' },
+        { status: 403 }
+      );
+    }
+
+    const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
+    console.log('[Analytics API] User workspace IDs:', userWorkspaceIds);
+
+    // Get tokens using RPC to bypass RLS
     for (const service of requiredTokens) {
       console.log(`[Analytics API] Fetching token for service: ${service}`);
-      const { data: integrations, error } = await supabase
-        .from('integrations')
-        .select('access_token, refresh_token, expires_at, created_at, scopes')
-        .eq('service_name', service)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+      const { data: integration, error } = await supabaseAdmin
+        .rpc('get_user_integration', {
+          p_user_id: user.id,
+          p_service_name: service
+        });
 
-      if (error || !integrations || integrations.length === 0) {
+      if (error || !integration) {
         console.error(`[Analytics API] Token fetch error for ${service}:`, error);
         missingTokens.push(service);
         continue;
       }
 
-      // Get the most recent token
-      const latestIntegration = integrations[0];
-      console.log(`[Analytics API] Found token for ${service}, expires at: ${latestIntegration.expires_at}, scopes:`, latestIntegration.scopes);
-      tokens[service] = latestIntegration.access_token;
-        }
-        
-        // 4. Try user-specific tokens table as a last resort
-        if (!tokens['google-analytics'] || !tokens['google-searchconsole']) {
-          const { data: userTokens, error: userTokensError } = await supabase
-            .from('user_oauth_tokens')
-            .select('access_token, service_name')
-            .eq('user_id', userId)
-            .in('service_name', ['google-analytics', 'google-searchconsole']);
-            
-          if (!userTokensError && userTokens && userTokens.length > 0) {
-            console.log(`[Analytics API] Found ${userTokens.length} tokens in user_oauth_tokens table`);
-            
-            for (const tokenRecord of userTokens) {
-              if (tokenRecord.service_name && tokenRecord.access_token) {
-                tokens[tokenRecord.service_name as ServiceName] = tokenRecord.access_token;
-                console.log(`[Analytics API] Using token from user_oauth_tokens for ${tokenRecord.service_name}`);
-                
-                // Remove from missing tokens list if it was there
-                const index = missingTokens.indexOf(tokenRecord.service_name);
-                if (index !== -1) {
-                  missingTokens.splice(index, 1);
-                }
-              }
-            }
-          } else {
-            console.log(`[Analytics API] No tokens found in user_oauth_tokens table:`, userTokensError);
-          }
-        }
-      }
+      console.log(`[Analytics API] Found token for ${service}, expires at: ${integration.expires_at}`);
+      tokens[service] = integration.access_token;
     }
 
     // Check if analytics token needs to be refreshed
-    const analyticsRefreshedToken = await getRefreshedGoogleToken(userId, 'google-analytics');
+    const analyticsRefreshedToken = await getRefreshedGoogleToken(user.id, 'google-analytics');
     if (analyticsRefreshedToken) {
       console.log('[Analytics API] Using refreshed Analytics token');
       tokens['google-analytics'] = analyticsRefreshedToken;
     }
     
     // Check if search console token needs to be refreshed
-    const searchConsoleRefreshedToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');
+    const searchConsoleRefreshedToken = await getRefreshedGoogleToken(user.id, 'google-searchconsole');
     if (searchConsoleRefreshedToken) {
       console.log('[Analytics API] Using refreshed Search Console token');
       tokens['google-searchconsole'] = searchConsoleRefreshedToken;
@@ -215,7 +205,7 @@ export async function POST(request: NextRequest) {
         const cleanPropertyId = propertyId.replace('properties/', '');
         console.log('Fetching analytics data for property:', cleanPropertyId);
         analyticsData = await fetchAnalyticsData(tokens['google-analytics'], dates.startDate, dates.endDate, cleanPropertyId);
-      console.log('Analytics data overview:', analyticsData?.overview);
+        console.log('Analytics data overview:', analyticsData?.overview);
       } else {
         console.log('No propertyId provided, skipping analytics data fetch');
       }
@@ -225,7 +215,7 @@ export async function POST(request: NextRequest) {
         analyticsError = apiError.message || 'Unknown analytics error';
         await handleTokenRefreshOnError(
           apiError,
-          userId,
+          user.id,
           'google-analytics',
           async (refreshedToken) => {
             if (propertyId) {

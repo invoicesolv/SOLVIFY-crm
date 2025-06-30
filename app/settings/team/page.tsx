@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SidebarDemo } from "@/components/ui/code.demo";
@@ -8,9 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { supabase, supabaseAdmin } from '@/lib/supabase';
-import { useSession } from "next-auth/react";
-import { Users, UserPlus, Building, Plus, Trash2, MailPlus, ShieldCheck, Shield, LogOut, AlertTriangle } from "lucide-react";
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { useAuth } from '@/lib/auth-client';
+import { Users, UserPlus, Building, Plus, Trash2, MailPlus, ShieldCheck, Shield, LogOut, AlertTriangle, Edit } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -21,29 +21,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import type { PermissionKey } from '@/lib/permission';
 
-// Permission keys type
-export type PermissionKey = 
-  | 'view_projects' 
-  | 'edit_projects' 
-  | 'view_customers' 
-  | 'edit_customers' 
-  | 'view_invoices' 
-  | 'view_calendar' 
-  | 'view_analytics'
-  | 'view_domains'
-  | 'edit_domains'
-  | 'admin'
-  | 'canInviteUsers'
-  | 'canManageWorkspace'
-  | 'view_sales'
-  | 'edit_sales'
-  | 'view_leads'
-  | 'edit_leads'
-  | 'edit_calendar'
-  | 'use_chatbot';
-
-// Add role types at the top with other types
 type Role = 'admin' | 'editor' | 'reader';
 
 interface RoleDefinition {
@@ -52,87 +31,236 @@ interface RoleDefinition {
   permissions: Record<PermissionKey, boolean>;
 }
 
-// Add role definitions
 const ROLE_DEFINITIONS: Record<Role, RoleDefinition> = {
   admin: {
     label: 'Administrator',
     description: 'Full access to all features and settings',
     permissions: {
+      // Dashboard
+      view_dashboard: true,
+      view_dashboard_analytics: true,
+      
+      // Projects & Tasks
       view_projects: true,
       edit_projects: true,
+      view_tasks: true,
+      edit_tasks: true,
+      
+      // CRM
       view_customers: true,
       edit_customers: true,
-      view_invoices: true,
-      view_calendar: true,
-      view_analytics: true,
-      view_domains: true,
-      edit_domains: true,
-      admin: true,
-      canInviteUsers: true,
-      canManageWorkspace: true,
-      view_sales: true,
-      edit_sales: true,
       view_leads: true,
       edit_leads: true,
+      view_sales: true,
+      edit_sales: true,
+      view_gmail_hub: true,
+      edit_gmail_hub: true,
+      
+      // Finance
+      view_invoices: true,
+      edit_invoices: true,
+      view_recurring_invoices: true,
+      edit_recurring_invoices: true,
+      view_invoice_reminders: true,
+      edit_invoice_reminders: true,
+      
+      // Marketing
+      view_marketing: true,
+      edit_marketing: true,
+      view_email_marketing: true,
+      edit_email_marketing: true,
+      view_social_media: true,
+      edit_social_media: true,
+      view_analytics: true,
+      view_search_console: true,
+      edit_search_console: true,
+      view_domains: true,
+      edit_domains: true,
+      view_content_generator: true,
+      edit_content_generator: true,
+      
+      // Calendar & Communication
+      view_calendar: true,
       edit_calendar: true,
-      use_chatbot: true
-    }
+      view_notifications: true,
+      edit_notifications: true,
+      view_chat: true,
+      edit_chat: true,
+      use_chatbot: true,
+      
+      // Automation
+      view_automation: true,
+      edit_automation: true,
+      view_scheduled_tasks: true,
+      edit_scheduled_tasks: true,
+      
+      // Profile & Settings
+      view_profile: true,
+      edit_profile: true,
+      view_settings: true,
+      edit_settings: true,
+      
+      // Administration
+      admin: true,
+      canInviteUsers: true,
+      canManageWorkspace: true
+    },
   },
   editor: {
     label: 'Editor',
     description: 'Can view and edit content, but cannot manage team or settings',
     permissions: {
+      // Dashboard
+      view_dashboard: true,
+      view_dashboard_analytics: false,
+      
+      // Projects & Tasks
       view_projects: true,
       edit_projects: true,
+      view_tasks: true,
+      edit_tasks: true,
+      
+      // CRM
       view_customers: true,
       edit_customers: true,
+      view_leads: true,
+      edit_leads: true,
+      view_sales: true,
+      edit_sales: true,
+      view_gmail_hub: true,
+      edit_gmail_hub: false,
+      
+      // Finance
       view_invoices: true,
-      view_calendar: true,
+      edit_invoices: false,
+      view_recurring_invoices: true,
+      edit_recurring_invoices: false,
+      view_invoice_reminders: true,
+      edit_invoice_reminders: false,
+      
+      // Marketing
+      view_marketing: true,
+      edit_marketing: false,
+      view_email_marketing: true,
+      edit_email_marketing: true,
+      view_social_media: true,
+      edit_social_media: true,
       view_analytics: false,
+      view_search_console: false,
+      edit_search_console: false,
       view_domains: true,
       edit_domains: false,
+      view_content_generator: true,
+      edit_content_generator: true,
+      
+      // Calendar & Communication
+      view_calendar: true,
+      edit_calendar: true,
+      view_notifications: true,
+      edit_notifications: false,
+      view_chat: true,
+      edit_chat: true,
+      use_chatbot: true,
+      
+      // Automation
+      view_automation: false,
+      edit_automation: false,
+      view_scheduled_tasks: false,
+      edit_scheduled_tasks: false,
+      
+      // Profile & Settings
+      view_profile: true,
+      edit_profile: true,
+      view_settings: false,
+      edit_settings: false,
+      
+      // Administration
       admin: false,
       canInviteUsers: false,
-      canManageWorkspace: false,
-      view_sales: false,
-      edit_sales: false,
-      view_leads: false,
-      edit_leads: false,
-      edit_calendar: false,
-      use_chatbot: false
-    }
+      canManageWorkspace: false
+    },
   },
   reader: {
     label: 'Reader',
     description: 'Can only view content, no editing permissions',
     permissions: {
+      // Dashboard
+      view_dashboard: true,
+      view_dashboard_analytics: false,
+      
+      // Projects & Tasks
       view_projects: true,
       edit_projects: false,
+      view_tasks: true,
+      edit_tasks: false,
+      
+      // CRM
       view_customers: true,
       edit_customers: false,
+      view_leads: true,
+      edit_leads: false,
+      view_sales: true,
+      edit_sales: false,
+      view_gmail_hub: true,
+      edit_gmail_hub: false,
+      
+      // Finance
       view_invoices: true,
-      view_calendar: true,
+      edit_invoices: false,
+      view_recurring_invoices: true,
+      edit_recurring_invoices: false,
+      view_invoice_reminders: true,
+      edit_invoice_reminders: false,
+      
+      // Marketing
+      view_marketing: true,
+      edit_marketing: false,
+      view_email_marketing: true,
+      edit_email_marketing: false,
+      view_social_media: true,
+      edit_social_media: false,
       view_analytics: false,
+      view_search_console: false,
+      edit_search_console: false,
       view_domains: false,
       edit_domains: false,
+      view_content_generator: true,
+      edit_content_generator: false,
+      
+      // Calendar & Communication
+      view_calendar: true,
+      edit_calendar: false,
+      view_notifications: true,
+      edit_notifications: false,
+      view_chat: true,
+      edit_chat: false,
+      use_chatbot: false,
+      
+      // Automation
+      view_automation: false,
+      edit_automation: false,
+      view_scheduled_tasks: false,
+      edit_scheduled_tasks: false,
+      
+      // Profile & Settings
+      view_profile: true,
+      edit_profile: true,
+      view_settings: false,
+      edit_settings: false,
+      
+      // Administration
       admin: false,
       canInviteUsers: false,
-      canManageWorkspace: false,
-      view_sales: false,
-      edit_sales: false,
-      view_leads: false,
-      edit_leads: false,
-      edit_calendar: false,
-      use_chatbot: false
-    }
-  }
+      canManageWorkspace: false
+    },
+  },
 };
 
 interface TeamMember {
   id: string;
   workspace_id: string;
   user_id: string;
-  role: string;
+  role: Role;
   name: string;
   email: string;
   is_admin: boolean;
@@ -146,1352 +274,636 @@ interface Workspace {
   created_at: string;
 }
 
-// Define the structure for permission groups
-const permissionGroups = [
-  {
-    title: 'Projects',
-    permissions: [
-      { key: 'view_projects', label: 'View Projects' },
-      { key: 'edit_projects', label: 'Edit Projects' },
-    ]
-  },
-  {
-    title: 'Customers',
-    permissions: [
-      { key: 'view_customers', label: 'View Customers' },
-      { key: 'edit_customers', label: 'Edit Customers' },
-    ]
-  },
-  {
-    title: 'Invoices',
-    permissions: [
-      { key: 'view_invoices', label: 'View Invoices' },
-      // Assuming no 'edit_invoices' currently
-    ]
-  },
-  {
-    title: 'Calendar',
-    permissions: [
-      { key: 'view_calendar', label: 'View Calendar' },
-      { key: 'edit_calendar', label: 'Edit Calendar' }, // Added
-    ]
-  },
-  {
-    title: 'Analytics',
-    permissions: [
-      { key: 'view_analytics', label: 'View Analytics' },
-    ]
-  },
-  {
-    title: 'Domains',
-    permissions: [
-      { key: 'view_domains', label: 'View Domains' },
-      { key: 'edit_domains', label: 'Edit Domains' },
-    ]
-  },
-  { // Added Sales Group
-    title: 'Sales',
-    permissions: [
-      { key: 'view_sales', label: 'View Sales' },
-      { key: 'edit_sales', label: 'Edit Sales' },
-    ]
-  },
-  { // Added Leads Group
-    title: 'Leads',
-    permissions: [
-      { key: 'view_leads', label: 'View Leads' },
-      { key: 'edit_leads', label: 'Edit Leads' },
-    ]
-  },
-   { // Added Chatbot Group
-    title: 'Chatbot',
-    permissions: [
-      { key: 'use_chatbot', label: 'Use Chatbot' },
-    ]
-  },
-  {
-    title: 'Management',
-    permissions: [
-      { key: 'canInviteUsers', label: 'Invite Users' },
-      { key: 'canManageWorkspace', label: 'Manage Workspace' },
-    ]
-  }
-];
-
 export default function TeamPage() {
-  const { data: session, status } = useSession();
-  const [activeTab, setActiveTab] = useState("members");
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const { user, session } = useAuth();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
-  const [isWorkspaceDialogOpen, setIsWorkspaceDialogOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  
-  // Invite form state
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [selectedRole, setSelectedRole] = useState<Role>('reader');
-  const [customPermissions, setCustomPermissions] = useState<Record<string, boolean>>({});
-  const [inviteLoading, setInviteLoading] = useState(false);
-  
-  // Workspace form state
-  const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [workspaceLoading, setWorkspaceLoading] = useState(false);
-
-  // Workspace management state
+  const [isCreateWorkspaceDialogOpen, setIsCreateWorkspaceDialogOpen] = useState(false);
   const [isLeaveWorkspaceDialogOpen, setIsLeaveWorkspaceDialogOpen] = useState(false);
   const [isDeleteWorkspaceDialogOpen, setIsDeleteWorkspaceDialogOpen] = useState(false);
-  const [workspaceActionLoading, setWorkspaceActionLoading] = useState(false);
+  const [isEditMemberDialogOpen, setIsEditMemberDialogOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<Role>('reader');
+  const [activeTab, setActiveTab] = useState("members");
+  const [customPermissions, setCustomPermissions] = useState<Record<PermissionKey, boolean>>({} as Record<PermissionKey, boolean>);
 
-  // Update the initialPermissions state with proper typing
-  const [initialPermissions, setInitialPermissions] = useState<Record<PermissionKey, boolean>>({
-    view_projects: true,
-    edit_projects: false,
-    view_customers: true,
-    edit_customers: false,
-    view_invoices: false,
-    view_calendar: true,
-    view_analytics: false,
-    view_domains: false,
-    edit_domains: false,
-    admin: false,
-    canInviteUsers: false,
-    canManageWorkspace: false,
-    view_sales: false,
-    edit_sales: false,
-    view_leads: false,
-    edit_leads: false,
-    edit_calendar: false,
-    use_chatbot: false
-  });
+  // Extract primitive values to prevent object recreation
+  const userId = user?.id;
+  const accessToken = session?.access_token;
 
-  useEffect(() => {
-    console.log('Session status:', status);
-    console.log('Session data:', session);
+  const loadTeamMembers = useCallback(async (workspaceId: string) => {
+    if (!accessToken) return;
     
-    if (status === "loading") return;
-    
-    if (!session?.user?.id) {
-      toast.error('Please sign in to access this page');
-      return;
-    }
-    
-    checkDatabaseStructure();
-    loadWorkspaces();
-  }, [session, status]);
-
-  const checkDatabaseStructure = async () => {
-    console.log('Checking database structure...');
-    console.log('Session user:', {
-      id: session?.user?.id,
-      email: session?.user?.email,
-      name: session?.user?.name
-    });
-
     try {
-      // Check team_members table
-      const { data: teamMembersInfo, error: teamMembersError } = await supabase
-        .from('team_members')
-        .select('*')
-        .limit(1);
-
-      console.log('Team members table check:', {
-        hasData: !!teamMembersInfo,
-        error: teamMembersError?.message,
-        errorCode: teamMembersError?.code
+      const response = await fetch('/api/team-members', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
       });
 
-      // Check workspaces table
-      const { data: workspacesInfo, error: workspacesError } = await supabase
-        .from('workspaces')
-        .select('*')
-        .limit(1);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch team members: ${response.status}`);
+      }
 
-      console.log('Workspaces table check:', {
-        hasData: !!workspacesInfo,
-        error: workspacesError?.message,
-        errorCode: workspacesError?.code
-      });
-
-    } catch (error) {
-      console.error('Error checking database structure:', error);
+      const data = await response.json();
+      // Filter members for the specific workspace
+      const workspaceMembers = (data.members || []).filter((member: TeamMember) => member.workspace_id === workspaceId);
+      setTeamMembers(workspaceMembers);
+    } catch (err) {
+      console.error('Error loading team members:', err);
+      toast.error('Failed to load team members');
     }
-  };
+  }, [accessToken]);
 
-  // Load the user's workspaces using the API endpoint
-  const loadWorkspaces = async () => {
+  const loadData = useCallback(async () => {
+    if (!userId || !accessToken) return;
+    setIsLoading(true);
     try {
-      console.log('Loading workspaces for user:', session?.user?.id);
-      
-      // Use the original API endpoint that handles authentication properly
+      // Use API route instead of direct Supabase calls
       const response = await fetch('/api/workspace/leave', {
         method: 'GET',
         headers: {
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        });
+      });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Error from workspaces API:', errorData);
-        toast.error('Failed to load workspaces');
-        return;
+        throw new Error(`Failed to fetch workspaces: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('Workspaces API response:', data);
+      // Handle the API response format { success: true, workspaces: [...] }
+      const userWorkspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
+      setWorkspaces(userWorkspaces);
 
-      if (data.success && data.workspaces) {
-        setWorkspaces(data.workspaces);
+      let currentWorkspaceId = localStorage.getItem('activeWorkspaceId');
+      const activeWs = userWorkspaces.find((ws: Workspace) => ws.id === currentWorkspaceId) || userWorkspaces[0];
       
-      // Check for stored workspace preference in localStorage
-      let storedWorkspaceId: string | null = null;
-      if (typeof window !== 'undefined' && session?.user?.id) {
-        storedWorkspaceId = localStorage.getItem(`workspace_${session.user.id}`);
-        console.log(`[Workspace] Found stored workspace preference: ${storedWorkspaceId}`);
-        
-        // Verify the stored workspace is in the list of accessible workspaces
-          if (storedWorkspaceId && data.workspaces.some((w: any) => w.id === storedWorkspaceId)) {
-          console.log(`[Workspace] Using stored workspace preference: ${storedWorkspaceId}`);
-          setActiveWorkspace(storedWorkspaceId);
-          } else if (data.workspaces.length > 0 && !activeWorkspace) {
-          // Fall back to first workspace if no valid stored preference
-            console.log(`[Workspace] No valid stored preference, using first workspace: ${data.workspaces[0].id}`);
-            setActiveWorkspace(data.workspaces[0].id);
-          
-          // Store this preference for future use
-          if (session?.user?.id) {
-              localStorage.setItem(`workspace_${session.user.id}`, data.workspaces[0].id);
-          }
-        }
-        } else if (data.workspaces.length > 0 && !activeWorkspace) {
-        // Fall back to first workspace if localStorage not available
-          setActiveWorkspace(data.workspaces[0].id);
-        }
+      if (activeWs) {
+        setActiveWorkspace(activeWs);
+        // Load team members for the active workspace
+        await loadTeamMembers(activeWs.id);
       } else {
-        // No workspaces found - this is now expected for existing users who need to be invited
-        console.log('No workspaces found for user');
-        setWorkspaces([]);
         setActiveWorkspace(null);
+        setTeamMembers([]);
       }
-    } catch (error) {
-      console.error('Error in loadWorkspaces:', error);
-      toast.error('An unexpected error occurred while loading workspaces');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load team members for a specific workspace
-  const loadTeamMembers = async (workspaceId: string) => {
-    if (!session?.user?.id) return;
-    
-    try {
-      setLoading(true);
-      
-      // Use supabaseAdmin to bypass RLS issues
-      const { data, error } = await supabaseAdmin
-        .from('team_members')
-        .select('*')
-        .eq('workspace_id', workspaceId)
-        .not('user_id', 'is', null) // Exclude corrupted records
-        .order('created_at', { ascending: false });
-        
-      if (error) throw error;
-      
-      // Ensure each team member has properly initialized permissions
-      const membersWithDefaultPermissions = (data || []).map(member => ({
-        ...member,
-        permissions: {
-          view_projects: true,
-          edit_projects: false,
-          view_customers: true,
-          edit_customers: false,
-          view_invoices: false,
-          view_calendar: true,
-          view_analytics: false,
-          ...member.permissions
-        }
-      }));
-      
-      // Deduplicate team members by user_id
-      const uniqueMembers = membersWithDefaultPermissions.reduce((acc, member) => {
-        const existingIndex = acc.findIndex(m => m.user_id === member.user_id);
-        if (existingIndex === -1) {
-          acc.push(member);
-        } else {
-          // Keep the most recent one (they're ordered by created_at desc)
-          if (new Date(member.created_at) > new Date(acc[existingIndex].created_at)) {
-            acc[existingIndex] = member;
-          }
-        }
-        return acc;
-      }, [] as any[]);
-      
-      setTeamMembers(uniqueMembers);
-      
-      // Check if user is admin or workspace owner
-      const workspace = workspaces.find(w => w.id === workspaceId);
-      const isOwner = workspace?.owner_id === session.user.id;
-      const currentMember = uniqueMembers?.find((member: any) => member.user_id === session.user.id);
-      
-      console.log('Admin check:', {
-        isOwner,
-        currentMember,
-        isAdmin: isOwner || currentMember?.is_admin === true
-      });
-      
-      setIsAdmin(isOwner || currentMember?.is_admin === true);
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading team members:', error);
-      toast.error('Failed to load team members');
-      setLoading(false);
-    }
-  };
-
-  // Add this useEffect to handle workspace changes
-  useEffect(() => {
-    if (activeWorkspace) {
-      loadTeamMembers(activeWorkspace);
-    } else {
+    } catch (err) {
+      console.error('Error loading data:', err);
+      toast.error(err instanceof Error ? err.message : "Failed to load data.");
+      // Set empty arrays on error to prevent runtime errors
+      setWorkspaces([]);
       setTeamMembers([]);
-      setIsAdmin(false); // Reset admin status when no workspace is active
+    } finally {
+      setIsLoading(false);
     }
-  }, [activeWorkspace, session?.user?.id]);
+  }, [userId, accessToken, loadTeamMembers]);
 
-  // Handle changing the active workspace
-  const handleWorkspaceChange = (workspaceId: string) => {
-    setActiveWorkspace(workspaceId);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleWorkspaceChange = async (workspaceId: string) => {
+    const newActiveWorkspace = workspaces.find(ws => ws.id === workspaceId);
+    if (newActiveWorkspace) {
+      setIsLoadingMembers(true);
+      setActiveWorkspace(newActiveWorkspace);
+      localStorage.setItem('activeWorkspaceId', workspaceId);
+      try {
+        await loadTeamMembers(newActiveWorkspace.id);
+      } catch (err) {
+        toast.error("Failed to load team members for the selected workspace.");
+      } finally {
+        setIsLoadingMembers(false);
+      }
+    }
   };
-
-  // Handle creating a new workspace
+  
   const handleCreateWorkspace = async () => {
-    if (!session?.user?.id) {
-      toast.error('Please sign in to create a workspace');
-      return;
-    }
-    
-    if (!newWorkspaceName.trim()) {
-      toast.error('Please enter a workspace name');
-      return;
-    }
-    
+    if (!userId || !newWorkspaceName.trim() || !accessToken) return;
     try {
-      setWorkspaceLoading(true);
-      
-      // Create the workspace directly using Supabase
-      const { data: workspace, error: workspaceError } = await supabase
-        .from('workspaces')
-        .insert({
-          name: newWorkspaceName.trim(),
-          owner_id: session.user.id,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-        
-      if (workspaceError) {
-        console.error('Error creating workspace:', workspaceError);
-        throw workspaceError;
-      }
-      
-      // Add the current user as an admin in the team_members table
-      const { error: memberError } = await supabase
-        .from('team_members')
-        .insert({
-          user_id: session.user.id,
-          name: session.user.name || 'Admin User',
-          email: session.user.email || '',
-          workspace_id: workspace.id,
-          is_admin: true,
-          created_at: new Date().toISOString()
-        });
-        
-      if (memberError) {
-        console.error('Error adding team member:', memberError);
-        throw memberError;
-      }
-      
-      toast.success('Workspace created successfully');
-      setIsWorkspaceDialogOpen(false);
-      setNewWorkspaceName('');
-      
-      // Reload workspaces and set the new one as active
-      await loadWorkspaces();
-      setActiveWorkspace(workspace.id);
-      loadTeamMembers(workspace.id);
-      
-      setWorkspaceLoading(false);
-    } catch (error) {
-      console.error('Error creating workspace:', error);
-      toast.error('Failed to create workspace: ' + (error instanceof Error ? error.message : 'Unknown error'));
-      setWorkspaceLoading(false);
-    }
-  };
-
-  // Handle sending an invitation
-  const handleSendInvitation = async () => {
-    if (!session?.user?.id) {
-      toast.error('Please sign in to send invitations');
-      return;
-    }
-    
-    if (!activeWorkspace) {
-      toast.error('Please select a workspace first');
-      return;
-    }
-    
-    if (!inviteEmail) {
-      toast.error('Please enter an email address');
-      return;
-    }
-    
-    try {
-      setInviteLoading(true);
-      
-      const workspace = workspaces.find(w => w.id === activeWorkspace);
-      if (!workspace) {
-        toast.error('Invalid workspace selected');
-        setInviteLoading(false);
-        return;
-      }
-      
-      // Send the invitation via API
-      const response = await fetch('/api/invite', {
+      const response = await fetch('/api/workspaces', {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: inviteEmail,
-          name: inviteName,
-          workspaceId: activeWorkspace,
-          workspaceName: workspace.name,
-          role: selectedRole,
-          permissions: customPermissions
-        }),
+          name: newWorkspaceName.trim(),
+          owner_id: userId
+        })
       });
-      
-      const data = await response.json();
-      
+
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to send invitation');
+        throw new Error(`Failed to create workspace: ${response.status}`);
       }
-      
-      toast.success('Invitation sent successfully');
-      setIsInviteDialogOpen(false);
-      setInviteEmail('');
-      setInviteName('');
-      setSelectedRole('reader');
-      setCustomPermissions(ROLE_DEFINITIONS.reader.permissions);
-      
-      setInviteLoading(false);
-    } catch (error) {
-      console.error('Error sending invitation:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to send invitation');
-      setInviteLoading(false);
+
+      toast.success("Workspace created!");
+      setNewWorkspaceName('');
+      setIsCreateWorkspaceDialogOpen(false);
+      loadData();
+    } catch (err) {
+      console.error('Error creating workspace:', err);
+      toast.error(err instanceof Error ? err.message : "Failed to create workspace.");
     }
   };
 
-  // Handle removing a team member
-  const handleRemoveMember = async (memberId: string) => {
-    if (!session?.user?.id || !isAdmin) {
-      toast.error('You do not have permission to remove team members');
-      return;
-    }
-    
+  const handleSendInvitation = async () => {
+    if (!activeWorkspace || !userId || !inviteEmail || !accessToken) return;
     try {
-      const { error } = await supabase
-        .from('team_members')
-        .delete()
-        .eq('id', memberId);
-        
-      if (error) throw error;
-      
-      toast.success('Team member removed successfully');
-      
-      // Reload team members
-      if (activeWorkspace) {
-        loadTeamMembers(activeWorkspace);
-      }
-    } catch (error) {
-      console.error('Error removing team member:', error);
-      toast.error('Failed to remove team member');
-    }
-  };
-
-  // Handle toggling admin status
-  const handleToggleAdmin = async (memberId: string, currentStatus: boolean) => {
-    if (!session?.user?.id || !isAdmin) {
-      toast.error('You do not have permission to change admin status');
-      return;
-    }
-    
-    try {
-      const { error } = await supabase
-        .from('team_members')
-        .update({ is_admin: !currentStatus })
-        .eq('id', memberId);
-        
-      if (error) throw error;
-      
-      toast.success(`Admin status ${!currentStatus ? 'granted' : 'revoked'} successfully`);
-      
-      // Reload team members
-      if (activeWorkspace) {
-        loadTeamMembers(activeWorkspace);
-      }
-    } catch (error) {
-      console.error('Error toggling admin status:', error);
-      toast.error('Failed to update admin status');
-    }
-  };
-
-  // Update handleUpdatePermissions function
-  const handleUpdatePermissions = async (memberId: string, permissions: any) => {
-    if (!session?.user?.id) {
-      toast.error('Please sign in to update permissions');
-      return;
-    }
-
-    if (!isAdmin) {
-      toast.error('You do not have permission to update permissions');
-      return;
-    }
-
-    // Find the member being updated
-    const member = teamMembers.find(m => m.id === memberId);
-    if (!member) {
-      toast.error('Member not found');
-      return;
-    }
-
-    // Don't allow updating admin permissions
-    if (member.is_admin) {
-      toast.error('Cannot modify admin permissions');
-      return;
-    }
-
-    try {
-      console.log('Updating permissions:', {
-        memberId,
-        permissions,
-        isAdmin
+      // Create invitation via API
+      const inviteResponse = await fetch('/api/invite', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspace_id: activeWorkspace.id,
+          email: inviteEmail,
+          role: inviteRole,
+          invited_by: userId,
+        })
       });
 
-      const { error } = await supabase
-        .from('team_members')
-        .update({ permissions })
-        .eq('id', memberId);
-
-      if (error) throw error;
-
-      toast.success('Permissions updated successfully');
-      
-      // Reload team members to refresh the UI
-      if (activeWorkspace) {
-        await loadTeamMembers(activeWorkspace);
+      if (!inviteResponse.ok) {
+        throw new Error(`Failed to create invitation: ${inviteResponse.status}`);
       }
+      
+      // Send invitation email
+      await fetch('/api/send-invitation', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ email: inviteEmail, workspaceName: activeWorkspace.name }),
+      });
+
+      toast.success(`Invitation sent to ${inviteEmail}`);
+      setInviteEmail('');
+      setIsInviteDialogOpen(false);
+    } catch (err) {
+      console.error('Error sending invitation:', err);
+      toast.error(err instanceof Error ? err.message : "Failed to send invitation.");
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!activeWorkspace || !accessToken) return;
+    try {
+      const response = await fetch(`/api/team-members/${memberId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ workspace_id: activeWorkspace.id })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to remove member: ${response.status}`);
+      }
+
+      toast.success("Team member removed.");
+      await loadTeamMembers(activeWorkspace.id);
+    } catch (err) {
+      console.error('Error removing member:', err);
+      toast.error(err instanceof Error ? err.message : "Failed to remove member.");
+    }
+  };
+  
+  const handleToggleAdmin = async (member: TeamMember) => {
+    if (!activeWorkspace || !accessToken) return;
+    const newRole = member.role === 'admin' ? 'editor' : 'admin';
+    try {
+      const response = await fetch(`/api/team-members/${member.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspace_id: activeWorkspace.id,
+          role: newRole,
+          is_admin: newRole === 'admin',
+          permissions: ROLE_DEFINITIONS[newRole].permissions
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update member role: ${response.status}`);
+      }
+
+      toast.success(`Member role updated to ${newRole}.`);
+      await loadTeamMembers(activeWorkspace.id);
+    } catch (err) {
+      console.error('Error updating member role:', err);
+      toast.error(err instanceof Error ? err.message : "Failed to update member role.");
+    }
+  };
+  
+  const handleUpdatePermissions = async () => {
+    if (!editingMember || !activeWorkspace || !accessToken) return;
+    try {
+      const response = await fetch(`/api/team-members/${editingMember.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspace_id: activeWorkspace.id,
+          permissions: customPermissions
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update permissions: ${response.status}`);
+      }
+
+      toast.success("Permissions updated successfully.");
+      setIsEditMemberDialogOpen(false);
+      setEditingMember(null);
+      await loadTeamMembers(activeWorkspace.id);
     } catch (error) {
       console.error('Error updating permissions:', error);
-      toast.error('Failed to update permissions');
+      toast.error("Failed to update permissions.");
     }
   };
 
-  const getActiveWorkspaceName = () => {
-    const workspace = workspaces.find(w => w.id === activeWorkspace);
-    return workspace?.name || 'Select a Workspace';
+  const handleEditMember = (member: TeamMember) => {
+    setEditingMember(member);
+    
+    // Use member's custom permissions or fall back to role-based permissions
+    let permissions: Record<PermissionKey, boolean> = member.permissions && Object.keys(member.permissions).length > 0 
+      ? member.permissions 
+      : {} as Record<PermissionKey, boolean>;
+    
+    // If no custom permissions, use role-based defaults
+    if (Object.keys(permissions).length === 0) {
+      // Map database roles to our role definitions
+      const roleMap: Record<string, Role> = {
+        'admin': 'admin',
+        'editor': 'editor', 
+        'reader': 'reader',
+        'member': 'editor', // Default members to editor role
+      };
+      
+      const mappedRole = roleMap[member.role] || 'reader';
+      permissions = ROLE_DEFINITIONS[mappedRole].permissions;
+    }
+    
+    setCustomPermissions(permissions);
+    setIsEditMemberDialogOpen(true);
   };
 
-  // Check if the current user is the owner of the active workspace
   const isWorkspaceOwner = () => {
-    const workspace = workspaces.find(w => w.id === activeWorkspace);
-    return workspace?.owner_id === session?.user?.id;
+    if (!user || !activeWorkspace) return false;
+    return activeWorkspace.owner_id === user.id;
   };
+  
+  const getActiveWorkspaceName = () => activeWorkspace?.name || 'Select a Workspace';
 
-  // Check if the active workspace exists
-  const hasActiveWorkspace = () => {
-    return !!activeWorkspace && workspaces.some(w => w.id === activeWorkspace);
-  };
-
-  // Check if current user can leave the workspace (not the only admin)
-  const canLeaveWorkspace = () => {
-    if (!activeWorkspace || isWorkspaceOwner()) return false;
+  const getPermissionDescription = (permission: PermissionKey): string => {
+    const descriptions: Record<PermissionKey, string> = {
+      // Dashboard
+      view_dashboard: 'Access to main dashboard',
+      view_dashboard_analytics: 'View analytics on dashboard',
+      
+      // Projects & Tasks
+      view_projects: 'View project listings',
+      edit_projects: 'Create and modify projects',
+      view_tasks: 'View task listings',
+      edit_tasks: 'Create and modify tasks',
+      
+      // CRM
+      view_customers: 'View customer information',
+      edit_customers: 'Create and modify customers',
+      view_leads: 'View lead information',
+      edit_leads: 'Create and modify leads',
+      view_sales: 'View sales information',
+      edit_sales: 'Create and modify sales',
+      view_gmail_hub: 'Access Gmail integration',
+      edit_gmail_hub: 'Configure Gmail settings',
+      
+      // Finance
+      view_invoices: 'View invoice information',
+      edit_invoices: 'Create and modify invoices',
+      view_recurring_invoices: 'View recurring invoices',
+      edit_recurring_invoices: 'Create and modify recurring invoices',
+      view_invoice_reminders: 'View invoice reminders',
+      edit_invoice_reminders: 'Create and modify invoice reminders',
+      
+      // Marketing
+      view_marketing: 'Access marketing tools',
+      edit_marketing: 'Configure marketing settings',
+      view_email_marketing: 'View email campaigns',
+      edit_email_marketing: 'Create and modify email campaigns',
+      view_social_media: 'View social media tools',
+      edit_social_media: 'Manage social media posts',
+      view_analytics: 'View analytics reports',
+      view_search_console: 'View search console data',
+      edit_search_console: 'Configure search console',
+      view_domains: 'View domain information',
+      edit_domains: 'Manage domains',
+      view_content_generator: 'Access content generator',
+      edit_content_generator: 'Use content generation tools',
+      
+      // Calendar & Communication
+      view_calendar: 'View calendar events',
+      edit_calendar: 'Create and modify calendar events',
+      view_notifications: 'View notifications',
+      edit_notifications: 'Configure notification settings',
+      view_chat: 'Access chat features',
+      edit_chat: 'Send messages and configure chat',
+      use_chatbot: 'Use AI chatbot features',
+      
+      // Automation
+      view_automation: 'View automation workflows',
+      edit_automation: 'Create and modify automations',
+      view_scheduled_tasks: 'View scheduled tasks',
+      edit_scheduled_tasks: 'Create and modify scheduled tasks',
+      
+      // Profile & Settings
+      view_profile: 'View user profile',
+      edit_profile: 'Modify user profile',
+      view_settings: 'View system settings',
+      edit_settings: 'Modify system settings',
+      
+      // Administration
+      admin: 'Full administrative access',
+      canInviteUsers: 'Invite new team members',
+      canManageWorkspace: 'Manage workspace settings'
+    };
     
-    // Count admins in the workspace
-    const adminCount = teamMembers.filter(member => member.is_admin).length;
-    const currentUserIsAdmin = teamMembers.find(member => member.user_id === session?.user?.id)?.is_admin;
-    
-    // Can leave if not admin, or if admin but there are other admins
-    return !currentUserIsAdmin || adminCount > 1;
+    return descriptions[permission] || 'Permission description not available';
   };
 
-  // Check if current user can delete the workspace (is owner)
-  const canDeleteWorkspace = () => {
-    const workspace = workspaces.find(w => w.id === activeWorkspace);
-    return workspace?.owner_id === session?.user?.id && workspace?.name !== 'solvify';
-  };
-
-  // Handle leaving workspace
   const handleLeaveWorkspace = async () => {
-    if (!activeWorkspace) return;
-    
-    setWorkspaceActionLoading(true);
+    if (!activeWorkspace || !user || !session?.access_token) {
+      toast.error("Unable to leave workspace - missing required data");
+      return;
+    }
+
     try {
+      console.log('[Team Page] Leaving workspace:', activeWorkspace.id);
+      
       const response = await fetch('/api/workspace/leave', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({ workspace_id: activeWorkspace }),
+        body: JSON.stringify({
+          workspace_id: activeWorkspace.id
+        })
       });
 
       const result = await response.json();
-
+      
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to leave workspace');
+        // Handle specific error cases
+        if (result.isLastAdmin) {
+          toast.error(result.error || "You are the last admin. Please transfer admin role first or delete the workspace.");
+        } else {
+          toast.error(result.error || "Failed to leave workspace");
+        }
+        return;
       }
 
-      toast.success('Successfully left workspace');
+      toast.success(result.message || "Successfully left workspace");
+      setIsLeaveWorkspaceDialogOpen(false);
       
-      // Remove the workspace from the list and reset active workspace
-      setWorkspaces(prev => prev.filter(w => w.id !== activeWorkspace));
+      // Refresh workspaces and reset active workspace
+      await loadData();
       setActiveWorkspace(null);
       setTeamMembers([]);
       
-      // Clear localStorage
-      if (typeof window !== 'undefined' && session?.user?.id) {
-        localStorage.removeItem(`workspace_${session.user.id}`);
-      }
-      
-      setIsLeaveWorkspaceDialogOpen(false);
     } catch (error) {
       console.error('Error leaving workspace:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to leave workspace');
-    } finally {
-      setWorkspaceActionLoading(false);
-    }
-  };
-
-  // Handle deleting workspace
-  const handleDeleteWorkspace = async () => {
-    if (!activeWorkspace) return;
-    
-    setWorkspaceActionLoading(true);
-    try {
-      // First delete all team members
-      const { error: memberError } = await supabase
-        .from('team_members')
-        .delete()
-        .eq('workspace_id', activeWorkspace);
-        
-      if (memberError) {
-        throw new Error(`Failed to remove team members: ${memberError.message}`);
-      }
-      
-      // Then delete the workspace
-      const { error: deleteError } = await supabase
-        .from('workspaces')
-        .delete()
-        .eq('id', activeWorkspace);
-        
-      if (deleteError) {
-        throw new Error(`Failed to delete workspace: ${deleteError.message}`);
-      }
-      
-      toast.success('Workspace deleted successfully');
-      
-      // Remove the workspace from the list and reset active workspace
-      setWorkspaces(prev => prev.filter(w => w.id !== activeWorkspace));
-      setActiveWorkspace(null);
-      setTeamMembers([]);
-      
-      // Clear localStorage
-      if (typeof window !== 'undefined' && session?.user?.id) {
-        localStorage.removeItem(`workspace_${session.user.id}`);
-      }
-      
-      setIsDeleteWorkspaceDialogOpen(false);
-    } catch (error) {
-      console.error('Error deleting workspace:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to delete workspace');
-    } finally {
-      setWorkspaceActionLoading(false);
+      toast.error("Failed to leave workspace");
     }
   };
 
   return (
     <SidebarDemo>
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-foreground">Team Management</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage your workspaces and team members
-            </p>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center my-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white"></div>
-          </div>
+      <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14">
+        {isLoading ? (
+          <div className="p-6">Loading...</div>
         ) : (
-          <>
-            {workspaces.length === 0 ? (
-              <Card className="bg-background border-border p-8 flex flex-col items-center justify-center">
-                <Building className="h-12 w-12 text-muted-foreground mb-4" />
-                <h2 className="text-xl font-medium text-foreground mb-2">No Workspaces Yet</h2>
-                <p className="text-muted-foreground text-center mb-6">
-                  Create your first workspace to start collaborating with your team
-                </p>
-                <Button 
-                  onClick={() => setIsWorkspaceDialogOpen(true)}
-                  className="bg-blue-600 hover:bg-blue-500"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Workspace
-                </Button>
-              </Card>
-            ) : (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <div className="relative">
+          <div className="p-4 sm:p-6">
+            <h1 className="text-3xl font-bold mb-4">Team &amp; Workspaces</h1>
+            <div className="flex justify-between items-center mb-4">
                     <select
-                      value={activeWorkspace || ''}
+                value={activeWorkspace?.id || ''}
                       onChange={(e) => handleWorkspaceChange(e.target.value)}
-                      className="appearance-none bg-background border border-border dark:border-border rounded-md px-4 py-2 pr-8 text-foreground focus:outline-none focus:ring-2 focus:ring-neutral-600 min-w-64"
-                    >
-                      <option value="" disabled>Select Workspace</option>
-                      {workspaces.map((workspace) => (
-                        <option key={workspace.id} value={workspace.id}>
-                          {workspace.name}
-                        </option>
+                className="p-2 border rounded bg-background text-foreground"
+              >
+                <option value="" disabled>Select a workspace</option>
+                {workspaces.map((ws) => (
+                  <option key={ws.id} value={ws.id}>{ws.name}</option>
                       ))}
                     </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                      <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  <div className="flex space-x-3">
-                    <Button
-                      onClick={() => setIsWorkspaceDialogOpen(true)}
-                      variant="outline"
-                      className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      New Workspace
+              <Button onClick={() => setIsCreateWorkspaceDialogOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Workspace
                     </Button>
-                    
-                    {hasActiveWorkspace() && (
-                      <Button
-                        onClick={() => setIsInviteDialogOpen(true)}
-                        className="bg-blue-600 hover:bg-blue-500"
-                        disabled={!isAdmin && !isWorkspaceOwner()}
-                      >
-                        <UserPlus className="h-4 w-4 mr-2" />
-                        Invite Member
-                      </Button>
-                    )}
-
-                    {/* Workspace Management Buttons */}
-                    {hasActiveWorkspace() && canLeaveWorkspace() && (
-                      <Button
-                        onClick={() => setIsLeaveWorkspaceDialogOpen(true)}
-                        variant="outline"
-                        className="bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-400"
-                      >
-                        <LogOut className="h-4 w-4 mr-2" />
-                        Leave Workspace
-                      </Button>
-                    )}
-
-                    {hasActiveWorkspace() && canDeleteWorkspace() && (
-                      <Button
-                        onClick={() => setIsDeleteWorkspaceDialogOpen(true)}
-                        variant="outline"
-                        className="bg-red-50 border-red-200 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Workspace
-                      </Button>
-                    )}
-                  </div>
                 </div>
 
-                {hasActiveWorkspace() && (
-                  <Tabs defaultValue="members" value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="bg-background">
-                      <TabsTrigger value="members" className="data-[state=active]:bg-gray-200 dark:bg-muted">
-                        <Users className="h-4 w-4 mr-2" />
-                        Team Members
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList>
+                <TabsTrigger value="members">
+                  <Users className="w-4 h-4 mr-2" />
+                  Members
                       </TabsTrigger>
-                      <TabsTrigger value="permissions" className="data-[state=active]:bg-gray-200 dark:bg-muted">
-                        <Shield className="h-4 w-4 mr-2" />
-                        Permissions
+                <TabsTrigger value="workspaces">
+                  <Building className="w-4 h-4 mr-2" />
+                  Workspaces
                       </TabsTrigger>
                     </TabsList>
-                    
-                    <TabsContent value="members" className="mt-4">
-                      <Card className="bg-background border-border text-foreground">
-                        <div className="p-6">
-                          <div className="flex items-center gap-2 mb-4">
-                            <Users className="h-5 w-5 text-muted-foreground" />
-                            <h2 className="text-lg font-medium text-foreground">Team Members</h2>
-                          </div>
-                          
-                          {teamMembers.length === 0 ? (
-                            <div className="py-8 text-center">
-                              <p className="text-muted-foreground">No team members yet</p>
-                              <Button
-                                onClick={() => setIsInviteDialogOpen(true)}
-                                className="mt-4 bg-blue-600 hover:bg-blue-500"
-                                disabled={!isAdmin && !isWorkspaceOwner()}
-                              >
-                                <UserPlus className="h-4 w-4 mr-2" />
-                                Invite Members
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="relative">
-                              <div className="flex items-center py-4">
-                                <Input
-                                  placeholder="Filter members..."
-                                  className="max-w-sm bg-background border-border dark:border-border text-foreground"
-                                />
-                              </div>
-                              <div className="rounded-md border border-border">
+              <TabsContent value="members">
+                <Card>
+                  <div className="p-4 flex justify-between items-center">
+                    <Button onClick={() => setIsInviteDialogOpen(true)}>
+                        <MailPlus className="w-4 h-4 mr-2" />
+                        Invite Member
+                    </Button>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setIsLeaveWorkspaceDialogOpen(true)} 
+                        disabled={isWorkspaceOwner()}
+                      >
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Leave Workspace
+                      </Button>
+                    </div>
+                  </div>
                                 <Table>
                                   <TableHeader>
-                                    <TableRow className="hover:bg-background/50 border-border">
-                                      <TableHead className="text-muted-foreground">Status</TableHead>
-                                      <TableHead className="text-muted-foreground">Email</TableHead>
-                                      <TableHead className="text-muted-foreground text-right">Amount</TableHead>
-                                      <TableHead className="text-muted-foreground"></TableHead>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Actions</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {teamMembers.map((member) => (
-                                      <TableRow key={member.id} className="hover:bg-background/50 border-border">
-                                        <TableCell className="font-medium text-foreground">
-                                          {member.is_admin ? (
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                              Admin
-                                            </span>
-                                          ) : (
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-800">
-                                              Member
-                                            </span>
-                                          )}
-                                        </TableCell>
-                                        <TableCell className="text-foreground dark:text-neutral-300">{member.email}</TableCell>
-                                        <TableCell className="text-right text-foreground dark:text-neutral-300">
-                                          {/* Add any relevant member data here */}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                          {(isAdmin || isWorkspaceOwner()) && member.user_id !== session?.user?.id && (
-                                            <div className="flex items-center justify-end gap-2">
-                                              <Button
-                                                onClick={() => handleToggleAdmin(member.id, member.is_admin)}
-                                                variant="outline"
-                                                size="sm"
-                                                className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
-                                              >
-                                                {member.is_admin ? (
-                                                  <>
-                                                    <Shield className="h-4 w-4 mr-1" />
-                                                    Remove Admin
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <ShieldCheck className="h-4 w-4 mr-1" />
-                                                    Make Admin
-                                                  </>
-                                                )}
-                                              </Button>
-                                              
-                                              <Button
-                                                onClick={() => handleRemoveMember(member.id)}
-                                                variant="outline"
-                                                size="sm"
-                                                className="bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border-red-500/20"
-                                              >
-                                                <Trash2 className="h-4 w-4" />
-                                              </Button>
-                                            </div>
-                                          )}
+                      {isLoadingMembers ? (
+                        <TableRow><TableCell colSpan={4}>Loading members...</TableCell></TableRow>
+                      ) : (
+                        teamMembers.map((member) => (
+                          <TableRow key={member.id}>
+                            <TableCell>{member.name}</TableCell>
+                            <TableCell>{member.email}</TableCell>
+                            <TableCell>{member.role}</TableCell>
+                            <TableCell>
+                                <Button variant="ghost" size="sm" onClick={() => handleEditMember(member)}><Edit className="w-4 h-4" /></Button>
+                                <Button variant="ghost" size="sm" onClick={() => handleRemoveMember(member.id)} disabled={member.user_id === user?.id}><Trash2 className="w-4 h-4" /></Button>
                                         </TableCell>
                                       </TableRow>
-                                    ))}
+                        ))
+                      )}
                                   </TableBody>
                                 </Table>
-                              </div>
-                              <div className="flex items-center justify-between py-4">
-                                <p className="text-sm text-muted-foreground">
-                                  {teamMembers.length} member{teamMembers.length === 1 ? '' : 's'}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </div>
                       </Card>
                     </TabsContent>
-                    
-                    <TabsContent value="permissions" className="mt-4">
-                      <Card className="bg-background border-border text-foreground">
-                        <div className="p-6">
-                          <div className="flex items-center gap-2 mb-4">
-                            <Shield className="h-5 w-5 text-muted-foreground" />
-                            <h2 className="text-lg font-medium text-foreground">Team Permissions</h2>
-                          </div>
+              <TabsContent value="workspaces">
+                  <Card className="p-4">
+                      <h2 className="text-xl font-semibold">{getActiveWorkspaceName()}</h2>
+                      <div className="mt-4 flex gap-2">
+                          {/* Leave Workspace - available for all members but disabled for owners */}
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setIsLeaveWorkspaceDialogOpen(true)} 
+                            disabled={isWorkspaceOwner()}
+                          >
+                              <LogOut className="w-4 h-4 mr-2" />
+                              Leave Workspace
+                          </Button>
                           
-                          <p className="text-muted-foreground mb-6">
-                            Configure permissions for each team member
-                          </p>
-                          
-                          <div className="space-y-6">
-                            {teamMembers.map((member) => {
-                              const effectiveIsAdmin = member.is_admin || (workspaces.find(w => w.id === activeWorkspace)?.owner_id === member.user_id);
-                              return (
-                              <div key={member.id} className="p-4 rounded-lg bg-background/50">
-                                <div className="flex items-center justify-between mb-4">
-                                  <div>
-                                    <h3 className="text-foreground font-medium">{member.name || 'Unknown User'}</h3>
-                                    <p className="text-sm text-muted-foreground">{member.email || 'No email'}</p>
-                                  </div>
-                                    <div className="flex items-center space-x-2">
-                                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${effectiveIsAdmin ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                                        {effectiveIsAdmin ? 'Admin' : 'Member'}
-                                    </span>
-                                      {/* Optional: Add admin toggle switch here if needed, similar to previous logic */} 
-                                    </div>
-                                </div>
-                                
-                                  {/* Use permissionGroups for rendering */}
-                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
-                                    {permissionGroups.map((group) => (
-                                      <div key={group.title} className="space-y-3">
-                                        <h5 className="text-sm font-semibold text-muted-foreground mb-2">{group.title}</h5>
-                                        {group.permissions.map((perm) => (
-                                          <div key={perm.key} className="flex items-center space-x-2">
-                                        <Checkbox
-                                              id={`${member.id}-${perm.key}`}
-                                              checked={effectiveIsAdmin || !!member.permissions?.[perm.key as PermissionKey]}
-                                          onCheckedChange={async (checked) => {
-                                                if (!isAdmin && !isWorkspaceOwner()) { // Check both admin prop and owner status
-                                                  toast.error('You must be an admin or owner to update permissions');
-                                              return;
-                                            }
-                                            
-                                            toast.promise(
-                                              (async () => {
-                                                const updatedPermissions = {
-                                                  ...member.permissions,
-                                                      [perm.key]: checked,
-                                                    };
-                                                    await handleUpdatePermissions(member.id, updatedPermissions);
-                                                    return 'Permissions updated'; // Return value needed for promise
-                                              })(),
-                                              {
-                                                loading: 'Updating permission...',
-                                                success: 'Permission updated successfully',
-                                                error: 'Failed to update permission'
-                                              }
-                                            );
-                                          }}
-                                              disabled={effectiveIsAdmin} // Disable for admins/owners
-                                              aria-label={`Toggle ${perm.label} for ${member.email}`}
-                                        />
-                                        <label 
-                                              htmlFor={`${member.id}-${perm.key}`}
-                                              className="text-sm font-medium leading-none text-foreground dark:text-neutral-300 peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                        >
-                                              {perm.label}
-                                        </label>
-                                      </div>
-                                        ))}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              );
-                            })}
-                          </div>
-                        </div>
+                          {/* Delete Workspace - only for owners */}
+                          {isWorkspaceOwner() && (
+                              <Button variant="destructive" onClick={() => setIsDeleteWorkspaceDialogOpen(true)}>
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete Workspace
+                              </Button>
+                          )}
+                      </div>
                       </Card>
                     </TabsContent>
                   </Tabs>
-                )}
               </div>
-            )}
-          </>
         )}
-      </div>
+        </div>
 
-      {/* Invite Member Dialog */}
-      <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
-        <DialogContent className="bg-background border-border text-foreground">
+      {/* Dialogs */}
+      <Dialog open={isCreateWorkspaceDialogOpen} onOpenChange={setIsCreateWorkspaceDialogOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite Team Member</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Send an invitation to join {getActiveWorkspaceName()}
+            <DialogTitle>Create New Workspace</DialogTitle>
+                <DialogDescription>
+                    Enter a name for your new workspace.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Email Address</label>
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="colleague@example.com"
-                className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+            <Input
+                placeholder="Workspace Name"
+                value={newWorkspaceName}
+                onChange={(e) => setNewWorkspaceName(e.target.value)}
               />
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Name (Optional)</label>
-              <input
-                type="text"
-                value={inviteName}
-                onChange={(e) => setInviteName(e.target.value)}
-                placeholder="John Doe"
-                className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
-              />
-            </div>
-            
-            <div className="space-y-4">
-              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Role</label>
-              <div className="grid grid-cols-3 gap-4">
-                {(Object.entries(ROLE_DEFINITIONS) as [Role, RoleDefinition][]).map(([role, definition]) => (
-                  <div
-                    key={role}
-                    className={`p-4 rounded-lg border cursor-pointer transition-colors ${
-                      selectedRole === role
-                        ? 'bg-blue-500/10 border-blue-500/50'
-                        : 'bg-background border-border hover:border-gray-400'
-                    }`}
-                    onClick={() => {
-                      setSelectedRole(role);
-                      setCustomPermissions(definition.permissions);
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${
-                        selectedRole === role ? 'bg-blue-500' : 'bg-gray-300 dark:bg-muted-foreground'
-                      }`} />
-                      <h3 className="font-medium text-foreground">{definition.label}</h3>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">{definition.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3 border border-border rounded-md p-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-800 dark:text-foreground">Page Access</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => setCustomPermissions(ROLE_DEFINITIONS[selectedRole].permissions)}
-                >
-                  Reset to {ROLE_DEFINITIONS[selectedRole].label} Defaults
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2 p-3 rounded-md bg-background/50">
-                  <h4 className="text-sm font-medium text-foreground mb-3">Projects</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="view_projects"
-                        checked={customPermissions.view_projects}
-                        onCheckedChange={(checked) => {
-                          setCustomPermissions(prev => ({
-                            ...prev,
-                            view_projects: checked === true
-                          }));
-                        }}
-                      />
-                      <label htmlFor="view_projects" className="text-sm text-foreground dark:text-neutral-300">View Projects</label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="edit_projects"
-                        checked={customPermissions.edit_projects}
-                        onCheckedChange={(checked) => {
-                          setCustomPermissions(prev => ({
-                            ...prev,
-                            edit_projects: checked === true
-                          }));
-                        }}
-                        disabled={!customPermissions.view_projects}
-                      />
-                      <label htmlFor="edit_projects" className="text-sm text-foreground dark:text-neutral-300">Edit Projects</label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-span-2 p-3 rounded-md bg-background/50">
-                  <h4 className="text-sm font-medium text-foreground mb-3">Customers</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="view_customers"
-                        checked={customPermissions.view_customers}
-                        onCheckedChange={(checked) => {
-                          setCustomPermissions(prev => ({
-                            ...prev,
-                            view_customers: checked === true
-                          }));
-                        }}
-                      />
-                      <label htmlFor="view_customers" className="text-sm text-foreground dark:text-neutral-300">View Customers</label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="edit_customers"
-                        checked={customPermissions.edit_customers}
-                        onCheckedChange={(checked) => {
-                          setCustomPermissions(prev => ({
-                            ...prev,
-                            edit_customers: checked === true
-                          }));
-                        }}
-                        disabled={!customPermissions.view_customers}
-                      />
-                      <label htmlFor="edit_customers" className="text-sm text-foreground dark:text-neutral-300">Edit Customers</label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-md bg-background/50">
-                  <h4 className="text-sm font-medium text-foreground mb-3">Calendar</h4>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="view_calendar"
-                      checked={customPermissions.view_calendar}
-                      onCheckedChange={(checked) => {
-                        setCustomPermissions(prev => ({
-                          ...prev,
-                          view_calendar: checked === true
-                        }));
-                      }}
-                    />
-                    <label htmlFor="view_calendar" className="text-sm text-foreground dark:text-neutral-300">View Calendar</label>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-md bg-background/50">
-                  <h4 className="text-sm font-medium text-foreground mb-3">Analytics</h4>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="view_analytics"
-                      checked={customPermissions.view_analytics}
-                      onCheckedChange={(checked) => {
-                        setCustomPermissions(prev => ({
-                          ...prev,
-                          view_analytics: checked === true
-                        }));
-                      }}
-                    />
-                    <label htmlFor="view_analytics" className="text-sm text-foreground dark:text-neutral-300">View Analytics</label>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-md bg-background/50">
-                  <h4 className="text-sm font-medium text-foreground mb-3">Invoices</h4>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="view_invoices"
-                      checked={customPermissions.view_invoices}
-                      onCheckedChange={(checked) => {
-                        setCustomPermissions(prev => ({
-                          ...prev,
-                          view_invoices: checked === true
-                        }));
-                      }}
-                    />
-                    <label htmlFor="view_invoices" className="text-sm text-foreground dark:text-neutral-300">View Invoices</label>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-md bg-background/50">
-                  <h4 className="text-sm font-medium text-foreground mb-3">Domains</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="view_domains"
-                        checked={customPermissions.view_domains}
-                        onCheckedChange={(checked) => {
-                          setCustomPermissions(prev => ({
-                            ...prev,
-                            view_domains: checked === true
-                          }));
-                        }}
-                      />
-                      <label htmlFor="view_domains" className="text-sm text-foreground dark:text-neutral-300">View Domains</label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="edit_domains"
-                        checked={customPermissions.edit_domains}
-                        onCheckedChange={(checked) => {
-                          setCustomPermissions(prev => ({
-                            ...prev,
-                            edit_domains: checked === true
-                          }));
-                        }}
-                        disabled={!customPermissions.view_domains}
-                      />
-                      <label htmlFor="edit_domains" className="text-sm text-foreground dark:text-neutral-300">Edit Domains</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsInviteDialogOpen(false)}
-              className="bg-background border-border text-foreground hover:bg-gray-200 dark:bg-muted"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSendInvitation}
-              className="bg-blue-600 hover:bg-blue-500"
-              disabled={inviteLoading || !inviteEmail}
-            >
-              {inviteLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white" />
-                  Sending...
-                </div>
-              ) : (
-                <>
-                  <MailPlus className="h-4 w-4 mr-2" />
-                  Send Invitation
-                </>
-              )}
-            </Button>
+                <Button variant="ghost" onClick={() => setIsCreateWorkspaceDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleCreateWorkspace}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Create Workspace Dialog */}
-      <Dialog open={isWorkspaceDialogOpen} onOpenChange={setIsWorkspaceDialogOpen}>
-        <DialogContent className="bg-background border-border text-foreground">
+      <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
+          <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create New Workspace</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Create a new workspace to collaborate with your team
+                  <DialogTitle>Invite a Team Member</DialogTitle>
+                  <DialogDescription>
+                      Enter the email and select a role for the new member.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-800 dark:text-foreground">Workspace Name</label>
-              <input
-                type="text"
-                value={newWorkspaceName}
-                onChange={(e) => setNewWorkspaceName(e.target.value)}
-                placeholder="My Team"
-                className="w-full px-3 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+              <Input
+                  placeholder="member@example.com"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
               />
-            </div>
-          </div>
-          
+              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)} className="p-2 border rounded w-full bg-background text-foreground">
+                  {Object.keys(ROLE_DEFINITIONS).map(role => (
+                      <option key={role} value={role}>{ROLE_DEFINITIONS[role as Role].label}</option>
+                  ))}
+              </select>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsWorkspaceDialogOpen(false)}
-              className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateWorkspace}
-              className="bg-blue-600 hover:bg-blue-500"
-              disabled={workspaceLoading || !newWorkspaceName}
-            >
-              {workspaceLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white" />
-                  Creating...
-                </div>
-              ) : (
-                <>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Workspace
-                </>
-              )}
-            </Button>
+                  <Button variant="ghost" onClick={() => setIsInviteDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={handleSendInvitation}>Send Invitation</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isEditMemberDialogOpen} onOpenChange={setIsEditMemberDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+                <DialogTitle>Edit Permissions for {editingMember?.name}</DialogTitle>
+          </DialogHeader>
+            <div className="grid grid-cols-1 gap-4 py-4 max-h-96 overflow-y-auto">
+                {Object.keys(customPermissions).length === 0 ? (
+                  <div className="text-center text-muted-foreground py-4">
+                    No permissions to display. Please try refreshing the page.
+                  </div>
+                ) : (
+                  Object.keys(customPermissions).map((key) => (
+                    <div key={key} className="flex items-center justify-between p-2 border rounded">
+                        <div className="flex flex-col">
+                          <label htmlFor={key} className="font-medium capitalize">
+                            {key.replace(/_/g, ' ')}
+                          </label>
+                          <span className="text-sm text-muted-foreground">
+                            {getPermissionDescription(key as PermissionKey)}
+                          </span>
+                        </div>
+                        <Switch
+                            id={key}
+                            checked={customPermissions[key as PermissionKey]}
+                            onCheckedChange={(checked) => {
+                                setCustomPermissions(prev => ({...prev, [key]: checked}))
+                            }}
+                        />
+                    </div>
+                  ))
+                )}
+            </div>
+          <DialogFooter>
+                <Button variant="ghost" onClick={() => setIsEditMemberDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleUpdatePermissions}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Leave Workspace Dialog */}
       <Dialog open={isLeaveWorkspaceDialogOpen} onOpenChange={setIsLeaveWorkspaceDialogOpen}>
-        <DialogContent className="bg-background border-border text-foreground">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-orange-500" />
-              Leave Workspace
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Are you sure you want to leave this workspace? You will lose access to all projects and data in this workspace.
+            <DialogTitle>Leave Workspace</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to leave this workspace? You will lose access to all workspace data.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="py-4">
-            <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-md p-4">
-              <p className="text-sm text-orange-800 dark:text-orange-200">
-                <strong>Workspace:</strong> {getActiveWorkspaceName()}
-              </p>
-              <p className="text-sm text-orange-700 dark:text-orange-300 mt-2">
-                This action cannot be undone. You will need to be re-invited to access this workspace again.
-              </p>
-            </div>
-          </div>
-          
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsLeaveWorkspaceDialogOpen(false)}
-              className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
-              disabled={workspaceActionLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleLeaveWorkspace}
-              className="bg-orange-600 hover:bg-orange-700 text-white"
-              disabled={workspaceActionLoading}
-            >
-              {workspaceActionLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white" />
-                  Leaving...
-                </div>
-              ) : (
-                <>
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Leave Workspace
-                </>
-              )}
+            <Button variant="ghost" onClick={() => setIsLeaveWorkspaceDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleLeaveWorkspace}>
+              Leave Workspace
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1499,58 +911,22 @@ export default function TeamPage() {
 
       {/* Delete Workspace Dialog */}
       <Dialog open={isDeleteWorkspaceDialogOpen} onOpenChange={setIsDeleteWorkspaceDialogOpen}>
-        <DialogContent className="bg-background border-border text-foreground">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-red-500" />
-              Delete Workspace
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              Are you sure you want to permanently delete this workspace? This action cannot be undone.
+            <DialogTitle>Delete Workspace</DialogTitle>
+            <DialogDescription>
+              <AlertTriangle className="w-4 h-4 inline mr-2 text-red-500" />
+              This action cannot be undone. This will permanently delete the workspace and all its data.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="py-4">
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4">
-              <p className="text-sm text-red-800 dark:text-red-200">
-                <strong>Workspace:</strong> {getActiveWorkspaceName()}
-              </p>
-              <p className="text-sm text-red-700 dark:text-red-300 mt-2">
-                This will permanently delete:
-              </p>
-              <ul className="text-sm text-red-700 dark:text-red-300 mt-1 ml-4 list-disc">
-                <li>All team members and their access</li>
-                <li>All projects and data in this workspace</li>
-                <li>All settings and configurations</li>
-              </ul>
-            </div>
-          </div>
-          
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsDeleteWorkspaceDialogOpen(false)}
-              className="bg-background border-border dark:border-border text-foreground hover:bg-gray-200 dark:bg-muted"
-              disabled={workspaceActionLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleDeleteWorkspace}
-              className="bg-red-600 hover:bg-red-700 text-white"
-              disabled={workspaceActionLoading}
-            >
-              {workspaceActionLoading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-neutral-400 border-t-white" />
-                  Deleting...
-                </div>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Workspace
-                </>
-              )}
+            <Button variant="ghost" onClick={() => setIsDeleteWorkspaceDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => {
+              // Handle delete workspace logic here
+              toast.info("Delete workspace functionality to be implemented");
+              setIsDeleteWorkspaceDialogOpen(false);
+            }}>
+              Delete Workspace
             </Button>
           </DialogFooter>
         </DialogContent>

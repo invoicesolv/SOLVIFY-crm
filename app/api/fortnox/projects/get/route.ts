@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API base URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -98,6 +98,11 @@ export async function GET(
   request: NextRequest
 ) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Get project number from query parameters
     const searchParams = request.nextUrl.searchParams;
     const projectNumber = searchParams.get('projectNumber');
@@ -106,16 +111,8 @@ export async function GET(
       return NextResponse.json({ error: 'Project number is required' }, { status: 400 });
     }
 
-    // Get user ID from session or headers
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id || request.headers.get('user-id');
-    
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 401 });
-    }
-
-    // Get Fortnox token
-    const tokenData = await loadTokenFromSupabase(userId as string);
+    // Load Fortnox token
+    const tokenData = await loadTokenFromSupabase(user.id);
     if (!tokenData || !tokenData.access_token) {
       return NextResponse.json({ error: 'Failed to get Fortnox token' }, { status: 500 });
     }

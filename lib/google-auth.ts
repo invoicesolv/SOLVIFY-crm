@@ -3,10 +3,14 @@ import { OAuth2Client } from 'google-auth-library';
 
 // Function to create a new OAuth2 client using the credentials
 export function getGoogleOAuth2Client(refreshToken?: string): OAuth2Client {
+  const redirectUri = process.env.NODE_ENV === 'development' 
+    ? 'http://localhost:3000/api/oauth/google/callback'
+    : 'https://crm.solvify.se/api/oauth/google/callback';
+
   const client = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.NEXTAUTH_URL + '/api/auth/callback/google'
+    redirectUri
   );
 
   // If a refresh token is provided, set it on the client

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { useSession } from 'next-auth/react'
+import { useAuth } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation'
 import { Card } from "@/components/ui/card"
 import { SidebarDemo } from "@/components/ui/code.demo"
@@ -53,7 +53,7 @@ interface UserData {
 }
 
 export default function AdminPage() {
-  const { data: session, status } = useSession()
+  const { user, loading: isLoading } = useAuth();
   const router = useRouter()
   const [stats, setStats] = useState<AdminStats>({
     totalSignups: 0,
@@ -80,15 +80,15 @@ export default function AdminPage() {
   const [isConfirmBulkDialogOpen, setIsConfirmBulkDialogOpen] = useState(false)
 
   useEffect(() => {
-    if (status === "loading") return
+    if (!user) return
 
-    if (!session?.user?.email || session.user.email !== ADMIN_EMAIL) {
+    if (!user?.email || user.email !== ADMIN_EMAIL) {
       router.push('/')
       return
     }
 
     fetchAdminData()
-  }, [session, status])
+  }, [user])
 
   useEffect(() => {
     // Apply filters when search query or status filter changes

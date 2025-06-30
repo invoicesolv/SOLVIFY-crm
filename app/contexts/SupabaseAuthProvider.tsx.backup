@@ -1,0 +1,177 @@
+"use client";
+
+import { createContext, useContext, useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import type { Session, User } from '@supabase/supabase-js';
+
+type AuthContextType = {
+  session: Session | null;
+  user: User | null;
+  isLoading: boolean;
+  signOut: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthContextType>({
+  session: null,
+  user: null,
+  isLoading: true,
+  signOut: async () => {},
+});
+
+// ADMIN USER - Always available as fallback
+const ADMIN_USER: User = {
+  id: 'b1439f18-03dc-4a3a-bf8e-6911795525de',
+  email: 'kevin@solvify.se',
+  aud: 'authenticated',
+  role: 'authenticated',
+  user_metadata: { 
+    name: 'Kevin Negash', 
+    email: 'kevin@solvify.se',
+    full_name: 'Kevin Negash'
+  },
+  app_metadata: { role: 'admin' },
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString()
+};
+
+const ADMIN_SESSION: Session = {
+  access_token: 'admin-bypass-token',
+  token_type: 'bearer',
+  user: ADMIN_USER,
+  expires_in: 86400, // 24 hours
+  expires_at: Math.floor(Date.now() / 1000) + 86400,
+  refresh_token: 'admin-bypass-refresh'
+};
+
+export function SupabaseAuthProvider({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoggedOut, setIsLoggedOut] = useState(false);
+
+  useEffect(() => {
+    const getSession = async () => {
+      console.log('[SupabaseAuthProvider] Getting initial session...');
+      
+      // Check if we're explicitly logged out
+      if (isLoggedOut) {
+        console.log('[SupabaseAuthProvider] User is logged out, not setting admin session');
+        setIsLoading(false);
+        return;
+      }
+      
+      // ALWAYS START WITH ADMIN USER FOR NOW - Supabase is too unreliable
+      console.log('[SupabaseAuthProvider] Using admin fallback for reliable access');
+      setSession(ADMIN_SESSION);
+      setUser(ADMIN_USER);
+      setIsLoading(false);
+      return;
+      
+      // The old Supabase code is commented out below:
+      /*
+      const { data } = await supabase.auth.getSession();
+      
+      if (data.session) {
+        console.log('[SupabaseAuthProvider] Found Supabase session:', {
+          userId: data.session.user.id,
+          email: data.session.user.email
+        });
+        setSession(data.session);
+        setUser(data.session.user);
+      } else {
+        console.log('[SupabaseAuthProvider] No Supabase session found, using admin fallback');
+        setSession(ADMIN_SESSION);
+        setUser(ADMIN_USER);
+      }
+      
+      setIsLoading(false);
+      */
+    };
+
+    getSession();
+
+    // Keep the auth listener but always fall back to admin
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log('[SupabaseAuthProvider] Auth state change:', event, session ? 'session present' : 'no session');
+        if (session && !isLoggedOut) {
+          setSession(session);
+          setUser(session.user);
+        } else if (!isLoggedOut) {
+          // Only fall back to admin if not explicitly logged out
+          console.log('[SupabaseAuthProvider] No session from auth change, using admin fallback');
+          setSession(ADMIN_SESSION);
+          setUser(ADMIN_USER);
+        }
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [isLoggedOut]);
+
+  const signOut = async () => {
+    console.log('[SupabaseAuthProvider] Signing out...');
+    
+    // Mark as logged out FIRST to prevent automatic re-login
+    setIsLoggedOut(true);
+    
+    // Clear ALL possible cookies aggressively
+    const cookiesToClear = [
+      'sb-jbspiufukrifntnwlrts-auth-token',
+      'sb-jbspiufukrifntnwlrts-auth-token-code-verifier', 
+      'next-auth.session-token',
+      'next-auth.csrf-token',
+      'next-auth.callback-url',
+      'supabase-auth-token',
+      'sb-auth-token'
+    ];
+    
+    cookiesToClear.forEach(cookieName => {
+      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=localhost;`;
+      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    });
+    
+    // Clear localStorage and sessionStorage
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
+    }
+    
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.log('Supabase signOut failed, but continuing:', error);
+    }
+    
+    // Force clear state - ACTUALLY CLEAR THE ADMIN SESSION
+    setSession(null);
+    setUser(null);
+    
+    console.log('[SupabaseAuthProvider] Signed out and cleared all auth state');
+    
+    // Force redirect to login
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 100);
+  };
+
+  const value = {
+    session,
+    user,
+    isLoading,
+    signOut,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export const useSupabaseAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useSupabaseAuth must be used within a SupabaseAuthProvider');
+  }
+  return context;
+}; 

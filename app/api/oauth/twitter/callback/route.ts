@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 import { createClient } from '@supabase/supabase-js';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
+
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function GET(request: NextRequest) {
   console.log('========== X OAUTH CALLBACK DEBUG START ==========');
@@ -11,27 +20,24 @@ export async function GET(request: NextRequest) {
   
   // Use development URL when in development mode
   const baseUrl = process.env.NODE_ENV === 'development' 
-    ? 'http://localhost:3000' 
-    : process.env.NEXTAUTH_URL;
+    ? process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'
+    : process.env.NEXT_PUBLIC_SITE_URL;
     
   console.log('X OAuth callback: Environment:', process.env.NODE_ENV);
   console.log('X OAuth callback: Base URL:', baseUrl);
   
-  // Get session using NextAuth JWT token instead of getServerSession
-  const token = await getToken({ 
-    req: request,
-    secret: process.env.NEXTAUTH_SECRET 
-  });
+  // Get user from Supabase JWT token
+  const user = await getUserFromToken(request);
   
-  console.log('X OAuth callback: Token found:', !!token);
-  console.log('X OAuth callback: User ID from token:', token?.sub);
+  console.log('X OAuth callback: User found:', !!user);
+  console.log('X OAuth callback: User ID:', user?.id);
   
-  if (!token?.sub) {
-    console.error('X OAuth callback: No user token found. User must be logged in first.');
+  if (!user?.id) {
+    console.error('X OAuth callback: No user found. User must be logged in first.');
     return NextResponse.redirect(new URL(`${baseUrl}/login?error=oauth_requires_login&message=Please log in first before connecting social media accounts`));
   }
   
-  const userId = token.sub;
+  const userId = user.id;
   console.log('X OAuth callback: Using user ID:', userId);
 
   const searchParams = request.nextUrl.searchParams;
@@ -181,22 +187,11 @@ export async function GET(request: NextRequest) {
     // Save to Supabase
     console.log('X OAuth callback: Saving to database...');
     
-    // Create admin client for database operations
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    console.log('X OAuth callback: Database save parameters:');
-    console.log('- user_id:', userId);
-    console.log('- platform:', 'x');
-    console.log('- account_id:', userData.data.id);
-    console.log('- account_name:', userData.data.username);
-
     // Get workspace ID for the user using admin client
     console.log('X OAuth callback: Looking up workspace for user:', userId);
     
     // First try to get a workspace where user is admin, then fallback to any workspace
+    const supabase = getSupabaseAdmin();
     const { data: workspaceData, error: workspaceError } = await supabase
       .from('team_members')
       .select('workspace_id, is_admin')

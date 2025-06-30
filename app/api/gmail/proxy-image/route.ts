@@ -1,14 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { supabaseAdmin } from '@/lib/supabase';
 import { google } from 'googleapis';
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await getServerSession(authOptions);
-    if (!session || !session.user) {
-      return new Response('Unauthorized', { status: 401 });
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     // Get the target URL from the query string
@@ -26,7 +49,7 @@ export async function GET(request: NextRequest) {
     if (imageUrl.startsWith('cid:') && messageId && attachmentId) {
       try {
         // Get access token
-        const accessToken = (session as any).access_token;
+        const accessToken = (user as any).access_token;
         if (!accessToken) {
           return new Response('No access token available', { status: 401 });
         }

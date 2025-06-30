@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { Loader2, Link, Plus, FileCheck, CheckSquare, Square } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -41,7 +41,7 @@ interface Task {
 }
 
 export default function ProjectInvoiceLinker() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const { toast } = useToast();
   
   // State variables
@@ -93,18 +93,28 @@ export default function ProjectInvoiceLinker() {
 
   // Fetch the customer details for this project
   useEffect(() => {
-    if (selectedProject) {
+    if (selectedProject && user && session?.access_token) {
       // First fetch the project details to get the customer number
       const getProjectDetails = async () => {
         try {
-          const projectResponse = await fetch(`/api/fortnox/projects/get?projectNumber=${selectedProject}`);
+          const projectResponse = await fetch(`/api/fortnox/projects/get?projectNumber=${selectedProject}`, {
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session.access_token}`
+            }
+          });
           if (projectResponse.ok) {
             const projectData = await projectResponse.json();
             if (projectData.Project && projectData.Project.CustomerNumber) {
               setCustomerNumber(projectData.Project.CustomerNumber);
               
               // Now fetch the customer details
-              const customerResponse = await fetch(`/api/fortnox/customers/${projectData.Project.CustomerNumber}`);
+              const customerResponse = await fetch(`/api/fortnox/customers/${projectData.Project.CustomerNumber}`, {
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${session.access_token}`
+                }
+              });
               if (customerResponse.ok) {
                 const customerData = await customerResponse.json();
                 if (customerData.Customer) {
@@ -121,15 +131,18 @@ export default function ProjectInvoiceLinker() {
       
       getProjectDetails();
     }
-  }, [selectedProject]);
+  }, [selectedProject, user, session]);
 
   // Fetch Fortnox projects
   const fetchProjects = async () => {
+    if (!user || !session?.access_token) return;
+    
     try {
       setLoading(true);
       const response = await fetch("/api/fortnox/projects", {
         headers: {
-          "user-id": session?.user?.id || ""
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
         }
       });
       
@@ -158,11 +171,14 @@ export default function ProjectInvoiceLinker() {
   
   // Fetch Fortnox invoices
   const fetchInvoices = async () => {
+    if (!user || !session?.access_token) return;
+    
     try {
       setLoading(true);
       const response = await fetch("/api/fortnox/invoices", {
         headers: {
-          "user-id": session?.user?.id || ""
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
         }
       });
       
@@ -191,13 +207,14 @@ export default function ProjectInvoiceLinker() {
   
   // Fetch invoices for a specific project
   const fetchProjectInvoices = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !user || !session?.access_token) return;
     
     try {
       setLoading(true);
       const response = await fetch(`/api/fortnox/projects/${selectedProject}/invoices`, {
         headers: {
-          "user-id": session?.user?.id || ""
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
         }
       });
       
@@ -235,13 +252,14 @@ export default function ProjectInvoiceLinker() {
 
   // Fetch tasks for a specific project
   const fetchProjectTasks = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || !user || !session?.access_token) return;
     
     try {
       // First get internal project ID from Fortnox project number
       const projectResponse = await fetch(`/api/projects/fortnox/${selectedProject}`, {
         headers: {
-          "user-id": session?.user?.id || ""
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
         }
       });
       
@@ -252,7 +270,8 @@ export default function ProjectInvoiceLinker() {
           // Now fetch tasks using internal project ID
           const tasksResponse = await fetch(`/api/projects/${projectData.project.id}/tasks`, {
             headers: {
-              "user-id": session?.user?.id || ""
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session.access_token}`
             }
           });
           
@@ -290,13 +309,22 @@ export default function ProjectInvoiceLinker() {
       return;
     }
     
+    if (!user || !session?.access_token) {
+      toast({
+        title: "Authentication Error",
+        description: "You must be logged in to link invoices",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     try {
       setLoading(true);
       const response = await fetch("/api/fortnox/invoices/link-project", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "user-id": session?.user?.id || ""
+          "Authorization": `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           documentNumber: selectedInvoice,
@@ -347,6 +375,15 @@ export default function ProjectInvoiceLinker() {
       toast({
         title: "Validation Error",
         description: "Please select a project",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!user || !session?.access_token) {
+      toast({
+        title: "Authentication Error",
+        description: "You must be logged in to create invoices",
         variant: "destructive"
       });
       return;
@@ -409,7 +446,7 @@ export default function ProjectInvoiceLinker() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "user-id": session?.user?.id || ""
+          "Authorization": `Bearer ${session.access_token}`
         },
         body: JSON.stringify(formData)
       });

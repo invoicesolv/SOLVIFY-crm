@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
-import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient as supabase } from '@/lib/supabase-client'
 import { Clock, AlertCircle, X, CreditCard } from 'lucide-react'
 import { loadStripe } from '@stripe/stripe-js'
 
@@ -41,7 +41,7 @@ const stripePriceIds = {
 }
 
 export function TrialCountdown() {
-  const { data: session, status } = useSession()
+  const { user } = useAuth()
   const [preferences, setPreferences] = useState<UserPreferences | null>(null)
   const [daysRemaining, setDaysRemaining] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -51,18 +51,17 @@ export function TrialCountdown() {
   const [paymentLoading, setPaymentLoading] = useState(false)
 
   useEffect(() => {
-    console.log('TrialCountdown component mounted, session status:', status)
-    console.log('Session user:', session?.user)
-    console.log('Session user ID:', session?.user?.id)
+    console.log('TrialCountdown component mounted, user:', user)
+    console.log('User ID:', user?.id)
     
     // Reset dismissed state on login
-    if (status === 'authenticated' && session?.user?.id) {
+    if (user?.id) {
       setDismissed(false)
     }
     
-    // Only run once we have an authenticated session
-    if (status !== 'authenticated' || !session?.user?.id) {
-      console.log('Waiting for authenticated session with user ID')
+    // Only run once we have an authenticated user
+    if (!user?.id) {
+      console.log('Waiting for authenticated user')
       return
     }
     
@@ -73,13 +72,13 @@ export function TrialCountdown() {
     }
     
     const fetchUserPreferences = async () => {
-      console.log('Fetching user preferences for user ID:', session.user.id)
+      console.log('Fetching user preferences for user ID:', user.id)
       
       try {
         const { data, error } = await supabase
           .from('user_preferences')
           .select('plan_id, trial_start_date, trial_end_date, dismissed_countdown')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .single()
         
         console.log('Fetch result:', { data, error })
@@ -95,7 +94,7 @@ export function TrialCountdown() {
             const trialEndDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000) // 14 days from now
             
             const defaultPreferences = {
-              user_id: session.user.id,
+              user_id: user.id,
               plan_id: 'free',
               trial_start_date: now.toISOString(),
               trial_end_date: trialEndDate.toISOString(),
@@ -154,10 +153,10 @@ export function TrialCountdown() {
     }
     
     fetchUserPreferences()
-  }, [session, status, initialized, preferences])
+  }, [user, initialized, preferences])
   
   const handleDismiss = async () => {
-    if (!session?.user?.id) return
+    if (!user?.id) return
     
     try {
       setDismissed(true)
@@ -166,7 +165,7 @@ export function TrialCountdown() {
       await supabase
         .from('user_preferences')
         .update({ dismissed_countdown: true })
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
       
       console.log('Countdown dismissed')
     } catch (error) {
@@ -208,7 +207,7 @@ export function TrialCountdown() {
   }
   
   // Don't show anything if not authenticated
-  if (status !== 'authenticated') {
+  if (!user) {
     return null
   }
   

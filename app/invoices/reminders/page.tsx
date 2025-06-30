@@ -8,9 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, Mail, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
-import { useSession } from 'next-auth/react';
-import { createClient } from '@supabase/supabase-js';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient } from '@/lib/supabase-client';
 
 interface Invoice {
   DocumentNumber: string;
@@ -33,18 +32,8 @@ interface ReminderTemplate {
   body: string;
 }
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      persistSession: true,
-    }
-  }
-);
-
 export default function InvoiceRemindersPage() {
-  const { data: session } = useSession()
+  const { user, session } = useAuth();
   const [unpaidInvoices, setUnpaidInvoices] = useState<Invoice[]>([]);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,52 +71,24 @@ Your Company Name`
   const [selectedTemplate, setSelectedTemplate] = useState<ReminderTemplate['id']>('default');
   const [customMessage, setCustomMessage] = useState<string>('');
 
+  // Create authenticated Supabase client
+  const supabase = supabaseClient;
+
   useEffect(() => {
-    fetchUnpaidInvoices();
-  }, []);
+    if (user?.id && session?.access_token) {
+      fetchUnpaidInvoices();
+    }
+  }, [user?.id, session?.access_token]);
 
   const fetchUnpaidInvoices = async () => {
     try {
-      if (!session?.user?.id) {
+      if (!user?.id || !session?.access_token) {
         toast.error('Please sign in to view unpaid invoices');
         return;
       }
-
-      // Log session details for debugging
-      console.log('Session details:', {
-        user: session.user,
-        hasAccessToken: !!session.access_token
-      });
-
-      // First get the user's workspaces
-      const { data: teamMemberships, error: teamError } = await supabaseAdmin
-        .from('team_members')
-        .select(`
-          workspace_id,
-          workspaces (
-            id,
-            name
-          )
-        `)
-        .eq('user_id', session.user.id);
-
-      if (teamError) {
-        console.error('Error fetching team memberships:', teamError);
-        throw new Error('Failed to load workspace access');
-      }
-
-      if (!teamMemberships?.length) {
-        console.log('No workspaces found for user');
-        setUnpaidInvoices([]);
-        setLoading(false);
-        return;
-      }
-
-      const workspaceIds = teamMemberships.map(tm => tm.workspace_id);
-      console.log('Found workspaces:', workspaceIds);
       
-      // Fetch unpaid invoices with customer names and currency codes
-      const { data: invoicesData, error: invoicesError } = await supabaseAdmin
+      // Fetch unpaid invoices with customer names and currency codes - RLS will automatically filter by workspace
+      const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
         .select(`
           *,
@@ -135,8 +96,6 @@ Your Company Name`
           currencies (code),
           invoice_types (name)
         `)
-        .eq('user_id', session.user.id)
-        .in('workspace_id', workspaceIds)
         .gt('balance', 0); // Only get invoices with balance > 0
 
       if (invoicesError) {
@@ -188,7 +147,7 @@ Your Company Name`
       return;
     }
 
-    if (!session?.user?.id) {
+    if (!user?.id || !session?.access_token) {
       toast.error('Please sign in to send reminders');
       return;
     }
@@ -196,10 +155,10 @@ Your Company Name`
     setSending(true);
     try {
       // Get the user's default workspace
-      const { data: teamMemberships, error: teamError } = await supabaseAdmin
+      const { data: teamMemberships, error: teamError } = await supabase
         .from('team_members')
         .select('workspace_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .limit(1);
 
       if (teamError) throw teamError;

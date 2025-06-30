@@ -3,15 +3,15 @@
 import { useState, useEffect } from 'react'
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { supabase } from '@/lib/supabase'
-import { useSession } from 'next-auth/react'
+import { supabaseClient as supabase } from '@/lib/supabase-client'
+import { useAuth } from '@/lib/auth-client';
 import { Check, ArrowRight, LayoutDashboard, Users, Receipt, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function WelcomeDialog() {
   const [isOpen, setIsOpen] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
-  const { data: session } = useSession()
+  const { user } = useAuth()
   const [hasCheckedStatus, setHasCheckedStatus] = useState(false)
 
   useEffect(() => {
@@ -24,17 +24,17 @@ export function WelcomeDialog() {
     }
 
     const checkWelcomeStatus = async () => {
-      if (!session?.user?.id) return;
+      if (!user?.id) return;
 
       // Log the user ID for debugging
-      console.log('Checking welcome status for user ID:', session.user.id);
+      console.log('Checking welcome status for user ID:', user.id);
 
       try {
         // First check if user_preferences table exists and has the user's record
         const { data, error } = await supabase
           .from('user_preferences')
           .select('has_seen_welcome')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .single();
 
         if (error) {
@@ -47,7 +47,7 @@ export function WelcomeDialog() {
             const { error: insertError } = await supabase
               .from('user_preferences')
               .upsert({
-                user_id: session.user.id,
+                user_id: user.id,
                 has_seen_welcome: false,
                 created_at: new Date().toISOString()
               });
@@ -76,13 +76,13 @@ export function WelcomeDialog() {
     };
 
     checkWelcomeStatus();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   const handleClose = async () => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
 
     // Log the user ID for debugging
-    console.log('Saving welcome status for user ID:', session.user.id);
+    console.log('Saving welcome status for user ID:', user.id);
 
     // Save preference to not show again
     try {
@@ -92,7 +92,7 @@ export function WelcomeDialog() {
       const { error } = await supabase
         .from('user_preferences')
         .upsert({
-          user_id: session.user.id,
+          user_id: user.id,
           has_seen_welcome: true,
           updated_at: new Date().toISOString()
         });

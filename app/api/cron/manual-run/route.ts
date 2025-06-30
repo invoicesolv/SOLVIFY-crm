@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Manual Run] Triggering job ${jobId} of type ${job.job_type}`);
     
     // Call the process-scheduled-tasks endpoint to handle this job
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
     const url = `${baseUrl}/api/cron/process-scheduled-tasks?jobId=${jobId}`;
     
     // Make the request

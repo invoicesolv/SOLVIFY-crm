@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   // Facebook Graph API
   const clientId = process.env.FACEBOOK_APP_ID;
-  const baseUrl = process.env.NEXTAUTH_URL;
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL;
   const redirectUri = `${(baseUrl || '').replace(/\/$/, '')}/api/oauth/facebook/callback`;
   
   console.log('🔵 [FACEBOOK OAUTH] Environment check:', {
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   
   if (!clientId) {
     console.error('🔴 [FACEBOOK OAUTH] Missing FACEBOOK_APP_ID');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=facebook_config_missing`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=facebook_config_missing`));
   }
   
   // ALWAYS request business permissions since app is live and approved

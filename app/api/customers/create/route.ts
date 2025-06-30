@@ -1,26 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
-import { getServerSession } from "next-auth/next";
-import authOptions from '@/lib/auth';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { getOrCreateWorkspaceForAPI } from '@/lib/workspace';
+import { createClient } from '@supabase/supabase-js';
 
-export async function POST(req: NextRequest) {
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+export async function POST(request: NextRequest) {
   try {
-    // Verify user authentication
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      console.log('API: No user ID in session');
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     console.log('API: Processing customer creation for user:', {
-      id: session.user.id,
-      email: session.user.email
+      id: user.id,
+      email: user.email
     });
 
     // Parse request body
-    const customerData = await req.json();
+    const customerData = await request.json();
     console.log('API: Customer data received:', customerData);
 
     // Validate required fields
@@ -30,9 +40,9 @@ export async function POST(req: NextRequest) {
 
     // Use the workspace utility to get or create a workspace
     const workspaceId = await getOrCreateWorkspaceForAPI(
-      session.user.id,
-      session.user.email || '',
-      session.user.name
+      user.id,
+      user.email || '',
+      user.user_metadata.name || ''
     );
 
     if (!workspaceId) {
@@ -61,7 +71,7 @@ export async function POST(req: NextRequest) {
       country: customerData.country || null,
       birthday: customerData.birthday || null,
       workspace_id: workspaceId,
-      user_id: session.user.id,
+      user_id: user.id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -72,6 +82,12 @@ export async function POST(req: NextRequest) {
     });
 
     // Insert the customer into the database
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      console.error('API: Failed to initialize Supabase admin client');
+      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 });
+    }
+    
     const { data, error } = await supabaseAdmin
       .from('customers')
       .insert([customer])

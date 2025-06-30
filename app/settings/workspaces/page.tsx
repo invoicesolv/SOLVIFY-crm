@@ -1,26 +1,20 @@
-'use client';
+"use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { SidebarDemo } from '@/components/ui/code.demo';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Trash2, Plus, ArrowLeft, Loader2, Globe, Users, Calendar } from 'lucide-react';
-import { SidebarDemo } from '@/components/ui/code.demo';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Plus, Trash2, Users, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
-import { 
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { useConsistentUserId } from '@/hooks/useConsistentUserId';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient } from '@/lib/supabase-client';
+import { useWorkspace } from '@/hooks/useWorkspace';
+import { createWorkspace } from '@/lib/workspace-utils';
 
 interface Workspace {
   id: string;
@@ -29,97 +23,68 @@ interface Workspace {
   created_at: string;
   is_default?: boolean;
   memberCount?: number;
+  role?: 'admin' | 'member';
 }
 
 export default function WorkspacesPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const router = useRouter();
-  const { consistentId, isLoading: isLoadingUserId } = useConsistentUserId();
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { workspaces, activeWorkspaceId, isLoading, error, refetch, setActiveWorkspace } = useWorkspace();
+  const [workspacesWithCounts, setWorkspacesWithCounts] = useState<Workspace[]>([]);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<Workspace | null>(null);
+
+  // Create authenticated Supabase client
+  const supabase = supabaseClient;
   
-  // Load workspaces
+  // Show error if workspace loading fails
   useEffect(() => {
-    const loadWorkspaces = async () => {
-      if (!consistentId) {
-        if (!isLoadingUserId) {
-          toast.error('User ID not found');
-          router.push('/');
-        }
+    if (error) {
+      toast.error(`Failed to load workspaces: ${error}`);
+    }
+  }, [error]);
+
+  // Enhance workspaces data with member counts
+  useEffect(() => {
+    const loadMemberCounts = async () => {
+      if (!workspaces.length) {
+        setWorkspacesWithCounts([]);
         return;
       }
-      
-      setIsLoading(true);
+
       try {
-        // Get all workspaces where the user is a member
-        const { data: memberships, error: membershipError } = await supabase
-          .from("team_members")
-          .select("workspace_id, workspaces(id, name, owner_id, created_at)")
-          .eq("user_id", consistentId);
-          
-        if (membershipError) {
-          throw membershipError;
-        }
-        
-        let uniqueWorkspaces = new Map();
-        
-        // Process memberships and add workspaces to the map, using id as the key to avoid duplicates
-        (memberships as any[] || []).forEach(m => {
-          if (m.workspaces) {
-            uniqueWorkspaces.set(m.workspaces.id, {
-              ...m.workspaces,
-              is_default: false
-            });
-          }
-        });
-        
-        // Get member counts for each workspace
-        const workspaceIds = Array.from(uniqueWorkspaces.keys());
-        
-        if (workspaceIds.length > 0) {
-          // Get member counts
-          for (const id of workspaceIds) {
+        const enhancedWorkspaces = await Promise.all(
+          workspaces.map(async (workspace) => {
             const { count, error } = await supabase
               .from("team_members")
               .select("*", { count: 'exact', head: true })
-              .eq("workspace_id", id);
+              .eq("workspace_id", workspace.id);
               
-            if (!error && count !== null) {
-              const workspace = uniqueWorkspaces.get(id);
-              uniqueWorkspaces.set(id, {
-                ...workspace,
-                memberCount: count
-              });
-            }
-          }
-        }
-        
-        // Convert map to array and sort by creation date (newest first)
-        const workspaceList = Array.from(uniqueWorkspaces.values()).sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            return {
+              ...workspace,
+              memberCount: error ? 0 : (count || 0)
+            };
+          })
         );
-        
-        setWorkspaces(workspaceList);
+
+        setWorkspacesWithCounts(enhancedWorkspaces);
       } catch (error) {
-        console.error('Error loading workspaces:', error);
-        toast.error('Failed to load workspaces');
-      } finally {
-        setIsLoading(false);
+        console.error('Error loading member counts:', error);
+        // Fallback to workspaces without counts
+        setWorkspacesWithCounts(workspaces.map(w => ({ ...w, memberCount: 0 })));
       }
     };
-    
-    loadWorkspaces();
-  }, [consistentId, isLoadingUserId, router]);
+
+    loadMemberCounts();
+  }, [workspaces, supabase]);
   
-  // Create new workspace
-  const createWorkspace = async () => {
-    if (!consistentId) {
+  // Create new workspace using the standardized API
+  const handleCreateWorkspace = async () => {
+    if (!user?.id || !session?.access_token) {
       toast.error('User ID not found');
       return;
     }
@@ -131,51 +96,11 @@ export default function WorkspacesPage() {
     
     setIsCreating(true);
     try {
-      // Create the workspace
-      const { data: workspace, error: createError } = await supabase
-        .from('workspaces')
-        .insert([{
-          name: newWorkspaceName.trim(),
-          owner_id: consistentId,
-          created_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
-        
-      if (createError) {
-        throw createError;
-      }
-      
-      if (!workspace) {
-        throw new Error('No workspace returned after creation');
-      }
-      
-      // Add the user as a member and admin
-      const { error: memberError } = await supabase
-        .from('team_members')
-        .insert([{
-          user_id: consistentId,
-          workspace_id: workspace.id,
-          role: 'admin',
-          is_admin: true,
-          created_at: new Date().toISOString()
-        }]);
-        
-      if (memberError) {
-        throw memberError;
-      }
-      
+      await createWorkspace(newWorkspaceName.trim(), user.id);
       toast.success('Workspace created successfully');
       
-      // Add the new workspace to the list
-      setWorkspaces(prev => [
-        {
-          ...workspace,
-          memberCount: 1,
-          is_default: false
-        },
-        ...prev
-      ]);
+      // Refresh the workspace data
+      await refetch();
       
       // Clear the input and close the dialog
       setNewWorkspaceName('');
@@ -196,7 +121,7 @@ export default function WorkspacesPage() {
   
   // Delete a workspace
   const deleteWorkspace = async () => {
-    if (!workspaceToDelete || !consistentId) {
+    if (!workspaceToDelete || !user?.id) {
       toast.error('Missing workspace or user ID');
       return;
     }
@@ -204,7 +129,7 @@ export default function WorkspacesPage() {
     setIsDeleting(workspaceToDelete.id);
     try {
       // Check if user is the owner
-      if (workspaceToDelete.owner_id !== consistentId) {
+      if (workspaceToDelete.owner_id !== user.id) {
         toast.error('You can only delete workspaces you own');
         return;
       }
@@ -231,8 +156,8 @@ export default function WorkspacesPage() {
       
       toast.success('Workspace deleted successfully');
       
-      // Remove from the list
-      setWorkspaces(prev => prev.filter(w => w.id !== workspaceToDelete.id));
+      // Refresh the workspace data
+      await refetch();
       
       // Close the dialog
       setDeleteDialogOpen(false);
@@ -245,224 +170,205 @@ export default function WorkspacesPage() {
     }
   };
   
-  // Switch to a different workspace
   const selectWorkspace = (workspaceId: string) => {
-    if (!consistentId) return;
-    
-    // Store the selection in localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(`workspace_${consistentId}`, workspaceId);
+    setActiveWorkspace(workspaceId);
+    // Store in localStorage for persistence
+    if (user?.id) {
+      localStorage.setItem(`workspace_${user.id}`, workspaceId);
     }
-    
-    // Redirect to dashboard
-    router.push('/');
-    
     toast.success('Workspace selected');
   };
-  
+
+  if (isLoading) {
+    return (
+      <SidebarDemo>
+        <div className="p-6 flex-1 overflow-auto bg-background">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <span className="ml-2">Loading workspaces...</span>
+            </div>
+          </div>
+        </div>
+      </SidebarDemo>
+    );
+  }
+
   return (
     <SidebarDemo>
-      <div className="container mx-auto p-6">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <Button 
-              variant="ghost" 
-              className="mb-2" 
-              onClick={() => router.back()}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <h1 className="text-2xl font-bold">Workspace Management</h1>
-            <p className="text-muted-foreground">Manage your workspaces and team access</p>
-          </div>
-          
-          <Button 
-            onClick={() => setCreateDialogOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Workspace
-          </Button>
-        </div>
-        
-        {isLoading ? (
-          <div className="flex justify-center items-center h-64">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : workspaces.length === 0 ? (
-          <Card className="p-6 text-center bg-background border-border dark:border-border">
-            <Globe className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <h2 className="text-xl font-semibold mb-2">No Workspaces Found</h2>
-            <p className="text-muted-foreground mb-6">
-              You don't have any workspaces yet. Create one to get started.
-            </p>
-            <Button 
-              onClick={() => setCreateDialogOpen(true)}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Create Workspace
-            </Button>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {workspaces.map(workspace => (
-              <Card 
-                key={workspace.id} 
-                className="p-6 bg-background border-border dark:border-border hover:bg-neutral-750 transition-colors"
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h2 className="text-xl font-semibold mb-1">{workspace.name}</h2>
-                    <p className="text-xs text-muted-foreground">Created: {new Date(workspace.created_at).toLocaleDateString()}</p>
-                  </div>
-                  {workspace.owner_id === consistentId && (
-                                                              <Button 
-                       variant="outline" 
-                       size="icon"
-                       className="border-red-800 bg-red-100 dark:bg-red-900/20 hover:bg-red-900/30 text-red-400 h-8 w-8"
-                      onClick={() => confirmDeleteWorkspace(workspace)}
-                      disabled={isDeleting === workspace.id}
-                    >
-                      {isDeleting === workspace.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  )}
-                </div>
-                
-                <div className="space-y-2 mb-6">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm flex items-center">
-                      <Users className="h-4 w-4 mr-2 text-muted-foreground" />
-                      Members
-                    </span>
-                    <span className="text-sm font-medium">{workspace.memberCount || 0}</span>
-                  </div>
-                  
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm flex items-center">
-                      <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                      Created
-                    </span>
-                    <span className="text-sm font-medium">{new Date(workspace.created_at).toLocaleDateString()}</span>
+      <div className="p-6 flex-1 overflow-auto bg-background">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Workspaces</h1>
+              <p className="text-muted-foreground mt-1">Manage your workspaces and team access</p>
+            </div>
+            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Workspace
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create New Workspace</DialogTitle>
+                  <DialogDescription>
+                    Create a new workspace to organize your team and projects.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="name" className="text-right">
+                      Name
+                    </Label>
+                    <Input
+                      id="name"
+                      value={newWorkspaceName}
+                      onChange={(e) => setNewWorkspaceName(e.target.value)}
+                      className="col-span-3"
+                      placeholder="Enter workspace name"
+                    />
                   </div>
                 </div>
-                
-                <div className="flex space-x-2">
+                <DialogFooter>
                   <Button 
-                    variant="outline" 
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => selectWorkspace(workspace.id)}
+                    type="submit" 
+                    onClick={handleCreateWorkspace}
+                    disabled={isCreating || !newWorkspaceName.trim()}
                   >
-                    Select Workspace
+                    {isCreating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      'Create Workspace'
+                    )}
                   </Button>
-                </div>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          <div className="grid gap-4">
+            {workspacesWithCounts.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <div className="text-center">
+                    <h3 className="text-lg font-medium mb-2">No workspaces found</h3>
+                    <p className="text-muted-foreground mb-4">
+                      Create your first workspace to get started.
+                    </p>
+                    <Button onClick={() => setCreateDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Workspace
+                    </Button>
+                  </div>
+                </CardContent>
               </Card>
-            ))}
+            ) : (
+              workspacesWithCounts.map((workspace) => (
+                <Card key={workspace.id} className={`transition-all hover:shadow-md ${activeWorkspaceId === workspace.id ? 'ring-2 ring-primary' : ''}`}>
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CardTitle className="text-lg">{workspace.name}</CardTitle>
+                          {activeWorkspaceId === workspace.id && (
+                            <Badge variant="default">Active</Badge>
+                          )}
+                          {workspace.owner_id === user?.id && (
+                            <Badge variant="secondary">Owner</Badge>
+                          )}
+                          {workspace.role === 'admin' && workspace.owner_id !== user?.id && (
+                            <Badge variant="outline">Admin</Badge>
+                          )}
+                        </div>
+                        <CardDescription>
+                          Created {new Date(workspace.created_at).toLocaleDateString()}
+                        </CardDescription>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {activeWorkspaceId !== workspace.id && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => selectWorkspace(workspace.id)}
+                          >
+                            Select
+                          </Button>
+                        )}
+                        {workspace.owner_id === user?.id && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => confirmDeleteWorkspace(workspace)}
+                            disabled={isDeleting === workspace.id}
+                          >
+                            {isDeleting === workspace.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Users className="w-4 h-4" />
+                        <span>{workspace.memberCount || 0} member{(workspace.memberCount || 0) !== 1 ? 's' : ''}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        <span>Created {new Date(workspace.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
-        )}
+
+          {/* Delete Confirmation Dialog */}
+          <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete Workspace</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to delete "{workspaceToDelete?.name}"? This action cannot be undone.
+                  All data associated with this workspace will be permanently deleted.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={deleteWorkspace}
+                  disabled={isDeleting !== null}
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete Workspace'
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
-      
-      {/* Create Workspace Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="bg-background border-border dark:border-border">
-          <DialogHeader>
-            <DialogTitle>Create New Workspace</DialogTitle>
-            <DialogDescription>
-              Workspaces help you organize your projects, teams, and data.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Workspace Name</Label>
-              <Input
-                id="name"
-                value={newWorkspaceName}
-                onChange={(e) => setNewWorkspaceName(e.target.value)}
-                placeholder="Enter workspace name"
-                className="bg-background border-border dark:border-border"
-              />
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setCreateDialogOpen(false)}
-              className="bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border"
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={createWorkspace}
-              disabled={isCreating || !newWorkspaceName.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {isCreating ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                'Create Workspace'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="bg-background border-border dark:border-border">
-          <DialogHeader>
-            <DialogTitle>Delete Workspace</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this workspace? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {workspaceToDelete && (
-            <div className="py-4">
-              <p className="text-sm text-muted-foreground mb-2">You are about to delete:</p>
-              <div className="bg-background rounded-md p-3 border border-border dark:border-border">
-                <p className="font-medium">{workspaceToDelete.name}</p>
-                <p className="text-xs text-muted-foreground">Created: {new Date(workspaceToDelete.created_at).toLocaleDateString()}</p>
-              </div>
-            </div>
-          )}
-          
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setDeleteDialogOpen(false)}
-              className="bg-background hover:bg-gray-200 dark:bg-muted border-border dark:border-border"
-            >
-              Cancel
-            </Button>
-                         <Button 
-               variant="outline"
-               className="border-red-800 bg-red-100 dark:bg-red-900/20 hover:bg-red-900/30 text-red-400"
-               onClick={deleteWorkspace}
-               disabled={isDeleting !== null}
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete Workspace'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </SidebarDemo>
   );
 } 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { motion } from "framer-motion";
 import { 
   DollarSign, 
@@ -46,38 +46,64 @@ interface TeamMember {
 }
 
 export default function SalesPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [metrics, setMetrics] = useState({
     totalRevenue: 0,
     totalDeals: 0,
     averageDeal: 0,
-    conversionRate: 0
+    conversionRate: 0,
+    monthlyRecurringRevenue: 0,
+    annualizedRevenue: 0
   });
+  const [currency, setCurrency] = useState({ value: "USD", symbol: "$", label: "USD", prefix: true });
   const [dealDialogOpen, setDealDialogOpen] = useState(false);
+
+  // Format currency values
+  const formatCurrency = (amount: number) => {
+    const formattedAmount = amount.toLocaleString();
+    return currency.prefix ? `${currency.symbol}${formattedAmount}` : `${formattedAmount}${currency.symbol}`;
+  };
 
   const calculateConversionRate = useCallback((totalDeals: number) => {
     // Calculate based on closed won deals vs total deals
     return totalDeals > 0 ? (totalDeals / (totalDeals * 2)) * 100 : 0;
   }, []);
 
-  const handleMetricsChange = useCallback((boardMetrics: { totalRevenue: number; totalDeals: number }) => {
+  const handleMetricsChange = useCallback((boardMetrics: { 
+    totalRevenue: number; 
+    totalDeals: number;
+    monthlyRecurringRevenue: number;
+    annualizedRevenue: number;
+    currency?: { value: string; symbol: string; label: string; prefix: boolean };
+  }) => {
     setMetrics(current => ({
       totalRevenue: boardMetrics.totalRevenue,
       totalDeals: boardMetrics.totalDeals,
       averageDeal: boardMetrics.totalDeals > 0 ? boardMetrics.totalRevenue / boardMetrics.totalDeals : 0,
-      conversionRate: calculateConversionRate(boardMetrics.totalDeals)
+      conversionRate: calculateConversionRate(boardMetrics.totalDeals),
+      monthlyRecurringRevenue: boardMetrics.monthlyRecurringRevenue,
+      annualizedRevenue: boardMetrics.annualizedRevenue
     }));
+    
+    // Update currency if provided
+    if (boardMetrics.currency) {
+      setCurrency(boardMetrics.currency);
+    }
   }, [calculateConversionRate]);
 
   // Load workspaces using API endpoint
   useEffect(() => {
     async function loadWorkspaces() {
-      if (!session?.user?.id) return;
+      if (!user?.id || !session?.access_token) return;
 
       try {
-        const response = await fetch('/api/workspace/leave');
+        const response = await fetch('/api/workspace/leave', {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch workspaces');
         }
@@ -95,7 +121,7 @@ export default function SalesPage() {
     }
 
     loadWorkspaces();
-  }, [session?.user?.id]);
+  }, [user?.id, session?.access_token]);
 
   const fadeInUp = {
     hidden: { opacity: 0, y: 20 },
@@ -197,70 +223,106 @@ export default function SalesPage() {
             initial="hidden"
             animate="visible"
             variants={fadeInUp}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8"
           >
-                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="blue-purple">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-500/10 rounded-lg">
-                  <DollarSign className="h-5 w-5 text-blue-400" />
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-4" gradient="blue-purple">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-500/10 rounded-lg">
+                    <DollarSign className="h-4 w-4 text-blue-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Total Pipeline</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Pipeline</p>
-                  <p className="text-xl font-bold text-foreground">${metrics.totalRevenue.toLocaleString()}</p>
-                </div>
+                <p className="text-lg font-bold text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                  {formatCurrency(metrics.totalRevenue)}
+                </p>
               </div>
                 </AnimatedBorderCard>
 
-                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="purple-pink">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-500/10 rounded-lg">
-                  <BarChart2 className="h-5 w-5 text-indigo-400" />
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-4" gradient="purple-pink">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-indigo-500/10 rounded-lg">
+                    <BarChart2 className="h-4 w-4 text-indigo-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Total Deals</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Deals</p>
-                  <p className="text-xl font-bold text-foreground">{metrics.totalDeals}</p>
-                </div>
+                <p className="text-lg font-bold text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                  {metrics.totalDeals}
+                </p>
               </div>
                 </AnimatedBorderCard>
 
-                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="green-blue">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-cyan-500/10 rounded-lg">
-                  <PieChart className="h-5 w-5 text-cyan-400" />
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-4" gradient="green-blue">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-cyan-500/10 rounded-lg">
+                    <PieChart className="h-4 w-4 text-cyan-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Average Deal</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Average Deal</p>
-                  <p className="text-xl font-bold text-foreground">${metrics.averageDeal.toLocaleString()}</p>
-                </div>
+                <p className="text-lg font-bold text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                  {formatCurrency(metrics.averageDeal)}
+                </p>
               </div>
                 </AnimatedBorderCard>
 
-                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-6" gradient="orange-red">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-500/10 rounded-lg">
-                  <CheckCircle2 className="h-5 w-5 text-blue-400" />
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-4" gradient="orange-red">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-500/10 rounded-lg">
+                    <CheckCircle2 className="h-4 w-4 text-blue-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Win Rate</p>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Win Rate</p>
-                  <p className="text-xl font-bold text-foreground">{metrics.conversionRate.toFixed(1)}%</p>
+                <p className="text-lg font-bold text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                  {metrics.conversionRate.toFixed(1)}%
+                </p>
+              </div>
+                </AnimatedBorderCard>
+
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-4" gradient="green-blue">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-emerald-500/10 rounded-lg">
+                    <DollarSign className="h-4 w-4 text-emerald-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Monthly Recurring</p>
                 </div>
+                <p className="text-lg font-bold text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                  {formatCurrency(metrics.monthlyRecurringRevenue)}
+                </p>
+              </div>
+                </AnimatedBorderCard>
+
+                <AnimatedBorderCard className="bg-background/50 backdrop-blur-sm border-0 p-4" gradient="blue-purple">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-indigo-500/10 rounded-lg">
+                    <BarChart2 className="h-4 w-4 text-indigo-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Annualized Revenue</p>
+                </div>
+                <p className="text-lg font-bold text-foreground whitespace-nowrap overflow-hidden text-ellipsis">
+                  {formatCurrency(metrics.annualizedRevenue)}
+                </p>
               </div>
                 </AnimatedBorderCard>
           </motion.div>
 
           {/* Deal Board */}
-          {session?.user?.id && activeWorkspace && (
+          {user?.id && activeWorkspace && (
             <>
               <DealBoard
                 workspaceId={activeWorkspace}
-                userId={session.user.id}
+                userId={user.id}
                 onMetricsChange={handleMetricsChange}
               />
               <DealDialog
                 open={dealDialogOpen}
                 onOpenChange={setDealDialogOpen}
                 workspaceId={activeWorkspace}
-                userId={session.user.id}
+                userId={user.id}
                 onSuccess={() => setDealDialogOpen(false)}
               />
             </>

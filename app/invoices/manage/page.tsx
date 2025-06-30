@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card-content';
@@ -19,13 +19,11 @@ const CustomerInvoiceButton = () => {
 };
 
 export default function ManageInvoicesPage() {
-  const { data: session, status } = useSession({
-    required: true,
-  });
+  const { user, session } = useAuth();
   const [activeTab, setActiveTab] = useState('create');
 
-  if (status === 'loading') {
-    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  if (!user) {
+    return <div className="flex items-center justify-center h-screen">Please sign in to access this page.</div>;
   }
 
   return (

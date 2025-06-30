@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
 import Image from 'next/image';
 import { 
@@ -136,7 +136,7 @@ const PLATFORMS = [
 ];
 
 export default function SocialMediaPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [connectedAccounts, setConnectedAccounts] = useState<SocialAccount[]>([]);
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -176,9 +176,13 @@ export default function SocialMediaPage() {
 
   useEffect(() => {
     const initializeWorkspace = async () => {
-      if (session?.user?.id) {
+      if (user?.id && session?.access_token) {
         try {
-          const response = await fetch('/api/workspace/leave');
+          const response = await fetch('/api/workspace/leave', {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            }
+          });
           if (response.ok) {
             const data = await response.json();
             const workspaces = data.workspaces || [];
@@ -193,7 +197,7 @@ export default function SocialMediaPage() {
     };
     
     initializeWorkspace();
-  }, [session?.user?.id]);
+  }, [user?.id, session?.access_token]);
 
   useEffect(() => {
     if (workspaceId) {
@@ -469,12 +473,12 @@ export default function SocialMediaPage() {
       
       // Also check for YouTube connection in integrations table
       let youtubeChannels: SocialAccount[] = [];
-      if (session?.user?.id) {
-        console.log('🔍 Checking YouTube integration for user:', session.user.id);
+      if (user?.id && session?.access_token) {
+        console.log('🔍 Checking YouTube integration for user:', user.id);
         const { data: youtubeIntegration, error: youtubeError } = await supabase
           .from('integrations')
           .select('service_name, access_token')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .eq('service_name', 'youtube')
           .single();
         
@@ -587,7 +591,7 @@ export default function SocialMediaPage() {
   };
 
   const handleConnectPlatform = async (platformId: string) => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error('Please log in to connect platforms');
       return;
     }
@@ -627,7 +631,7 @@ export default function SocialMediaPage() {
                 
                 // Wait a moment then reconnect
                 setTimeout(() => {
-                  window.location.href = `/api/oauth/facebook?force_business=true&state=${encodeURIComponent(JSON.stringify({ platform: 'facebook', userId: session.user.id, upgrade: true }))}`;
+                  window.location.href = `/api/oauth/facebook?force_business=true&state=${encodeURIComponent(JSON.stringify({ platform: 'facebook', userId: user.id, upgrade: true }))}`;
                 }, 1000);
                 return;
               } catch (error) {
@@ -639,34 +643,32 @@ export default function SocialMediaPage() {
           }
           
           // Regular Facebook connection with business permissions
-          oauthUrl = `/api/oauth/facebook?advanced=true&state=${encodeURIComponent(JSON.stringify({ platform: 'facebook', userId: session.user.id }))}`;
+          oauthUrl = `/api/oauth/facebook?advanced=true&state=${encodeURIComponent(JSON.stringify({ platform: 'facebook', userId: user.id }))}`;
           break;
         case 'instagram':
-          oauthUrl = `/api/oauth/instagram?state=${encodeURIComponent(JSON.stringify({ platform: 'instagram', userId: session.user.id }))}`;
+          oauthUrl = `/api/oauth/instagram?state=${encodeURIComponent(JSON.stringify({ platform: 'instagram', userId: user.id }))}`;
           break;
         case 'threads':
-          oauthUrl = `/api/oauth/threads?state=${encodeURIComponent(JSON.stringify({ platform: 'threads', userId: session.user.id }))}`;
+          oauthUrl = `/api/oauth/threads?state=${encodeURIComponent(JSON.stringify({ platform: 'threads', userId: user.id }))}`;
           break;
         case 'linkedin':
-          oauthUrl = `/api/oauth/linkedin?state=${encodeURIComponent(JSON.stringify({ platform: 'linkedin', userId: session.user.id }))}`;
+          oauthUrl = `/api/oauth/linkedin?state=${encodeURIComponent(JSON.stringify({ platform: 'linkedin', userId: user.id }))}`;
           break;
         case 'x':
         case 'twitter':
-          oauthUrl = `/api/oauth/twitter?state=${encodeURIComponent(JSON.stringify({ platform: 'twitter', userId: session.user.id }))}`;
+          oauthUrl = `/api/oauth/twitter?state=${encodeURIComponent(JSON.stringify({ platform: 'twitter', userId: user.id }))}`;
           break;
         case 'youtube':
           // YouTube uses the same Google OAuth pattern as other Google services
-          if (!session?.user?.id) {
+          if (!user?.id) {
             toast.error('Please log in first');
             return;
           }
           
           try {
             toast.info('Connecting to YouTube...');
-            // Import signIn from next-auth/react
-            const { signIn } = await import('next-auth/react');
             
-            // Use the same pattern as settings page for Google services
+            // Use Supabase OAuth for YouTube connection
             const youtubeScopes = [
               'openid',
               'email', 
@@ -677,10 +679,9 @@ export default function SocialMediaPage() {
               'https://www.googleapis.com/auth/youtube.force-ssl'
             ];
             
-            await signIn('google', {
-              callbackUrl: '/social-media',
-              scope: youtubeScopes.join(' ')
-            }, { prompt: 'consent' });
+            // Redirect to OAuth endpoint for YouTube
+            const oauthUrl = `/api/oauth/google?service=youtube&scopes=${encodeURIComponent(youtubeScopes.join(' '))}&callbackUrl=${encodeURIComponent('/social-media')}`;
+            window.location.href = oauthUrl;
           } catch (error) {
             console.error('YouTube OAuth error:', error);
             toast.error('Failed to connect YouTube');
@@ -765,7 +766,7 @@ export default function SocialMediaPage() {
       
       const newPost = {
         workspace_id: workspaceId,
-        user_id: session?.user?.id,
+        user_id: user?.id,
         content: postContent,
         platforms: selectedPlatforms,
         post_type: postType,
@@ -976,7 +977,7 @@ export default function SocialMediaPage() {
 
   // Publish to YouTube using server-side API
   const publishToYouTube = async (content: string, selectedChannelId?: string) => {
-    if (!workspaceId || !session?.user?.id) throw new Error('No workspace ID or user ID available');
+    if (!workspaceId || !user?.id) throw new Error('No workspace ID or user ID available');
 
     // Find the selected channel info
     const selectedChannel = selectedChannelId 
@@ -1005,7 +1006,7 @@ export default function SocialMediaPage() {
       formData.append('content', content || '');
       formData.append('channelId', selectedChannelId || selectedChannel.account_id);
       formData.append('videoType', videoType.youtube || 'regular');
-      formData.append('userId', session.user.id);
+      formData.append('userId', user.id);
       
       // Add video file if present
       if (videoFile) {

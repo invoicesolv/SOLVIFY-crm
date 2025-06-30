@@ -2,13 +2,14 @@
 
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { Card } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { getActiveWorkspaceId } from "@/lib/permission";
 
 interface Customer {
@@ -32,8 +33,10 @@ export default function NewProjectPage() {
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState<Date | undefined>(new Date());
+  const [endDate, setEndDate] = useState<Date | undefined>();
 
   useEffect(() => {
     if (session?.user?.id) {
@@ -41,12 +44,12 @@ export default function NewProjectPage() {
     }
   }, [session?.user?.id]);
 
-  // Fetch customers when user session is available
+  // Fetch customers when user session and workspace are available
   useEffect(() => {
-    if (session?.user?.id) {
+    if (session?.user?.id && workspaceId) {
       fetchCustomers();
     }
-  }, [session?.user?.id]);
+  }, [session?.user?.id, workspaceId]);
 
   const fetchWorkspaceId = async () => {
     if (!session?.user?.id) return;
@@ -62,32 +65,40 @@ export default function NewProjectPage() {
   };
 
   const fetchCustomers = async () => {
-    if (!session?.user?.id) {
-      toast.error('Please sign in to create a project');
+    if (!session?.user?.id || !workspaceId) {
+      console.log('Cannot fetch customers: missing session or workspace');
       return;
     }
 
     try {
-      console.log('Fetching all customers for user:', session.user.id);
+      console.log('Fetching customers for workspace:', workspaceId);
       
-      // Fetch ALL customers that this user has access to, regardless of workspace_id
-      const { data: allCustomers, error: customersError } = await supabase
-        .from('customers')
-        .select('*')
-        .order('name');
+      // Use the API endpoint to fetch workspace-filtered customers
+      const response = await fetch('/api/customers', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'user-id': session.user.id,
+          'workspace-id': workspaceId
+        }
+      });
 
-      if (customersError) {
-        console.error('Error fetching customers:', customersError);
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error fetching customers:', errorData);
         setError('Failed to fetch customers');
         return;
       }
 
-      console.log(`Fetched ${allCustomers?.length || 0} total customers`);
+      const data = await response.json();
+      const allCustomers = data.customers || [];
+
+      console.log(`Fetched ${allCustomers.length} workspace customers`);
       
       // Filter out customers with empty names and provide fallbacks for the rest
-      const customersWithNames = (allCustomers || [])
-        .filter(customer => customer.name && customer.name.trim() !== '')
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const customersWithNames = allCustomers
+        .filter((customer: any) => customer.name && customer.name.trim() !== '')
+        .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
 
       console.log(`Filtered to ${customersWithNames.length} customers with valid names`);
       
@@ -156,32 +167,40 @@ export default function NewProjectPage() {
         name: formData.get('name') as string,
         customer_name: selectedCustomer?.name || '',
         status: (formData.get('status') as 'active' | 'on-hold' | 'completed') || 'active',
-        start_date: formData.get('start_date') as string || null,
-        end_date: formData.get('end_date') as string || null,
+        start_date: startDate ? startDate.toISOString().split('T')[0] : null,
+        end_date: endDate ? endDate.toISOString().split('T')[0] : null,
         description: formData.get('description') as string || null,
         user_id: session.user.id,
         workspace_id: workspaceId
       };
 
-      console.log('Creating project in database:', {
+      console.log('Creating project via API:', {
         name: projectData.name,
         workspace_id: workspaceId,
         customer: selectedCustomer?.name
       });
       
-      const { data, error } = await supabase
-        .from('projects')
-        .insert([projectData])
-        .select()
-        .single();
+      // Use the API endpoint instead of direct database access
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(projectData)
+      });
 
-      if (error) {
-        console.error('Error creating project:', error);
-        setError('Failed to create project');
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error creating project:', errorData);
+        setError(errorData.error || 'Failed to create project');
         setLoading(false);
         return;
       }
 
+      const result = await response.json();
+      const data = result.project;
+      
       console.log('Project created successfully:', data.id);
       
       // Create a calendar event for this project
@@ -258,16 +277,15 @@ export default function NewProjectPage() {
 
               <div className="space-y-2">
                 <label htmlFor="customer_id" className="block text-sm font-medium text-muted-foreground">
-                  Customer
+                  Customer (Optional)
                 </label>
                 <div className="space-y-2">
                   <select
                     id="customer_id"
                     name="customer_id"
-                    required
                     className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
                   >
-                    <option value="">Select a customer</option>
+                    <option value="">Select a customer (optional)</option>
                     {customers.map((customer) => (
                       <option key={customer.id} value={customer.id}>
                         {customer.name}
@@ -319,13 +337,11 @@ export default function NewProjectPage() {
                 <label htmlFor="start_date" className="block text-sm font-medium text-muted-foreground">
                   Start Date
                 </label>
-                <input
-                  type="date"
-                  id="start_date"
-                  name="start_date"
-                  required
-                  defaultValue={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                <DatePicker
+                  value={startDate}
+                  onChange={setStartDate}
+                  placeholder="Select start date"
+                  className="w-full"
                 />
               </div>
 
@@ -333,11 +349,11 @@ export default function NewProjectPage() {
                 <label htmlFor="end_date" className="block text-sm font-medium text-muted-foreground">
                   End Date
                 </label>
-                <input
-                  type="date"
-                  id="end_date"
-                  name="end_date"
-                  className="w-full px-4 py-2 bg-background border border-border dark:border-border rounded-md text-foreground placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-600"
+                <DatePicker
+                  value={endDate}
+                  onChange={setEndDate}
+                  placeholder="Select end date (optional)"
+                  className="w-full"
                 />
               </div>
             </div>

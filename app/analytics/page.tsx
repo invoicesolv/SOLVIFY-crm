@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { useSession } from 'next-auth/react'
+import { useAuth } from '@/lib/auth-client';
 import { Card } from "@/components/ui/card"
 import { SidebarDemo } from "@/components/ui/code.demo"
 import { Switch } from "@/components/ui/switch"
@@ -219,7 +219,7 @@ const getDeviceIcon = (device: string) => {
 };
 
 export default function AnalyticsPage() {
-  const { data: session } = useSession();
+  const { user, loading: isLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
@@ -241,14 +241,14 @@ export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState('7days');
 
   useEffect(() => {
-    if (session?.user?.id) {
+    if (user?.id) {
       console.log('[Analytics] Session detected. Loading GA4 Properties...');
       loadGa4Properties();
     }
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
-    if (session?.user?.id && selectedProperty?.id) {
+    if (user?.id && selectedProperty?.id) {
       console.log(`[Analytics] Property or DateRange changed. Loading data for: ${selectedProperty.displayName} (${selectedProperty.id}), Range: ${dateRange}`);
       loadData(true);
     } else if (!selectedProperty?.id) {
@@ -256,7 +256,7 @@ export default function AnalyticsPage() {
       setAnalyticsData(null);
       setLoading(false);
     }
-  }, [session?.user?.id, selectedProperty, dateRange]);
+  }, [user?.id, selectedProperty, dateRange]);
 
   useEffect(() => {
     // Get current theme from CSS variables
@@ -302,7 +302,7 @@ export default function AnalyticsPage() {
   }, []);
 
   const getCacheKey = () => {
-    return `analytics_cache_${session?.user?.id}`;
+    return `analytics_cache_${user?.id}`;
   };
 
   const getCachedData = (): CachedData | null => {
@@ -320,7 +320,7 @@ export default function AnalyticsPage() {
       return null;
     }
 
-    if (Date.now() > data.expiresAt || data.user_id !== session?.user?.id) {
+    if (Date.now() > data.expiresAt || data.user_id !== user?.id) {
       localStorage.removeItem(getCacheKey());
       return null;
     }
@@ -349,7 +349,7 @@ export default function AnalyticsPage() {
   };
 
   const setCachedData = (dataToCache: Partial<Omit<CachedData, 'timestamp' | 'expiresAt' | 'user_id'> & { analyticsData?: AnalyticsData | null }>) => {
-    if (typeof window === 'undefined' || !session?.user?.id) return;
+    if (typeof window === 'undefined' || !user?.id) return;
 
     // Get the current full list of properties and selected property from component state
     // to ensure we cache the most up-to-date versions of these.
@@ -362,24 +362,42 @@ export default function AnalyticsPage() {
       selectedProperty: currentSelectedPropertyToCache, // Always use current state selectedProperty
       timestamp: Date.now(),
       expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
-      user_id: session.user.id
+      user_id: user.id
     };
 
     localStorage.setItem(getCacheKey(), JSON.stringify(cacheData));
   };
 
   const loadGa4Properties = async () => {
-    if (!session?.user?.id) return;
+    if (!user?.id || !session?.access_token) return;
     setGaPropertiesLoading(true);
     setGaPropertiesError(null);
     console.log('[Analytics] Fetching GA4 properties...');
     try {
-      const response = await fetch('/api/ga4/properties');
+      const response = await fetch('/api/ga4/properties', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.details || errorData.error || 'Failed to fetch GA4 properties');
+        let errorMessage = 'Failed to fetch GA4 properties';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.details || errorData.error || errorMessage;
+        } catch (parseError) {
+          console.error('[Analytics] Failed to parse error response for GA4 properties:', parseError);
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
-      const data = await response.json();
+      
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('[Analytics] Failed to parse GA4 properties response:', parseError);
+        throw new Error('Invalid response format from server');
+      }
       const fetchedProperties: Array<{ id: string; displayName: string; account?: string; accountDisplayName?: string }> = data.properties || [];
       setProperties(fetchedProperties);
       console.log('[Analytics] GA4 Properties fetched:', fetchedProperties);
@@ -423,7 +441,7 @@ export default function AnalyticsPage() {
   };
 
   const loadData = async (forceRefresh = false) => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       console.error('No user session found for analytics data');
       toast.error('User authentication required');
       setLoading(false);
@@ -446,12 +464,18 @@ export default function AnalyticsPage() {
       }
     }
 
+    if (!session?.access_token) {
+      toast.error('Authentication required');
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch('/api/analytics', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           startDate: dateRange, // This will be handled by the API's getDateRange function
@@ -461,15 +485,37 @@ export default function AnalyticsPage() {
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        let errorMessage = 'Failed to fetch analytics data';
+        try {
+          const data = await response.json();
+          errorMessage = data.error || errorMessage;
+        } catch (parseError) {
+          // If JSON parsing fails, try to get text response
+          try {
+            const textResponse = await response.text();
+            console.error('[Analytics] Non-JSON error response:', textResponse);
+            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+          } catch (textError) {
+            console.error('[Analytics] Could not parse error response:', textError);
+          }
+        }
+        
         if (response.status === 401) {
           localStorage.removeItem(getCacheKey());
           toast.error('Authentication required. Please reconnect Google Analytics in Settings.');
         }
-        throw new Error(data.error || 'Failed to fetch analytics data');
+        throw new Error(errorMessage);
       }
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('[Analytics] Failed to parse JSON response:', parseError);
+        const textResponse = await response.text();
+        console.error('[Analytics] Raw response:', textResponse);
+        throw new Error('Invalid response format from server');
+      }
       
       if (data.analytics) {
         setAnalyticsData(data.analytics);
@@ -544,15 +590,38 @@ export default function AnalyticsPage() {
         return;
       }
 
+      if (!session?.access_token) {
+        toast.error('Authentication required');
+        return;
+      }
+
       const [settingsResponse, cronResponse] = await Promise.all([
-        fetch(`/api/analytics/email-settings?propertyId=${selectedProperty.id}`),
-        fetch(`/api/analytics/cron-jobs?propertyId=${selectedProperty.id}`)
+        fetch(`/api/analytics/email-settings?propertyId=${selectedProperty.id}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        }),
+        fetch(`/api/analytics/cron-jobs?propertyId=${selectedProperty.id}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
       ]);
 
-      const [settingsData, cronData] = await Promise.all([
-        settingsResponse.json(),
-        cronResponse.json()
-      ]);
+      let settingsData, cronData;
+      try {
+        settingsData = await settingsResponse.json();
+      } catch (parseError) {
+        console.error('[Analytics] Failed to parse email settings response:', parseError);
+        throw new Error('Invalid email settings response format');
+      }
+      
+      try {
+        cronData = await cronResponse.json();
+      } catch (parseError) {
+        console.error('[Analytics] Failed to parse cron jobs response:', parseError);
+        throw new Error('Invalid cron jobs response format');
+      }
 
       if (settingsResponse.ok && settingsData.data) {
         setEmailSettings({
@@ -585,6 +654,11 @@ export default function AnalyticsPage() {
         return;
       }
 
+      if (!session?.access_token) {
+        toast.error('Authentication required');
+        return;
+      }
+
       const weeklyRecipients = emailSettings.weeklyRecipients.split(',').map(email => email.trim()).filter(Boolean);
       if (emailSettings.enabled && weeklyRecipients.length === 0) {
         toast.error('Please add at least one recipient email for weekly reports');
@@ -595,6 +669,7 @@ export default function AnalyticsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           propertyId: selectedProperty.id,
@@ -608,16 +683,34 @@ export default function AnalyticsPage() {
         }),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('[Analytics] Failed to parse save settings response:', parseError);
+        throw new Error('Invalid response format from server');
+      }
+      
       if (!response.ok) {
         throw new Error(data.error || 'Failed to save settings');
       }
 
-      const cronResponse = await fetch(`/api/analytics/cron-jobs?propertyId=${selectedProperty.id}`);
+      const cronResponse = await fetch(`/api/analytics/cron-jobs?propertyId=${selectedProperty.id}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      });
       if (!cronResponse.ok) {
         throw new Error('Failed to fetch updated cron jobs');
       }
-      const cronData = await cronResponse.json();
+      
+      let cronData;
+      try {
+        cronData = await cronResponse.json();
+      } catch (parseError) {
+        console.error('[Analytics] Failed to parse updated cron jobs response:', parseError);
+        throw new Error('Invalid cron jobs response format');
+      }
       setCronJobs(cronData.jobs || []);
 
       toast.success('Email schedule saved successfully');
@@ -728,11 +821,29 @@ export default function AnalyticsPage() {
                       toast.error('Please configure test recipients in Email Settings');
                       return;
                     }
+                    const selectedIndex = properties.findIndex(p => p.id === selectedProperty.id);
+                    const propertyFromArray = selectedIndex >= 0 ? properties[selectedIndex] : null;
+                    console.log('Sending test report with property:', {
+                      selectedProperty: selectedProperty,
+                      propertyFromArray: propertyFromArray,
+                      displayNameFromSelected: selectedProperty.displayName,
+                      displayNameFromArray: propertyFromArray?.displayName,
+                      selectedPropertyKeys: Object.keys(selectedProperty),
+                      propertyFromArrayKeys: propertyFromArray ? Object.keys(propertyFromArray) : [],
+                      propertiesCount: properties.length,
+                      selectedIndex: selectedIndex
+                    });
                     fetch('/api/analytics/send-report', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token}`
+                      },
                       body: JSON.stringify({
                         propertyId: selectedProperty.id,
+                        propertyName: selectedProperty.displayName || 
+                                     propertyFromArray?.displayName ||
+                                     (selectedProperty.id ? `Property ${selectedProperty.id.replace('properties/', '')}` : 'Unknown Property'),
                         recipients: testRecipients,
                         analyticsData: analyticsData,
                         isTest: true,
@@ -775,11 +886,19 @@ export default function AnalyticsPage() {
                       toast.error('Please configure manual report recipients in Email Settings');
                       return;
                     }
+                    const selectedIndex = properties.findIndex(p => p.id === selectedProperty.id);
+                    const propertyFromArray = selectedIndex >= 0 ? properties[selectedIndex] : null;
                     fetch('/api/analytics/send-report', {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token}`
+                      },
                       body: JSON.stringify({
                         propertyId: selectedProperty.id,
+                        propertyName: selectedProperty.displayName || 
+                                     propertyFromArray?.displayName ||
+                                     (selectedProperty.id ? `Property ${selectedProperty.id.replace('properties/', '')}` : 'Unknown Property'),
                         recipients: manualRecipients,
                         analyticsData: analyticsData,
                         isTest: false,

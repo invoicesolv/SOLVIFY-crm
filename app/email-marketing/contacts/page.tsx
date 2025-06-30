@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { 
   Users, 
   Plus, 
@@ -40,6 +40,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { getActiveWorkspaceId } from '@/lib/permission';
 import { SidebarDemo } from "@/components/ui/code.demo";
+import { EmailMarketingNav } from '@/components/email-marketing/EmailMarketingNav';
 
 interface Contact {
   id: string;
@@ -71,7 +72,7 @@ interface ListSubscription {
 }
 
 export default function ContactsPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactLists, setContactLists] = useState<ContactList[]>([]);
@@ -84,6 +85,7 @@ export default function ContactsPage() {
   const [newListDialog, setNewListDialog] = useState(false);
   const [newListName, setNewListName] = useState('');
   const [newListDescription, setNewListDescription] = useState('');
+  const [addAllContacts, setAddAllContacts] = useState(false);
   
   // New contact dialog
   const [newContactDialog, setNewContactDialog] = useState(false);
@@ -98,9 +100,9 @@ export default function ContactsPage() {
 
   useEffect(() => {
     const initializeWorkspace = async () => {
-      if (session?.user?.id) {
+      if (user?.id) {
         try {
-          const activeWorkspaceId = await getActiveWorkspaceId(session.user.id);
+          const activeWorkspaceId = await getActiveWorkspaceId(user.id);
           setWorkspaceId(activeWorkspaceId);
         } catch (error) {
           console.error('Error getting workspace ID:', error);
@@ -109,7 +111,7 @@ export default function ContactsPage() {
     };
     
     initializeWorkspace();
-  }, [session?.user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (workspaceId) {
@@ -168,27 +170,60 @@ export default function ContactsPage() {
   };
 
   const createList = async () => {
-    if (!workspaceId || !session?.user?.id || !newListName.trim()) return;
+    if (!workspaceId || !user?.id || !newListName.trim()) return;
     
     try {
-      const { error } = await supabase
+      // Create the list first
+      const { data: newList, error: listError } = await supabase
         .from('email_lists')
         .insert({
           workspace_id: workspaceId,
-          user_id: session.user.id,
+          user_id: user.id,
           name: newListName.trim(),
           description: newListDescription.trim() || null,
           total_contacts: 0,
           active_contacts: 0
-        });
+        })
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (listError) throw listError;
+
+      // If user wants to add all existing contacts
+      if (addAllContacts && contacts.length > 0 && newList) {
+        const subscriptions = contacts.map(contact => ({
+          list_id: newList.id,
+          contact_id: contact.id,
+          status: 'subscribed' as const,
+          subscribed_at: new Date().toISOString()
+        }));
+
+        const { error: subscriptionError } = await supabase
+          .from('list_subscriptions')
+          .insert(subscriptions);
+
+        if (subscriptionError) {
+          console.error('Error adding contacts to list:', subscriptionError);
+          // Don't fail completely, just warn
+          toast.warning('List created but some contacts could not be added');
+        } else {
+          // Update the list counts
+          await supabase
+            .from('email_lists')
+            .update({
+              total_contacts: contacts.length,
+              active_contacts: contacts.filter(c => c.status === 'active').length
+            })
+            .eq('id', newList.id);
+        }
+      }
       
       setNewListName('');
       setNewListDescription('');
+      setAddAllContacts(false);
       setNewListDialog(false);
       fetchData();
-      toast.success('Contact list created successfully');
+      toast.success(`Contact list created successfully${addAllContacts ? ` with ${contacts.length} contacts` : ''}`);
     } catch (error) {
       console.error('Error creating list:', error);
       toast.error('Failed to create contact list');
@@ -199,20 +234,50 @@ export default function ContactsPage() {
     if (!workspaceId || !newContact.email.trim()) return;
     
     try {
-      const { error } = await supabase
-        .from('email_contacts')
-        .insert({
-          workspace_id: workspaceId,
-          email: newContact.email.trim(),
-          first_name: newContact.first_name.trim() || null,
-          last_name: newContact.last_name.trim() || null,
-          phone: newContact.phone.trim() || null,
-          company: newContact.company.trim() || null,
-          status: 'active',
-          source: newContact.source
-        });
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newContact.email.trim())) {
+        toast.error('Please enter a valid email address');
+        return;
+      }
 
-      if (error) throw error;
+      // Check for duplicate email
+      const { data: existingContact } = await supabase
+        .from('email_contacts')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('email', newContact.email.trim())
+        .single();
+
+      if (existingContact) {
+        toast.error('A contact with this email already exists');
+        return;
+      }
+
+      const contactData = {
+        workspace_id: workspaceId,
+        email: newContact.email.trim().toLowerCase(),
+        first_name: newContact.first_name.trim() || null,
+        last_name: newContact.last_name.trim() || null,
+        phone: newContact.phone.trim() || null,
+        company: newContact.company.trim() || null,
+        status: 'active' as const,
+        source: newContact.source
+      };
+
+      console.log('Creating contact with data:', contactData);
+
+      const { data, error } = await supabase
+        .from('email_contacts')
+        .insert(contactData)
+        .select();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+      
+      console.log('Contact created successfully:', data);
       
       setNewContact({
         email: '',
@@ -225,9 +290,19 @@ export default function ContactsPage() {
       setNewContactDialog(false);
       fetchData();
       toast.success('Contact added successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating contact:', error);
-      toast.error('Failed to add contact');
+      
+      // More specific error messages
+      if (error.code === '23505') {
+        toast.error('A contact with this email already exists');
+      } else if (error.code === '42P01') {
+        toast.error('Email contacts table not found. Please check your database setup.');
+      } else if (error.message?.includes('workspace_id')) {
+        toast.error('Invalid workspace. Please refresh and try again.');
+      } else {
+        toast.error(`Failed to add contact: ${error.message || 'Unknown error'}`);
+      }
     }
   };
 
@@ -316,6 +391,7 @@ export default function ContactsPage() {
 
   return (
     <SidebarDemo>
+      <EmailMarketingNav />
       <div className="p-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -653,6 +729,26 @@ export default function ContactsPage() {
                             placeholder="Describe this contact list..."
                           />
                         </div>
+                        {contacts.length > 0 && (
+                          <div className="space-y-2">
+                            <Label>Add Existing Contacts (Optional)</Label>
+                            <p className="text-sm text-muted-foreground">
+                              You can add your existing {contacts.length} contact(s) to this list
+                            </p>
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id="add-all-contacts"
+                                checked={addAllContacts}
+                                onChange={(e) => setAddAllContacts(e.target.checked)}
+                                className="rounded"
+                              />
+                              <Label htmlFor="add-all-contacts" className="text-sm">
+                                Add all {contacts.length} existing contacts to this list
+                              </Label>
+                            </div>
+                          </div>
+                        )}
                         <div className="flex justify-end gap-3">
                           <Button variant="outline" onClick={() => setNewListDialog(false)}>
                             Cancel

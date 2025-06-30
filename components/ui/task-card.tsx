@@ -283,7 +283,19 @@ export function TaskCard({ task, onUpdate, onDelete, onMoveTask, onMoveSubtask, 
                                                             )}
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                onUpdate && onUpdate(task.id, { ...task, assigned_to: member.user_id });
+                                                console.log('[TASK CARD] Assignment clicked:', { taskId: task.id, memberId: member.user_id, memberName: member.name });
+                                                console.log('[TASK CARD] onUpdate function exists:', !!onUpdate);
+                                                try {
+                                                    if (onUpdate) {
+                                                        console.log('[TASK CARD] Calling onUpdate with:', { taskId: task.id, updates: { ...task, assigned_to: member.user_id } });
+                                                        onUpdate(task.id, { ...task, assigned_to: member.user_id });
+                                                        console.log('[TASK CARD] onUpdate called successfully');
+                                                    } else {
+                                                        console.error('[TASK CARD] onUpdate function is missing!');
+                                                    }
+                                                } catch (error) {
+                                                    console.error('[TASK CARD] Error calling onUpdate:', error);
+                                                }
                                                             }}
                                                         >
                                                             <User className="h-4 w-4 mr-2 text-muted-foreground" />
@@ -303,7 +315,8 @@ export function TaskCard({ task, onUpdate, onDelete, onMoveTask, onMoveSubtask, 
                                                                 className="text-sm text-red-400 flex items-center gap-2 cursor-pointer hover:bg-gray-200 dark:bg-muted"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    onUpdate && onUpdate(task.id, { ...task, assigned_to: undefined });
+                                                                    console.log('[TASK CARD] Unassigning task:', task.id);
+                                                                    onUpdate && onUpdate(task.id, { assigned_to: null });
                                                                 }}
                                                             >
                                                                 <AlertCircle className="h-4 w-4 mr-2" />

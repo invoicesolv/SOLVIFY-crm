@@ -1,7 +1,6 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { createClient } from '@supabase/supabase-js';
 
 interface AutomationRule {
   id: string;
@@ -27,6 +26,45 @@ interface PotentialLead {
     website?: string;
     serviceInterest?: string;
   };
+}
+
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  const supabaseAdmin = getSupabaseAdmin();
+  
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
 }
 
 // Execute automation actions
@@ -135,14 +173,15 @@ async function executeAutomation(
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { workspaceId, userId, leads, automations } = await request.json();
+    const { workspaceId, leads, automations } = await request.json();
 
     if (!workspaceId || !leads || !Array.isArray(leads)) {
       return NextResponse.json({ error: 'Invalid request data' }, { status: 400 });
@@ -190,7 +229,7 @@ export async function POST(request: Request) {
           status: 'new',
           stage: potentialLead.suggestedStage,
           workspace_id: workspaceId,
-          created_by: userId,
+          created_by: user.id,
           last_contacted: null,
           next_followup: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours from now
         };
@@ -213,7 +252,7 @@ export async function POST(request: Request) {
         if (automations && Array.isArray(automations)) {
           for (const automation of automations) {
             if (automation.enabled) {
-              await executeAutomation(automation, newLead.id, newLead, workspaceId, userId);
+              await executeAutomation(automation, newLead.id, newLead, workspaceId, user.id);
             }
           }
         }
@@ -237,7 +276,7 @@ export async function POST(request: Request) {
           type: 'notification',
           priority: 'low',
           status: 'completed',
-          assigned_to: userId,
+          assigned_to: user.id,
           workspace_id: workspaceId,
           due_date: new Date().toISOString(),
         });

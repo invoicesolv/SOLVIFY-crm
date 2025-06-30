@@ -22,7 +22,7 @@ export function startStatsRefreshJob() {
           }
           
           // Determine the base URL based on environment
-          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001';
           
           // Call our cron job API endpoint
           const response = await fetch(`${baseUrl}/api/cron/refresh-stats`, {

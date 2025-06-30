@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { getValidGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +12,7 @@ async function sendEmailReport(
   attachments?: any[]
 ) {
   try {
-    const emailResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/send-email`, {
+          const emailResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/send-email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -44,7 +44,7 @@ async function generateAnalyticsReport(userId: string, propertyId: string, dateR
       throw new Error('No valid Google Analytics token found');
     }
 
-    const analyticsResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/ga4/reports`, {
+    const analyticsResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/ga4/reports`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -77,7 +77,7 @@ async function generateSearchConsoleReport(userId: string, siteUrl: string, date
       throw new Error('No valid Google Search Console token found');
     }
 
-    const searchResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/search-console/reports`, {
+    const searchResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/search-console/reports`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -414,7 +414,7 @@ async function processEmailCampaign(job: any) {
   const config = job.settings.automation_config || {};
   
   try {
-    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/email-marketing/send-campaign`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/email-marketing/send-campaign`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -443,7 +443,7 @@ async function processInvoiceCreation(job: any) {
   const config = job.settings.automation_config || {};
   
   try {
-    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/fortnox/invoices/create`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/fortnox/invoices/create`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -482,7 +482,7 @@ async function processCalendarEvent(job: any) {
     eventDate.setHours(eventDate.getHours() + 1); // Schedule 1 hour from now
     const endDate = new Date(eventDate.getTime() + (config.event_duration || 60) * 60000);
 
-    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/calendar`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/calendar`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -532,7 +532,7 @@ async function processSocialMediaPost(job: any) {
   const config = job.settings.automation_config || {};
   
   try {
-    const response = await fetch(`${process.env.NEXTAUTH_URL}/api/social-media/post`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/social-media/post`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -593,21 +593,21 @@ async function processDataSync(job: any) {
     
     switch (config.sync_source) {
       case 'google_analytics':
-        response = await fetch(`${process.env.NEXTAUTH_URL}/api/ga4/sync`, {
+        response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/ga4/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: job.user_id, target: config.sync_target })
         });
         break;
       case 'search_console':
-        response = await fetch(`${process.env.NEXTAUTH_URL}/api/search-console/sync`, {
+        response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/search-console/sync`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: job.user_id, target: config.sync_target })
         });
         break;
       case 'calendar':
-        response = await fetch(`${process.env.NEXTAUTH_URL}/api/calendar/sync-workspace`, {
+        response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/calendar/sync-workspace`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: job.user_id })

@@ -1,22 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
-import { getServerSession } from "next-auth/next";
-import authOptions from "@/lib/auth";
+import { supabaseAdmin } from '@/lib/supabase';
+
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Get the session to verify the user
-    const session = await getServerSession(authOptions);
-    
-    if (!session || !session.user) {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json(
-        { error: "Unauthorized: You must be logged in to change your password" },
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
     
     // Extract email from session
-    const email = session.user.email;
+    const email = user.email;
     
     if (!email) {
       return NextResponse.json(
@@ -36,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Verify current password first by signing in
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    const { error: signInError } = await supabaseAdmin.auth.signInWithPassword({
       email,
       password: currentPassword,
     });
@@ -49,7 +67,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Update the password
-    const { error: updateError } = await supabase.auth.updateUser({
+    const { error: updateError } = await supabaseAdmin.auth.updateUser({
       password: newPassword
     });
     

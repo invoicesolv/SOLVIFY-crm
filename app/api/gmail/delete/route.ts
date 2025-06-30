@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { supabaseClient } from '@/lib/supabase-client';
 import { google } from 'googleapis';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
 
 async function getRefreshedToken(userId: string): Promise<string | null> {
   try {
+    const supabase = supabaseClient;
+    
     const { data: integration, error } = await supabase
       .from('integrations')
       .select('refresh_token, expires_at')
@@ -62,14 +62,21 @@ async function getRefreshedToken(userId: string): Promise<string | null> {
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.id) {
+  // Get the JWT token from the Authorization header
+  const token = req.headers.get('authorization')?.replace('Bearer ', '');
+  if (!token) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const userId = session.user.id;
-  let accessToken = (session as any).access_token;
+  // Verify the token and get user
+  const supabase = supabaseClient;
+  
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const userId = user.id;
 
   // Get the email ID from the URL parameters
   const url = new URL(req.url);
@@ -82,9 +89,7 @@ export async function DELETE(req: NextRequest) {
   try {
     // First check if we need to refresh the token
     const newToken = await getRefreshedToken(userId);
-    if (newToken) {
-      accessToken = newToken;
-    }
+    let accessToken = newToken;
 
     // If we still don't have a valid token, try to get it from the integrations table
     if (!accessToken) {

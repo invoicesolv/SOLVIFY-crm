@@ -7,8 +7,8 @@ import { SidebarDemo } from "@/components/ui/code.demo";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSearchParams } from 'next/navigation';
 import { toast } from "sonner";
-import { supabase, supabaseAdmin } from '@/lib/supabase';
-import { useSession, signIn } from "next-auth/react";
+import { supabaseClient } from '@/lib/supabase-client';
+import { useAuth } from '@/lib/auth-client';
 import Image from 'next/image';
 import { 
   Settings, 
@@ -58,10 +58,16 @@ export default function SettingsPage() {
 
 function SettingsContent() {
   const searchParams = useSearchParams();
-  const { data: session, status } = useSession();
-  const userId = session?.user?.id;
+  const { user, session } = useAuth();
+  
+  // Memoize user ID to prevent unnecessary re-renders
+  const userId = user?.id;
+  const accessToken = session?.access_token;
   
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
+  
+  // Use the existing authenticated Supabase client
+  const supabase = supabaseClient;
   
   const [services, setServices] = useState<AuthService[]>([
     {
@@ -118,7 +124,9 @@ function SettingsContent() {
       description: 'Connect Gmail to pull potential leads',
       isAuthenticated: false,
       icon: <Inbox className="h-5 w-5 text-muted-foreground" />,
-      scopes: ['https://www.googleapis.com/auth/gmail.readonly']
+      scopes: [
+        'https://mail.google.com/'
+      ]
     }
   ]);
 
@@ -143,6 +151,12 @@ function SettingsContent() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
+  const [showLoopiaForm, setShowLoopiaForm] = useState(false);
+  const [loopiaAccounts, setLoopiaAccounts] = useState<any[]>([]);
+  const [newLoopiaCustomerNumber, setNewLoopiaCustomerNumber] = useState('');
+  const [newLoopiaUsername, setNewLoopiaUsername] = useState('');
+  const [newLoopiaPassword, setNewLoopiaPassword] = useState('');
+  const [loopiaLoading, setLoopiaLoading] = useState(false);
 
   // Social Media Integration States
   const [socialMediaConnections, setSocialMediaConnections] = useState({
@@ -164,13 +178,13 @@ function SettingsContent() {
   } as const;
 
   const loadIntegrationStatus = useCallback(async () => {
-    if (!session?.user?.id) return;
+    if (!userId || !accessToken) return;
     
     try {
       const { data: integrations, error } = await supabase
         .from('integrations')
         .select('*')
-        .eq('user_id', session.user.id);
+        .eq('user_id', userId);
 
       if (error) throw error;
 
@@ -184,7 +198,7 @@ function SettingsContent() {
             await supabase
               .from('integrations')
               .delete()
-              .eq('user_id', session.user.id)
+              .eq('user_id', userId)
               .eq('service_name', integration.service_name);
             continue;
           }
@@ -207,19 +221,23 @@ function SettingsContent() {
       console.error("Error loading integrations:", error);
       toast.error('Failed to load integration status');
     }
-  }, [session?.user?.id]);
+  }, [userId, accessToken]);
 
   useEffect(() => {
-    if (status === "authenticated" && session?.user?.id) {
+    if (accessToken && userId) {
       loadIntegrationStatus();
     }
-  }, [session, status, loadIntegrationStatus]);
+  }, [accessToken, userId, loadIntegrationStatus]);
 
   useEffect(() => {
     const fetchActiveWorkspace = async () => {
-      if (!session?.user?.id) return;
+      if (!userId || currentWorkspaceId) return; // Don't fetch if we already have workspace ID
       try {
-        const response = await fetch('/api/workspace/leave');
+        const response = await fetch('/api/workspace/leave', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
         if (response.ok) {
           const data = await response.json();
           const workspaces = data.workspaces || [];
@@ -235,10 +253,10 @@ function SettingsContent() {
       }
     };
 
-    if (status === "authenticated") {
+    if (accessToken && userId && !currentWorkspaceId) { // Only fetch if we don't have workspace ID
       fetchActiveWorkspace();
     }
-  }, [session, status]);
+  }, [accessToken, userId, currentWorkspaceId]);
 
   useEffect(() => {
     const loadApiKey = async () => {
@@ -281,103 +299,92 @@ function SettingsContent() {
       }
     };
 
-    if (status === "authenticated" && currentWorkspaceId) {
+    if (accessToken && currentWorkspaceId) {
       loadApiKey();
     }
-  }, [session, status, currentWorkspaceId]);
+  }, [accessToken, currentWorkspaceId]);
 
   useEffect(() => {
     // Check for authentication callback
     const authService = searchParams.get('auth');
     const status = searchParams.get('status');
-    const tokens = searchParams.get('tokens');
+    const error = searchParams.get('error');
 
-    if (authService && status && tokens && session?.user?.id) {
+    if (authService && status && userId) {
       if (status === 'success') {
-        try {
-          const tokenData = JSON.parse(atob(tokens));
+        // The OAuth route has already saved the tokens to Supabase
+        // We just need to refresh the integration status and show success
+        loadIntegrationStatus().then(() => {
+          // Clear URL parameters after successful auth
+          const url = new URL(window.location.href);
+          url.searchParams.delete('auth');
+          url.searchParams.delete('status');
+          url.searchParams.delete('error');
+          window.history.replaceState({}, '', url.toString());
           
-          // Calculate expiration time
-          const now = new Date();
-          const expiresAt = new Date(now.getTime() + tokenData.expires_in * 1000);
+          // Show success message with service names
+          const serviceNames = authService.split(',').map(service => {
+            const serviceObj = services.find(s => s.id === service);
+            return serviceObj?.name || service;
+          }).join(', ');
           
-          // Save tokens for each service
-          const services = ['google-calendar', 'google-analytics', 'google-searchconsole'];
-          Promise.all(services.map(async (service) => {
-            const { error } = await supabase
-              .from('integrations')
-              .upsert({
-                user_id: session.user.id,
-                service_name: service,
-                access_token: tokenData.access_token,
-                refresh_token: tokenData.refresh_token,
-                scopes: tokenData.scope.split(' '),
-                expires_at: expiresAt.toISOString(),
-                updated_at: now.toISOString()
-              }, {
-                onConflict: 'user_id,service_name'
-              });
-
-            if (error) {
-              throw error;
-            }
-          }))
-          .then(async () => {
-            // Force refresh integration status after saving
-            await loadIntegrationStatus();
-            
-            // Clear URL parameters after successful auth
-            const url = new URL(window.location.href);
-            url.searchParams.delete('auth');
-            url.searchParams.delete('status');
-            url.searchParams.delete('tokens');
-            window.history.replaceState({}, '', url.toString());
-            toast.success('Successfully connected services');
-          })
-          .catch(() => {
-            toast.error('Failed to save authentication tokens');
-          });
-        } catch (error) {
-          toast.error('Failed to process authentication response');
-        }
-      } else {
-        toast.error('Failed to authenticate services');
+          toast.success(`Successfully connected: ${serviceNames}`);
+        }).catch((error) => {
+          console.error('Error refreshing integration status:', error);
+          toast.error('Connected to services but failed to update status');
+        });
+      } else if (status === 'error' || error) {
+        const errorMessage = error || 'Failed to authenticate services';
+        toast.error(`Authentication failed: ${errorMessage}`);
+        
+        // Clear URL parameters after error
+        const url = new URL(window.location.href);
+        url.searchParams.delete('auth');
+        url.searchParams.delete('status');
+        url.searchParams.delete('error');
+        window.history.replaceState({}, '', url.toString());
       }
       setAuthenticating(false);
     }
-  }, [searchParams, session]);
+  }, [searchParams, accessToken, userId, loadIntegrationStatus, services]);
 
   useEffect(() => {
     // Check Fortnox connection status
     const checkFortnoxStatus = async () => {
-      if (!session?.user?.id) {
+      if (!userId) {
         return;
       }
 
       try {
         const response = await fetch(`/api/fortnox/status`, {
-            headers: {
-            'Content-Type': 'application/json'
-            }
-          });
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        });
         
-        if (!response.ok) {
-          setFortnoxStatus({ connected: false });
-          return;
+        if (response.ok) {
+          const data = await response.json();
+          setFortnoxStatus(data);
+        } else {
+          console.error('Failed to fetch Fortnox status:', response.statusText);
         }
-        
-        const data = await response.json();
-        setFortnoxStatus(data);
       } catch (error) {
         console.error('Error checking Fortnox status:', error);
-        setFortnoxStatus({ connected: false });
       }
     };
 
-    if (session?.user?.id) {
+    if (userId) {
       checkFortnoxStatus();
     }
-  }, [session]);
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId && currentWorkspaceId) {
+      loadLoopiaAccounts();
+    }
+  }, [userId, currentWorkspaceId]);
 
   const handleToggleService = (serviceId: string) => {
     setSelectedServices(prev => {
@@ -392,44 +399,64 @@ function SettingsContent() {
   };
 
   const handleAuthenticate = useCallback(async (serviceId?: string) => {
-    // Determine scopes needed
-    let scopesToRequest: string[] = [];
-    if (serviceId) {
-      scopesToRequest = services.find(s => s.id === serviceId)?.scopes || [];
-    } else {
-      // Request *all* potential Google scopes to refresh/grant everything
-      scopesToRequest = services
-        .filter(s => s.id.startsWith('google-'))
-        .flatMap(s => s.scopes)
-        .filter(Boolean); 
-    }
+    console.log('🔍 Google Auth Debug:', { 
+      serviceId, 
+      user: userId, 
+      session: !!accessToken, 
+      access_token: !!accessToken 
+    });
 
-    // Add standard scopes required by NextAuth/Google
-    const baseScopes = ['openid', 'email', 'profile'];
-    const allScopes = [...new Set([...baseScopes, ...scopesToRequest])]; // Combine and ensure uniqueness
-      
-    if (!session?.user?.id) {
+    if (!userId) {
       toast.error('Please sign in first');
       return;
     }
 
+    // Determine scopes needed - get current services from state
+    let scopesToRequest: string[] = [];
+    let servicesToRequest: string[] = [];
+    
+    if (serviceId) {
+      const service = services.find(s => s.id === serviceId);
+      scopesToRequest = service?.scopes || [];
+      servicesToRequest = [serviceId];
+    } else {
+      // Request *all* potential Google scopes to refresh/grant everything
+      const googleServices = services.filter(s => s.id.startsWith('google-'));
+      scopesToRequest = googleServices.flatMap(s => s.scopes).filter(Boolean);
+      servicesToRequest = googleServices.map(s => s.id);
+    }
+
+    // Add standard scopes required by Google OAuth
+    const baseScopes = ['openid', 'email', 'profile'];
+    const allScopes = [...new Set([...baseScopes, ...scopesToRequest])]; // Combine and ensure uniqueness
+
     setAuthenticating(true);
     try {
-      // Always trigger sign-in with the determined scopes
-      await signIn('google', {
-        callbackUrl: `/settings`, 
-        scope: allScopes.join(' ') // Use the combined unique scopes
-      }, { prompt: 'consent' }); 
+      // Create state parameter with user ID and services
+      const stateData = {
+        userId: userId,
+        services: servicesToRequest,
+        returnTo: '/settings'
+      };
+      const state = btoa(JSON.stringify(stateData));
+      
+      // Redirect to OAuth with Google for the selected scopes
+      const scopeParam = encodeURIComponent(allScopes.join(' '));
+      const authUrl = `/api/oauth/google?scopes=${scopeParam}&state=${state}`;
+      
+      console.log('🚀 Google OAuth redirect:', { authUrl, scopes: allScopes, services: servicesToRequest });
+      toast.info('Redirecting to Google authentication...');
+      window.location.href = authUrl;
     } catch (error) {
-      toast.error(`Failed to initiate Google authentication`);
-      console.error("Google sign-in error:", error);
+      console.error("Google authentication error:", error);
+      toast.error(`Failed to initiate Google authentication: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setAuthenticating(false); 
     }
-  }, [session?.user?.id, services]);
+  }, [userId, services]);
 
   const handleDisconnectService = useCallback(async (serviceId: string) => {
-    if (!session?.user?.id) {
+    if (!userId) {
       toast.error('Please sign in first');
       return;
     }
@@ -437,7 +464,7 @@ function SettingsContent() {
       await supabase
         .from('integrations')
         .delete()
-        .eq('user_id', session.user.id)
+        .eq('user_id', userId)
         .eq('service_name', serviceId);
       
       if(serviceId === 'google-gmail') setGmailConnected(false);
@@ -445,26 +472,78 @@ function SettingsContent() {
         service.id === serviceId ? { ...service, isAuthenticated: false } : service
       ));
 
-      toast.success(`${services.find(s => s.id === serviceId)?.name || serviceId} disconnected successfully`);
+      const serviceName = services.find(s => s.id === serviceId)?.name || serviceId;
+      toast.success(`${serviceName} disconnected successfully`);
     } catch (error) {
       toast.error(`Failed to disconnect ${serviceId}`);
       console.error("Disconnect error:", error);
     }
-  }, [session?.user?.id, services]);
+  }, [userId, services]);
+
+  const handleFortnoxConnect = async () => {
+    console.log('🔍 Fortnox Connect Debug:', { 
+      user: userId, 
+      session: !!accessToken, 
+      access_token: !!accessToken 
+    });
+
+    if (!userId) {
+      toast.error('Please log in first');
+      return;
+    }
+
+    if (!accessToken) {
+      console.error('No access token available:', accessToken);
+      toast.error('Authentication session not available. Please refresh the page.');
+      return;
+    }
+
+    try {
+      console.log('🚀 Making Fortnox auth request...');
+      const response = await fetch('/api/fortnox/auth', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('📡 Fortnox auth response:', response.status, response.statusText);
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Fortnox auth data:', data);
+        
+        if (data.authUrl) {
+          toast.success('Redirecting to Fortnox authentication...');
+          window.location.href = data.authUrl;
+        } else {
+          throw new Error('No auth URL returned from server');
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('❌ Fortnox auth error:', errorData);
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+    } catch (error) {
+      console.error('💥 Error connecting to Fortnox:', error);
+      toast.error(`Failed to connect to Fortnox: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   const handleFortnoxDisconnect = async () => {
-    if (!session?.user?.id) {
+    if (!userId) {
       toast.error('User authentication required');
       return;
     }
 
     try {
       // Delete Fortnox settings from Supabase
-      const { error } = await supabaseAdmin
+      const { error } = await supabase
         .from('settings')
         .delete()
         .eq('service_name', 'fortnox')
-        .eq('user_id', session.user.id);
+        .eq('user_id', userId);
       
       if (error) {
         console.error('Error disconnecting from Fortnox:', error);
@@ -480,37 +559,148 @@ function SettingsContent() {
     }
   };
 
+  const loadLoopiaAccounts = async () => {
+    if (!userId || !currentWorkspaceId) return;
+    
+    try {
+      const { data: accounts, error } = await supabase
+        .from('loopia_accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('workspace_id', currentWorkspaceId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setLoopiaAccounts(accounts || []);
+    } catch (error) {
+      console.error('Error loading Loopia accounts:', error);
+      toast.error('Failed to load Loopia accounts');
+    }
+  };
+
+  const saveLoopiaAccount = async () => {
+    if (!userId || !currentWorkspaceId || !newLoopiaUsername || !newLoopiaPassword || !newLoopiaCustomerNumber) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+    
+    setLoopiaLoading(true);
+    try {
+      const { data: account, error } = await supabase
+        .from('loopia_accounts')
+        .insert({
+          user_id: userId,
+          workspace_id: currentWorkspaceId,
+          username: newLoopiaUsername,
+          password: newLoopiaPassword,
+          customer_number: newLoopiaCustomerNumber,
+          display_name: newLoopiaUsername,
+        })
+        .select('*')
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('An account with this username already exists');
+          return;
+        }
+        throw error;
+      }
+
+      setLoopiaAccounts(prev => [...prev, account]);
+      setShowLoopiaForm(false);
+      setNewLoopiaUsername('');
+      setNewLoopiaPassword('');
+      setNewLoopiaCustomerNumber('');
+      toast.success('Loopia account added successfully!');
+    } catch (error) {
+      console.error('Error saving Loopia account:', error);
+      toast.error('Failed to save Loopia account');
+    } finally {
+      setLoopiaLoading(false);
+    }
+  };
+
   const handleSaveApiKey = async () => {
+    console.log('🔍 Save API Key Debug:', { 
+      currentWorkspaceId, 
+      userId, 
+      accessToken: !!accessToken,
+      hasOpenAI: !!openaiApiKey,
+      hasClaude: !!claudeApiKey
+    });
+
     if (!currentWorkspaceId) {
       toast.error("No workspace selected. Cannot save settings.");
-        return;
+      return;
+    }
+
+    if (!userId) {
+      toast.error("User not authenticated. Please log in again.");
+      return;
     }
 
     setApiKeyLoading(true);
     try {
-      const { error } = await supabase
-        .from('workspace_settings')
-        .upsert({
-          workspace_id: currentWorkspaceId,
-          openai_api_key: openaiApiKey,
-          openai_model: openaiModel,
-          claude_api_key: claudeApiKey,
-          claude_model: claudeModel,
-          unsplash_api_key: unsplashApiKey,
-          loopia_api_key: loopiaApiKey,
-          loopia_api_user: loopiaApiUser,
-          blog_url: blogUrl,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'workspace_id'
-        });
+      console.log('🚀 Attempting to save workspace settings via API...');
+      
+      const settingsData = {
+        workspace_id: currentWorkspaceId,
+        openai_api_key: openaiApiKey || null,
+        openai_model: openaiModel || 'gpt-4',
+        claude_api_key: claudeApiKey || null,
+        claude_model: claudeModel || 'claude-3-sonnet',
+        unsplash_api_key: unsplashApiKey || null,
+        loopia_api_key: loopiaApiKey || null,
+        loopia_api_user: loopiaApiUser || null,
+        blog_url: blogUrl || null
+      };
 
-      if (error) throw error;
+      console.log('📦 Settings data to save:', { 
+        workspace_id: settingsData.workspace_id,
+        has_openai: !!settingsData.openai_api_key,
+        has_claude: !!settingsData.claude_api_key,
+        openai_model: settingsData.openai_model,
+        claude_model: settingsData.claude_model
+      });
+
+      // Use the create-settings-table API endpoint which already exists
+      const response = await fetch('/api/create-settings-table', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(settingsData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Settings saved successfully:', result);
       toast.success('Settings saved successfully');
     } catch (error) {
-      console.error("Error saving API settings:", error);
-      toast.error('Failed to save settings');
+      console.error("💥 Error saving API settings:", error);
+      
+      // More specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes('permission') || error.message.includes('403')) {
+          toast.error('Permission denied. Please check your workspace access.');
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          toast.error('Network error. Please check your connection.');
+        } else if (error.message.includes('401')) {
+          toast.error('Authentication error. Please refresh the page and try again.');
+        } else {
+          toast.error(`Failed to save settings: ${error.message}`);
+        }
+      } else {
+        toast.error('Failed to save settings: Unknown error');
+      }
     } finally {
+      console.log('🏁 Save operation completed, resetting loading state');
       setApiKeyLoading(false);
     }
   };
@@ -534,6 +724,7 @@ function SettingsContent() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
@@ -558,20 +749,24 @@ function SettingsContent() {
 
   // Social Media OAuth Handlers
   const handleSocialMediaConnect = async (platform: string) => {
+    console.log('🔍 Social Media Connect Debug:', { 
+      platform, 
+      user: userId, 
+      session: !!accessToken, 
+      access_token: !!accessToken 
+    });
+
+    if (!userId) {
+      toast.error('Please log in first');
+      return;
+    }
+
     setSocialMediaLoading(true);
     try {
       if (platform === 'youtube') {
         // YouTube uses Google OAuth - handle it specially
-        if (!session?.user?.id) {
-          toast.error('Please log in first');
-          setSocialMediaLoading(false);
-          return;
-        }
-        
         try {
           toast.info('Connecting to YouTube...');
-          // Import signIn from next-auth/react
-          const { signIn } = await import('next-auth/react');
           
           // Use the same pattern as other Google services
           const youtubeScopes = [
@@ -584,10 +779,11 @@ function SettingsContent() {
             'https://www.googleapis.com/auth/youtube.force-ssl'
           ];
           
-          await signIn('google', {
-            callbackUrl: '/settings?success=youtube_connected',
-            scope: youtubeScopes.join(' ')
-          }, { prompt: 'consent' });
+          // Redirect to OAuth with Google for YouTube scopes
+          const scopeParam = encodeURIComponent(youtubeScopes.join(' '));
+          const redirectUrl = `/api/oauth/google?scopes=${scopeParam}&returnTo=/settings?success=youtube_connected`;
+          console.log('🚀 YouTube OAuth redirect:', redirectUrl);
+          window.location.href = redirectUrl;
           return;
         } catch (error) {
           console.error('YouTube OAuth error:', error);
@@ -612,23 +808,27 @@ function SettingsContent() {
         // Add state parameter for the OAuth flow
         const state = encodeURIComponent(JSON.stringify({ 
           platform: platform, 
-          userId: session?.user?.id,
+          userId: userId,
           returnTo: '/settings'
         }));
-        window.location.href = `${url}?state=${state}`;
+        const redirectUrl = `${url}?state=${state}`;
+        console.log(`🚀 ${platform} OAuth redirect:`, redirectUrl);
+        toast.info(`Connecting to ${platform}...`);
+        window.location.href = redirectUrl;
       } else {
+        console.error(`No OAuth URL configured for platform: ${platform}`);
         toast.error(`OAuth flow not implemented for ${platform}`);
       }
     } catch (error) {
       console.error(`Error connecting to ${platform}:`, error);
-      toast.error(`Failed to connect to ${platform}`);
+      toast.error(`Failed to connect to ${platform}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setSocialMediaLoading(false);
     }
   };
 
   const handleSocialMediaDisconnect = async (platform: string) => {
-    if (!session?.user?.id) {
+    if (!userId) {
       toast.error('Please sign in first');
       return;
     }
@@ -639,7 +839,7 @@ function SettingsContent() {
         const { error } = await supabase
           .from('integrations')
           .delete()
-          .eq('user_id', session.user.id)
+          .eq('user_id', userId)
           .eq('service_name', 'youtube');
 
         if (error) throw error;
@@ -648,7 +848,7 @@ function SettingsContent() {
         const { error } = await supabase
           .from('social_accounts')
           .delete()
-          .eq('user_id', session.user.id)
+          .eq('user_id', userId)
           .eq('platform', platform);
 
         if (error) throw error;
@@ -666,39 +866,16 @@ function SettingsContent() {
     }
   };
 
-  // Load social media connection status
+  // Load social media connection status with optimized dependencies
   const loadSocialMediaStatus = useCallback(async () => {
-    if (!session?.user?.id) return;
+    if (!userId || !currentWorkspaceId) return;
     
     try {
-      // Get workspace ID first
-      let workspaceId = null;
-      try {
-        const response = await fetch('/api/workspace/leave');
-        if (response.ok) {
-          const data = await response.json();
-          const workspaces = data.workspaces || [];
-          if (workspaces.length > 0) {
-            workspaceId = workspaces[0].id;
-          }
-        }
-      } catch (error) {
-        console.error('Error getting workspace ID:', error);
-      }
-
-      // Check social_accounts table for most platforms - use workspace_id if available
-      const query = supabase
+      // Check social_accounts table for most platforms - use workspace_id
+      const { data: connections, error } = await supabase
         .from('social_accounts')
-        .select('platform, is_connected');
-      
-      if (workspaceId) {
-        query.eq('workspace_id', workspaceId);
-      } else {
-        // Fallback to user_id if no workspace found
-        query.eq('user_id', session.user.id);
-      }
-      
-      const { data: connections, error } = await query;
+        .select('platform, is_connected')
+        .eq('workspace_id', currentWorkspaceId);
 
       if (error) throw error;
 
@@ -726,7 +903,7 @@ function SettingsContent() {
       const { data: youtubeIntegration, error: youtubeError } = await supabase
         .from('integrations')
         .select('service_name')
-        .eq('user_id', session.user.id)
+        .eq('user_id', userId)
         .eq('service_name', 'youtube')
         .single();
 
@@ -738,13 +915,13 @@ function SettingsContent() {
     } catch (error) {
       console.error('Error loading social media connections:', error);
     }
-  }, [session?.user?.id]);
+  }, [userId, currentWorkspaceId]);
 
   useEffect(() => {
-    if (status === "authenticated" && session?.user?.id) {
+    if (accessToken && userId && currentWorkspaceId) {
       loadSocialMediaStatus();
     }
-  }, [session, status, loadSocialMediaStatus]);
+  }, [accessToken, userId, currentWorkspaceId, loadSocialMediaStatus]);
 
   // Handle social media OAuth success/error messages
   useEffect(() => {
@@ -837,7 +1014,7 @@ function SettingsContent() {
       url.searchParams.delete('details'); // Also clear details if present
       window.history.replaceState({}, '', url.toString());
     }
-  }, [searchParams, loadSocialMediaStatus]);
+  }, [searchParams]);
 
   return (
     <SidebarDemo>
@@ -888,11 +1065,14 @@ function SettingsContent() {
                             onChange={(e) => setOpenaiModel(e.target.value)}
                             className="w-full px-2 py-1 text-xs bg-muted border border-border rounded"
                           >
-                            <option value="gpt-4">GPT-4</option>
-                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                            <option value="gpt-4o">GPT-4o</option>
-                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option value="o1">GPT-o1 - Latest reasoning model</option>
+                            <option value="o1-mini">GPT-o1-mini - Faster reasoning</option>
+                            <option value="o3-mini">GPT-o3-mini - Next-gen reasoning</option>
+                            <option value="gpt-4o">GPT-4o - Advanced multimodal</option>
+                            <option value="gpt-4o-mini">GPT-4o-mini - Efficient</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo - Enhanced</option>
+                            <option value="gpt-4">GPT-4 - Standard</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo - Fast & cost-effective</option>
                           </select>
                         </div>
                         <Input
@@ -926,10 +1106,19 @@ function SettingsContent() {
                             onChange={(e) => setClaudeModel(e.target.value)}
                             className="w-full px-2 py-1 text-xs bg-muted border border-border rounded"
                           >
-                            <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                            <option value="claude-3-haiku">Claude 3 Haiku</option>
-                            <option value="claude-3-opus">Claude 3 Opus</option>
-                            <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                                                          <option value="claude-opus-4-20250514">🚀 Claude Opus 4 - Next-generation reasoning</option>
+                              <option value="claude-sonnet-4-20250514">🚀 Claude Sonnet 4 - Next-generation reasoning</option>
+                            <option value="claude-3-7-sonnet-20250219">🧠 Claude 3.7 Sonnet - Advanced reasoning</option>
+                            <option value="claude-3-5-sonnet-20241022">💎 Claude 3.5 Sonnet (Latest) - Superior reasoning</option>
+                            <option value="claude-3-5-haiku-20241022">⚡ Claude 3.5 Haiku (Latest) - Fast reasoning</option>
+                            <option value="claude-3-opus-20240229">🎯 Claude 3 Opus - Most capable</option>
+                            <option value="claude-3-sonnet-20240229">⚖️ Claude 3 Sonnet - Balanced</option>
+                            <option value="claude-3-haiku-20240307">🚀 Claude 3 Haiku - Fastest</option>
+                            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet (Legacy)</option>
+                            <option value="claude-3-5-haiku">Claude 3.5 Haiku (Legacy)</option>
+                            <option value="claude-3-opus">Claude 3 Opus (Legacy)</option>
+                            <option value="claude-3-sonnet">Claude 3 Sonnet (Legacy)</option>
+                            <option value="claude-3-haiku">Claude 3 Haiku (Legacy)</option>
                           </select>
                         </div>
                         <Input
@@ -1048,7 +1237,7 @@ function SettingsContent() {
                           )}
                         </div>
                         {!fortnoxStatus.connected ? (
-                          <Button size="sm" onClick={() => window.location.href = '/api/fortnox/auth'}>
+                          <Button size="sm" onClick={handleFortnoxConnect}>
                             Connect
                           </Button>
                         ) : (
@@ -1153,22 +1342,83 @@ function SettingsContent() {
                           <p className="text-xs text-muted-foreground">Domain management and DNS</p>
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <Input
-                          type="text"
-                          placeholder="Loopia API Username"
-                          value={loopiaApiUser}
-                          onChange={(e) => setLoopiaApiUser(e.target.value)}
-                          className="text-xs bg-muted border-border"
-                        />
-                        <Input
-                          type="password"
-                          placeholder="Loopia API Password"
-                          value={loopiaApiKey}
-                          onChange={(e) => setLoopiaApiKey(e.target.value)}
-                          className="text-xs bg-muted border-border"
-                        />
-                      </div>
+                      
+                      {!showLoopiaForm ? (
+                        <div className="space-y-3">
+                          <div className="space-y-1">
+                            {loopiaAccounts.length > 0 ? loopiaAccounts.map((account) => (
+                              <div key={account.id} className="flex items-center justify-between text-xs p-2 bg-muted/30 rounded">
+                                <span className="text-foreground">{account.username}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className={`${account.is_active ? 'text-green-500' : 'text-red-500'}`}>●</span>
+                                  <span className="text-muted-foreground">{account.customer_number}</span>
+                                </div>
+                              </div>
+                            )) : (
+                              <div className="text-xs text-muted-foreground text-center py-2">
+                                No Loopia accounts configured
+                              </div>
+                            )}
+                          </div>
+                          
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="text-xs w-full"
+                            onClick={() => setShowLoopiaForm(true)}
+                          >
+                            Add New Account
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Input
+                            type="text"
+                            placeholder="Loopia API Username"
+                            value={newLoopiaUsername}
+                            onChange={(e) => setNewLoopiaUsername(e.target.value)}
+                            className="text-xs bg-muted border-border"
+                          />
+                          <Input
+                            type="password"
+                            placeholder="Loopia API Password"
+                            value={newLoopiaPassword}
+                            onChange={(e) => setNewLoopiaPassword(e.target.value)}
+                            className="text-xs bg-muted border-border"
+                          />
+                          <Input
+                            type="text"
+                            placeholder="Customer Number (e.g., FA40-22-85-8581)"
+                            value={newLoopiaCustomerNumber}
+                            onChange={(e) => setNewLoopiaCustomerNumber(e.target.value)}
+                            className="text-xs bg-muted border-border"
+                          />
+                          <div className="flex gap-2 pt-2">
+                            <Button 
+                              size="sm" 
+                              className="text-xs bg-green-600 hover:bg-green-500"
+                              onClick={saveLoopiaAccount}
+                              disabled={loopiaLoading}
+                            >
+                              {loopiaLoading ? 'Adding...' : 'Add Account'}
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="text-xs"
+                              onClick={() => {
+                                setShowLoopiaForm(false);
+                                setNewLoopiaUsername('');
+                                setNewLoopiaPassword('');
+                                setNewLoopiaCustomerNumber('');
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      
                       <p className="text-xs text-muted-foreground mt-2">
                         Don't have API credentials? <a href="https://www.loopia.com/api/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Learn more here</a>
                       </p>
@@ -1225,11 +1475,11 @@ function SettingsContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm text-muted-foreground">Email</label>
-                  <p className="text-foreground">{session?.user?.email || 'Not logged in'}</p>
+                  <p className="text-foreground">{user?.email || 'Not logged in'}</p>
                 </div>
                 <div>
                   <label className="text-sm text-muted-foreground">Name</label>
-                  <p className="text-foreground">{session?.user?.name || 'Not available'}</p>
+                  <p className="text-foreground">{user?.name || 'Not available'}</p>
                 </div>
                 <div>
                   <label className="text-sm text-muted-foreground">Role</label>
@@ -1237,7 +1487,7 @@ function SettingsContent() {
                 </div>
                 <div>
                   <label className="text-sm text-muted-foreground">User ID</label>
-                  <p className="text-foreground">{session?.user?.id || 'Not available'}</p>
+                  <p className="text-foreground">{user?.id || 'Not available'}</p>
                 </div>
               </div>
             </div>

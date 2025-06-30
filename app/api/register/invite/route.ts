@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { supabase } from '@/lib/supabase'
+import { supabaseClient as supabase } from '@/lib/supabase-client'
 import bcryptjs from 'bcryptjs'
 import { sendWelcomeEmail } from '@/lib/email'
 import axios from 'axios' // Added for reCAPTCHA verification

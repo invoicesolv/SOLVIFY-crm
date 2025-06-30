@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -368,6 +368,27 @@ async function fetchInvoices(tokenData: any, userId: string, year: number, month
   }
 }
 
+// Helper function to get user from Supabase JWT token
+async function getUserFromToken(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user) {
+      return null;
+    }
+    return user;
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   console.log('\n=== Fetching Fortnox Invoices ===');
   
@@ -387,8 +408,8 @@ export async function GET(req: NextRequest) {
   // If headers don't have the user ID, try to get it from the session
   let sessionUserId: string | undefined;
   try {
-    const session = await getServerSession(authOptions);
-    sessionUserId = session?.user?.id;
+    const user = await getUserFromToken(req);
+    sessionUserId = user?.id;
     console.log('Got user ID from session:', sessionUserId);
   } catch (e) {
     console.error('Error getting session:', e);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from "react";
+import { useAuth } from '@/lib/auth-client';
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,7 @@ export function FolderManagementDialog({
   userId,
   onFoldersChanged,
 }: FolderManagementDialogProps) {
+  const { session } = useAuth();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [newFolderName, setNewFolderName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -46,13 +48,15 @@ export function FolderManagementDialog({
   const [editingFolder, setEditingFolder] = useState<{ id: string, name: string } | null>(null);
 
   const fetchFolders = async () => {
-    if (!workspaceId) return;
+    if (!workspaceId || !session) return;
     
     try {
       setLoading(true);
       
       // Use our new API endpoint instead of direct Supabase call
-      const response = await fetch(`/api/lead-folders?workspace_id=${workspaceId}`);
+      const response = await fetch(`/api/lead-folders?workspace_id=${workspaceId}`, {
+        credentials: 'include'
+      });
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -70,10 +74,10 @@ export function FolderManagementDialog({
   };
 
   useEffect(() => {
-    if (open) {
+    if (open && session) {
       fetchFolders();
     }
-  }, [open, workspaceId]);
+  }, [open, workspaceId, session]);
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {

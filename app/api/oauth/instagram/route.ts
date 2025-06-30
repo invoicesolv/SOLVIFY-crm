@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   // Use localhost for development
   const baseUrl = process.env.NODE_ENV === 'development' 
     ? 'http://localhost:3000' 
-    : (process.env.NEXTAUTH_URL || 'https://crm.solvify.se');
+    : (process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se');
   const cleanBaseUrl = baseUrl.replace(/\/$/, '');
   const redirectUri = `${cleanBaseUrl}/api/oauth/instagram/callback`;
   

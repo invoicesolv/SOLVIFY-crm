@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Folder, FolderOpen, Plus, Tag } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from '@/lib/auth-client';
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export function FolderSidebar({
   onFolderSelect,
   onManageFolders,
 }: FolderSidebarProps) {
+  const { session } = useAuth();
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
@@ -35,18 +37,25 @@ export function FolderSidebar({
   const [totalCount, setTotalCount] = useState<number>(0);
 
   const loadFolders = async () => {
-    if (!workspaceId) return;
+    if (!workspaceId || !session?.access_token) return;
     
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("lead_folders")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("name", { ascending: true });
+      
+      // Use API endpoint instead of direct Supabase query
+      const response = await fetch(`/api/lead-folders?workspace_id=${workspaceId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
 
-      if (error) throw error;
-      setFolders(data || []);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch folders');
+      }
+
+      const data = await response.json();
+      setFolders(data.folders || []);
       
       // Get all leads for this workspace to calculate counts manually
       const { data: workspaceLeads, error: countsError } = await supabase
@@ -86,8 +95,10 @@ export function FolderSidebar({
   };
 
   useEffect(() => {
-    loadFolders();
-  }, [workspaceId]);
+    if (session?.access_token) {
+      loadFolders();
+    }
+  }, [workspaceId, session?.access_token]);
 
   return (
     <div className="w-56 border-r border-border">

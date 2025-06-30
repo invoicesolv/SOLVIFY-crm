@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 import axios from 'axios';
+import { createClient } from '@supabase/supabase-js';
+
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -264,13 +265,13 @@ async function getLinkedTasksForInvoices(projectNumber: string, invoiceNumbers: 
 }
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { projectNumber: string } }
 ) {
   try {
-    const userId = request.headers.get("user-id");
-    if (!userId) {
-      return Response.json({ error: "User ID is required" }, { status: 401 });
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
     const projectNumber = params.projectNumber;
@@ -278,7 +279,7 @@ export async function GET(
       return Response.json({ error: "Project number is required" }, { status: 400 });
     }
     
-    const fortnoxClient = await getFortnoxClient(userId);
+    const fortnoxClient = await getFortnoxClient(user.id);
     if (!fortnoxClient) {
       return Response.json({ error: "Failed to initialize Fortnox client" }, { status: 500 });
     }

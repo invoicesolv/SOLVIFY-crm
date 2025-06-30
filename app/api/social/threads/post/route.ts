@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { content, selectedPageId, workspaceId } = await request.json();
@@ -27,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('🧵 [THREADS POST] Starting post creation:', {
-      userId: session.user.id,
+      userId: user.id,
       workspaceId: workspaceId,
       selectedPageId: selectedPageId,
       contentLength: content.length

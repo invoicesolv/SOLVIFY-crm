@@ -1,15 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
 import { google } from 'googleapis';
-import authOptions from '@/lib/auth'; // Assuming authOptions includes credentials
-import { supabase } from '@/lib/supabase'; // Import supabase client
+import { supabaseAdmin } from '@/lib/supabase';
+import { withAuth } from '@/lib/global-auth';
+import { getServerSession } from 'next-auth';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
+
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Helper function to get user from NextAuth session
+async function getUserFromSession() {
+  try {
+    const session = await getServerSession();
+    return session?.user || null;
+  } catch (error) {
+    console.error('Error getting user from session:', error);
+    return null;
+  }
+}
 
 // Function to get a refreshed access token if needed
 async function getRefreshedToken(userId: string): Promise<string | null> {
   try {
-    const { data: integration, error } = await supabase
+    const { data: integration, error } = await supabaseAdmin
       .from('integrations')
       .select('refresh_token, expires_at')
       .eq('user_id', userId)
@@ -46,7 +71,7 @@ async function getRefreshedToken(userId: string): Promise<string | null> {
 
     // Update the database with the new token and expiry
     const newExpiresAt = credentials.expiry_date ? new Date(credentials.expiry_date) : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 2 months
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
         .from('integrations')
         .update({ 
             access_token: credentials.access_token,
@@ -71,21 +96,21 @@ async function getRefreshedToken(userId: string): Promise<string | null> {
 }
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
+    // Get user from NextAuth session
+    const user = await getUserFromSession();
+    if (!user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = req.nextUrl.searchParams;
     const searchQuery = searchParams.get('q') || '';
     
     // Check if the user has Gmail integration
-    const { data: integration, error: integrationError } = await supabase
+    const { data: integration, error: integrationError } = await supabaseAdmin
       .from('integrations')
       .select('access_token, refresh_token')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('service_name', 'google-gmail')
       .maybeSingle();
 
@@ -102,7 +127,7 @@ export async function GET(req: NextRequest) {
     
     // If integration exists but we need a fresh token, get it
     if (!accessToken || !integration.access_token) {
-      const refreshedToken = await getRefreshedToken(session.user.id);
+      const refreshedToken = await getRefreshedToken(user.id);
       if (!refreshedToken) {
         return NextResponse.json({ 
           error: 'Failed to refresh access token', 
@@ -194,8 +219,10 @@ export async function GET(req: NextRequest) {
       // Handle token expiration errors
       if (apiError.code === 401 || 
           (apiError.response && apiError.response.status === 401)) {
+        console.log('[API/Gmail] 401 error detected, attempting token refresh and retry');
+        
         // Try to refresh the token
-        const refreshedToken = await getRefreshedToken(session.user.id);
+        const refreshedToken = await getRefreshedToken(user.id);
         
         if (!refreshedToken) {
           return NextResponse.json({ 
@@ -204,11 +231,81 @@ export async function GET(req: NextRequest) {
           }, { status: 401 });
         }
         
-        // If we got here but still getting errors, return a proper error
-        return NextResponse.json({ 
-          error: 'Authentication failed even after token refresh', 
-          code: 'AUTH_FAILED_AFTER_REFRESH'
-        }, { status: 401 });
+        try {
+          console.log('[API/Gmail] Retrying Gmail API call with refreshed token');
+          
+          // Retry the Gmail API call with the new token
+          const retryOauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+          );
+          retryOauth2Client.setCredentials({ access_token: refreshedToken });
+          
+          const retryGmail = google.gmail({ version: 'v1', auth: retryOauth2Client });
+          
+          // Retry the Gmail API call
+          const retryResponse = await retryGmail.users.messages.list(queryParams);
+          
+          // If no messages are found, return empty array
+          if (!retryResponse.data.messages || retryResponse.data.messages.length === 0) {
+            return NextResponse.json({
+              emails: [],
+              nextPageToken: null
+            });
+          }
+          
+          // Fetch details for each message (in parallel for performance)
+          const retryMessagePromises = retryResponse.data.messages.map(async (message: any) => {
+            const msgResponse = await retryGmail.users.messages.get({
+              userId: 'me',
+              id: message.id,
+              format: 'metadata',
+              metadataHeaders: ['From', 'Subject', 'Date']
+            });
+            
+            return msgResponse.data;
+          });
+          
+          const retryMessageDetails = await Promise.all(retryMessagePromises);
+          
+          // Format the emails for the frontend
+          const retryEmails = retryMessageDetails.map((message: any) => {
+            // Extract headers
+            const headers = message.payload.headers;
+            const fromHeader = headers.find((h: any) => h.name === 'From');
+            const subjectHeader = headers.find((h: any) => h.name === 'Subject');
+            const dateHeader = headers.find((h: any) => h.name === 'Date');
+            
+            // Parse the 'From' field to extract email and name
+            const fromText = fromHeader ? fromHeader.value : 'Unknown';
+            const emailMatch = fromText.match(/<(.+)>/);
+            const fromEmail = emailMatch ? emailMatch[1] : fromText;
+            
+            return {
+              id: message.id,
+              threadId: message.threadId,
+              snippet: message.snippet,
+              from: fromText,
+              from_email: fromEmail,
+              subject: subjectHeader ? subjectHeader.value : 'No Subject',
+              date: dateHeader ? dateHeader.value : new Date().toISOString(),
+              unread: message.labelIds?.includes('UNREAD') || false
+            };
+          });
+          
+          console.log('[API/Gmail] Successfully retried after token refresh');
+          return NextResponse.json({
+            emails: retryEmails,
+            nextPageToken: retryResponse.data.nextPageToken || null
+          });
+          
+        } catch (retryError: any) {
+          console.error('[API/Gmail] Retry failed after token refresh:', retryError);
+          return NextResponse.json({ 
+            error: 'Authentication failed even after token refresh', 
+            code: 'AUTH_FAILED_AFTER_REFRESH'
+          }, { status: 401 });
+        }
       }
       
       // Handle other specific errors

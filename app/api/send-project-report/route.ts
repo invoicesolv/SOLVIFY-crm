@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
+import { getUserFromToken } from '@/lib/auth-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +36,14 @@ interface ProjectReport {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Use user.id instead of session?.user?.id
+    const userId = user.id;
+
     const { projectName, tasks, isTest, recipients }: ProjectReport = await request.json();
     
     console.log('Received request:', { projectName, taskCount: tasks.length, isTest, recipients });
@@ -48,9 +55,6 @@ export async function POST(request: NextRequest) {
     
     // Only require authentication for non-test emails and when not authorized via cron secret
     if (!isTest && !isCronAuth) {
-      const session = await getServerSession(authOptions);
-      const userId = session?.user?.id;
-
       if (!userId) {
         return NextResponse.json(
           { error: 'User not authenticated' },

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Plus, Edit2, Calendar, Trash2, Star, StarOff, CheckCircle, Clock, FileText, Check, CheckSquare, ChevronDown, ChevronRight, CircleEllipsis, Square, User, Link, FileUp } from "lucide-react";
 import type { Task, ChecklistItem } from "@/types/project";
 import { supabase } from "@/lib/supabase";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { toast } from "sonner";
 import { TaskCard } from "@/components/ui/task-card";
 import { motion, AnimatePresence } from "framer-motion";
@@ -38,6 +38,7 @@ interface TaskManagerProps {
   projectName: string;
   projectDescription: string;
   projectId: string;
+  workspaceId: string;
   onMoveTask?: (task: Task) => void;
   onMoveSubtask?: (task: Task, subtask: ChecklistItem) => void;
   showMonthlyGrouping?: boolean;
@@ -52,11 +53,12 @@ export function TaskManager({
   projectName,
   projectDescription,
   projectId,
+  workspaceId,
   onMoveTask,
   onMoveSubtask,
   showMonthlyGrouping,
 }: TaskManagerProps) {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [isImportingTasks, setIsImportingTasks] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
@@ -89,7 +91,7 @@ export function TaskManager({
   // Initialize tasks from Supabase or use initial tasks
   useEffect(() => {
     const fetchTasks = async () => {
-      if (!session?.user?.id || !projectId) return;
+      if (!user?.id || !projectId) return;
 
       try {
         const { data, error } = await supabase
@@ -109,7 +111,7 @@ export function TaskManager({
     };
 
     fetchTasks();
-  }, [session?.user?.id, projectId]);
+  }, [user?.id, projectId]);
 
   // Save tasks to localStorage whenever they change
   useEffect(() => {
@@ -120,7 +122,7 @@ export function TaskManager({
         onTasksChange(tasks);
       }
     }
-  }, [tasks, storageKey, onTasksChange, initialTasks]);
+  }, [tasks, storageKey, initialTasks]);
 
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -128,7 +130,7 @@ export function TaskManager({
   const [newSubtaskText, setNewSubtaskText] = useState("");
 
   const handleAddTask = async () => {
-    if (!newTaskTitle.trim() || !session?.user?.id) return;
+    if (!newTaskTitle.trim() || !user?.id) return;
 
     const newTask: Task = {
       id: crypto.randomUUID(),
@@ -137,7 +139,7 @@ export function TaskManager({
       progress: 0,
       checklist: [],
       project_id: projectId,
-      user_id: session.user.id,
+      user_id: user.id,
       assigned_to: undefined // Default to unassigned
     };
 
@@ -159,7 +161,7 @@ export function TaskManager({
   };
 
   const handleAddSubtask = async (taskId: string) => {
-    if (!newSubtaskText.trim() || !session?.user?.id) return;
+    if (!newSubtaskText.trim() || !user?.id) return;
 
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -202,7 +204,7 @@ export function TaskManager({
   };
 
   const handleCheckboxChange = async (taskId: string, itemId: number) => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
 
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -264,7 +266,7 @@ export function TaskManager({
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
 
     try {
       const { error } = await supabase
@@ -283,7 +285,7 @@ export function TaskManager({
   };
 
   const handleDeleteSubtask = async (taskId: string, itemId: number) => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
 
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -328,15 +330,121 @@ export function TaskManager({
   };
 
   const handleTaskUpdate = async (taskId: string, updates: Partial<Task>) => {
-    if (!session?.user?.id) return;
+    console.log('[TASK UPDATE] Called with:', { taskId, updates, sessionUserId: user?.id });
+    if (!user?.id) {
+      console.log('[TASK UPDATE] No session user ID, returning');
+      return;
+    }
 
     try {
+      // Get the current task to compare assignment changes
+      const currentTask = tasks.find(t => t.id === taskId);
+      const isAssignmentChange = updates.assigned_to !== undefined && currentTask?.assigned_to !== updates.assigned_to;
+      console.log('[TASK UPDATE] Assignment change detected:', { isAssignmentChange, currentAssignedTo: currentTask?.assigned_to, newAssignedTo: updates.assigned_to });
+
       const { error } = await supabase
         .from('project_tasks')
         .update(updates)
         .eq('id', taskId);
 
       if (error) throw error;
+
+      // If this is an assignment change, create notification
+      if (isAssignmentChange && updates.assigned_to) {
+        try {
+          console.log('[TASK ASSIGNMENT] Creating notification for assignment via TaskCard');
+          const notificationPayload = {
+            type: 'task_assignment',
+            title: 'New Task Assignment',
+            message: `You've been assigned to task "${currentTask?.title || 'Unknown Task'}" in project "${projectName}" by ${user?.user_metadata?.full_name || 'a team member'}`,
+            user_id: updates.assigned_to,
+            workspace_id: workspaceId,
+            task_id: taskId,
+            project_id: projectId,
+            metadata: {
+              task_title: currentTask?.title,
+              project_name: projectName,
+              assigned_by: user?.user_metadata?.full_name
+            }
+          };
+          console.log('[TASK ASSIGNMENT] Notification payload:', notificationPayload);
+          
+          const response = await fetch('/api/notifications', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(notificationPayload),
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[TASK ASSIGNMENT] Notification API failed:', response.status, errorText);
+            throw new Error(`Notification API failed: ${response.status} ${errorText}`);
+          }
+          
+          const result = await response.json();
+          console.log('[TASK ASSIGNMENT] Notification created successfully:', result);
+        } catch (notificationError) {
+          console.error('[TASK ASSIGNMENT] ERROR creating assignment notification:', notificationError);
+          // Don't fail the assignment if notification fails
+        }
+      }
+
+      // Check for subtask assignment changes
+      if (updates.checklist && currentTask?.checklist) {
+        const oldChecklist = currentTask.checklist;
+        const newChecklist = updates.checklist;
+        
+        // Compare each checklist item for assignment changes
+        newChecklist.forEach((newItem: any) => {
+          const oldItem = oldChecklist.find(item => item.id === newItem.id);
+          if (oldItem && oldItem.assigned_to !== newItem.assigned_to && newItem.assigned_to) {
+            // This is a new subtask assignment
+            try {
+              console.log('[SUBTASK ASSIGNMENT] Creating notification for subtask assignment via TaskCard');
+              const subtaskPayload = {
+                type: 'task_assignment',
+                title: 'New Subtask Assignment',
+                message: `You've been assigned to subtask "${newItem.text}" in task "${currentTask?.title || 'Unknown Task'}" (project "${projectName}") by ${user?.user_metadata?.full_name || 'a team member'}`,
+                user_id: newItem.assigned_to,
+                workspace_id: workspaceId,
+                task_id: taskId,
+                project_id: projectId,
+                metadata: {
+                  subtask_text: newItem.text,
+                  task_title: currentTask?.title,
+                  project_name: projectName,
+                  assigned_by: user?.user_metadata?.full_name,
+                  is_subtask: true
+                }
+              };
+              console.log('[SUBTASK ASSIGNMENT] Notification payload:', subtaskPayload);
+              
+              fetch('/api/notifications', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(subtaskPayload),
+              }).then(async (response) => {
+                if (!response.ok) {
+                  const errorText = await response.text();
+                  console.error('[SUBTASK ASSIGNMENT] Notification API failed:', response.status, errorText);
+                  throw new Error(`Notification API failed: ${response.status} ${errorText}`);
+                }
+                const result = await response.json();
+                console.log('[SUBTASK ASSIGNMENT] Notification created successfully:', result);
+              }).catch(err => {
+                console.error('[SUBTASK ASSIGNMENT] ERROR creating subtask assignment notification:', err);
+              });
+            } catch (notificationError) {
+              console.error('[SUBTASK ASSIGNMENT] ERROR creating subtask assignment notification:', notificationError);
+              // Don't fail the assignment if notification fails
+            }
+          }
+        });
+      }
 
       // Update local state
       const updatedTasks = tasks.map(task => {
@@ -360,7 +468,7 @@ export function TaskManager({
         onTaskUpdate(taskId, updates);
       }
       
-      toast.success('Task updated successfully');
+      toast.success(isAssignmentChange && updates.assigned_to ? 'Task assigned successfully and notification sent' : 'Task updated successfully');
     } catch (error) {
       console.error('Error updating task:', error);
       toast.error('Failed to update task');
@@ -453,14 +561,14 @@ export function TaskManager({
         // Fetch invoices for specific project
         invoicesResponse = await fetch(`/api/fortnox/projects/${fortnoxProjectId}/invoices`, {
           headers: {
-            'user-id': session?.user?.id || ''
+            'user-id': user?.id || ''
           }
         });
       } else {
         // Fallback to fetching recent invoices not linked to any project
         invoicesResponse = await fetch(`/api/fortnox/invoices/recent`, {
           headers: {
-            'user-id': session?.user?.id || ''
+            'user-id': user?.id || ''
           }
         });
       }
@@ -481,7 +589,7 @@ export function TaskManager({
         // Fallback to search for the project name in invoice comments
         const fallbackResponse = await fetch(`/api/fortnox/invoices?limit=20`, {
           headers: {
-            'user-id': session?.user?.id || ''
+            'user-id': user?.id || ''
           }
         });
         
@@ -636,7 +744,7 @@ export function TaskManager({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'user-id': session?.user?.id || ''
+          'user-id': user?.id || ''
         },
         body: JSON.stringify(requestPayload)
       });
@@ -735,13 +843,13 @@ export function TaskManager({
         .join(', ');
         
       console.log('Linking tasks to invoice:', selectedInvoice);
-      console.log('User ID:', session?.user?.id);
+      console.log('User ID:', user?.id);
       
       const response = await fetch('/api/fortnox/invoices/link-tasks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'user-id': session?.user?.id || ''
+          'user-id': user?.id || ''
         },
         body: JSON.stringify({
           invoiceId: selectedInvoice,

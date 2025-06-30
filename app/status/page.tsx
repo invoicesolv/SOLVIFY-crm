@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, CheckCircle, XCircle, AlertCircle, Clock, Database, Globe, Zap, Mail, Calendar, FileText, Users, DollarSign, BarChart3, Settings, Shield } from 'lucide-react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 
 interface StatusCheck {
   name: string;
@@ -19,7 +19,7 @@ interface StatusCheck {
 }
 
 export default function StatusPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [checks, setChecks] = useState<StatusCheck[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -27,7 +27,7 @@ export default function StatusPage() {
   const initialChecks: StatusCheck[] = [
     // Database & Core
     { name: 'Supabase Database', description: 'Main database connection', status: 'checking', icon: Database, category: 'Core' },
-    { name: 'Authentication', description: 'NextAuth & Supabase Auth', status: 'checking', icon: Shield, category: 'Core' },
+    { name: 'Authentication', description: 'Supabase Auth', status: 'checking', icon: Shield, category: 'Core' },
     { name: 'Workspace API', description: 'Workspace management', status: 'checking', icon: Users, category: 'Core' },
     
     // External APIs
@@ -213,7 +213,7 @@ export default function StatusPage() {
     return acc;
   }, {} as Record<string, StatusCheck[]>);
 
-  if (!session) {
+  if (!user) {
     return (
       <div className="container mx-auto p-6">
         <Card>

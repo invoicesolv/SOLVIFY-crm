@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { getActiveWorkspaceId } from '@/lib/permission';
 import crypto from 'crypto';
 
@@ -12,11 +11,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
   console.log('Threads OAuth callback: Starting...');
   
-  const session = await getServerSession(authOptions);
+  const user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  if (!user?.id) {
     console.error('Threads OAuth callback: No user session found');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/login`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/login`));
   }
 
   const searchParams = request.nextUrl.searchParams;
@@ -25,26 +24,26 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('Threads OAuth callback error:', error);
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=threads_auth_failed`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=threads_auth_failed`));
   }
 
   if (!code) {
     console.error('Threads OAuth callback: No authorization code received');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=threads_auth_failed`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=threads_auth_failed`));
   }
 
   try {
     console.log('Threads OAuth: Exchanging code for access token');
 
     // Get workspace ID
-    const workspaceId = await getActiveWorkspaceId(session.user.id);
+    const workspaceId = await getActiveWorkspaceId(user.id);
     if (!workspaceId) {
       console.error('Threads OAuth: No workspace found for user');
-      return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=threads_auth_failed`));
+      return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=threads_auth_failed`));
     }
 
     // Exchange authorization code for access token (using Facebook token endpoint for Threads)
-    const baseUrl = process.env.NEXTAUTH_URL || 'https://crm.solvify.se';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
     const redirectUri = `${baseUrl}/api/oauth/threads/callback`;
     
     const tokenResponse = await fetch('https://graph.facebook.com/v23.0/oauth/access_token', {
@@ -119,7 +118,7 @@ export async function GET(request: NextRequest) {
     const { error: dbError } = await supabase
       .from('social_accounts')
       .upsert({
-        user_id: session.user.id,
+        user_id: user.id,
         workspace_id: workspaceId,
         platform: 'threads',
         access_token: tokenData.access_token,
@@ -143,7 +142,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Threads OAuth callback error:', error);
-    const baseUrl = process.env.NEXTAUTH_URL || 'https://crm.solvify.se';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se';
     return NextResponse.redirect(new URL(`${baseUrl}/settings?error=threads_auth_failed`));
   }
 } 

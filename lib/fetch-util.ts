@@ -30,4 +30,22 @@ export function handleFetchError(error: any, context: string = 'API request') {
     error: true,
     message: error.message || `An error occurred during ${context}`,
   };
+}
+
+// Authenticated fetch helper that automatically includes Supabase JWT tokens
+export async function authenticatedFetch(url: string, options: RequestInit = {}, session?: any): Promise<Response> {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  // Add Authorization header if session is provided
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+
+  return fetch(url, {
+    ...options,
+    headers,
+  });
 } 

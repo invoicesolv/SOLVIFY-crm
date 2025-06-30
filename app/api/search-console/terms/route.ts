@@ -1,22 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
 
 export const dynamic = 'force-dynamic';
 
 // Provide top search terms data for the dashboard
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const user = await getUserFromToken(req);
 
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized: No valid session' }, { status: 401 });
   }
 
   try {
     // Get the user's ID
-    const userId = session.user.id;
+    const userId = user.id;
 
     // Proactively refresh token if needed
     const freshToken = await getRefreshedGoogleToken(userId, 'google-searchconsole');

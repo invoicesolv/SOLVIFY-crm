@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { SidebarDemo } from "@/components/ui/code.demo";
-import { Card } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -33,9 +34,11 @@ import {
   Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth-client';
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useTheme } from "@/contexts/ThemeContext";
 
 interface Site {
   url: string;
@@ -107,9 +110,10 @@ const CACHE_KEY_PREFIX = 'search_console_cache_';
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 export default function SearchConsolePage() {
-  const { data: session } = useSession();
-  const [startDate, setStartDate] = useState('7days');
-  const [endDate, setEndDate] = useState('today');
+  const { user, session } = useAuth();
+  const { theme } = useTheme();
+  const [startDate, setStartDate] = useState<Date | undefined>(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)); // 7 days ago
+  const [endDate, setEndDate] = useState<Date | undefined>(new Date()); // today
   const [selectedSite, setSelectedSite] = useState<string | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
   const [searchData, setSearchData] = useState<any>(null);
@@ -128,17 +132,24 @@ export default function SearchConsolePage() {
   const [cronJobs, setCronJobs] = useState<any[]>([]);
 
   useEffect(() => {
-    if (session?.user?.id) {
+    if (user) {
       loadData();
     }
-  }, [session]);
+  }, [user]);
+
+  // Reload data when date range changes
+  useEffect(() => {
+    if (user && selectedSite && (startDate || endDate)) {
+      loadData(true);
+    }
+  }, [startDate, endDate]);
 
   useEffect(() => {
     console.log('Email settings modal state:', showEmailSettings);
   }, [showEmailSettings]);
 
   const getCacheKey = () => {
-    return `${CACHE_KEY_PREFIX}${session?.user?.id || 'anonymous'}`;
+    return `${CACHE_KEY_PREFIX}${user?.id || 'anonymous'}`;
   };
 
   const getCachedData = (): CachedData | null => {
@@ -154,7 +165,7 @@ export default function SearchConsolePage() {
         return null;
       }
 
-      if (cachedData.user_id !== session?.user?.id) {
+      if (cachedData.user_id !== user?.id) {
         localStorage.removeItem(getCacheKey());
         return null;
       }
@@ -167,7 +178,7 @@ export default function SearchConsolePage() {
   };
 
   const setCachedData = (data: Partial<CachedData>) => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     
     try {
       const existingCache = getCachedData();
@@ -179,7 +190,7 @@ export default function SearchConsolePage() {
         timestamp: now,
         expiresAt: now + CACHE_DURATION,
         selectedSite: data.selectedSite !== undefined ? data.selectedSite : existingCache?.selectedSite || null,
-        user_id: session.user.id
+        user_id: user.id
       };
       
       localStorage.setItem(getCacheKey(), JSON.stringify(updatedCache));
@@ -189,7 +200,7 @@ export default function SearchConsolePage() {
   };
 
   const loadData = async (forceRefresh = false) => {
-    if (!session?.user?.id) {
+    if (!user || !session?.access_token) {
       console.error('No user session found for search console data');
       toast.error('User authentication required');
       setLoading(false);
@@ -219,17 +230,24 @@ export default function SearchConsolePage() {
         startDate,
         endDate,
         siteUrl: selectedSite,
-        userId: session.user.id
+        userId: user.id
       });
+
+      // Format dates to YYYY-MM-DD format that Google Search Console expects
+      const formatDateForAPI = (date: Date | undefined) => {
+        if (!date) return undefined;
+        return date.toISOString().split('T')[0]; // Convert to YYYY-MM-DD
+      };
 
       const response = await fetch('/api/search-console', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          startDate: startDate || '7daysAgo',
-          endDate: endDate || 'today',
+          startDate: formatDateForAPI(startDate) || '7daysAgo',
+          endDate: formatDateForAPI(endDate) || 'today',
           siteUrl: selectedSite,
         }),
       });
@@ -248,621 +266,531 @@ export default function SearchConsolePage() {
       }
 
       const data = await response.json();
-      console.log('API success response:', {
-        hasSearchData: !!data.searchData,
-        sitesCount: data.sites?.length || 0,
-        errors: data.errors
-      });
+      const searchData = data.searchData;
 
-      // Only update search data if we have a selected site
-      if (selectedSite) {
-        setSearchData(data.searchData);
-      }
+      setSearchData(searchData);
+      setSites(data.sites);
       
-      // Always update sites list
-      setSites(data.sites || []);
+      let currentSelectedSite = selectedSite;
+      if (!currentSelectedSite && data.sites.length > 0) {
+        currentSelectedSite = data.sites[0].url;
+        setSelectedSite(currentSelectedSite);
+      }
 
-      // Update cache with new data
       setCachedData({
-        searchData: selectedSite ? data.searchData : null,
-        sites: data.sites || [],
-        selectedSite
+        searchData: searchData,
+        sites: data.sites,
+        selectedSite: currentSelectedSite,
       });
 
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      toast.error(error.message);
-      setSearchData(null);
+    } catch (error) {
+      console.error('Error loading search console data:', error);
+      toast.error(error instanceof Error ? error.message : "An unexpected error occurred");
     } finally {
       setLoading(false);
-      setIsRefreshing(false);
     }
   };
 
   const handleRefresh = () => {
-    localStorage.removeItem(getCacheKey());
-    console.log('Cache cleared');
-    
     setIsRefreshing(true);
-    loadData(true).finally(() => {
-      setIsRefreshing(false);
-      toast.success('Data refreshed');
-    });
+    loadData(true).finally(() => setIsRefreshing(false));
   };
 
   const handleSiteChange = async (value: string) => {
     setSelectedSite(value);
-    setCachedData({ selectedSite: value });
-    
-    // Fetch data for the new site
     setLoading(true);
+    
+    if (!session?.access_token) {
+        toast.error("Authentication required");
+        setLoading(false);
+        return;
+    }
+
     try {
+      // Format dates to YYYY-MM-DD format that Google Search Console expects
+      const formatDateForAPI = (date: Date | undefined) => {
+        if (!date) return undefined;
+        return date.toISOString().split('T')[0]; // Convert to YYYY-MM-DD
+      };
+
       const response = await fetch('/api/search-console', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          startDate: startDate || '7daysAgo',
-          endDate: endDate || 'today',
+          startDate: formatDateForAPI(startDate),
+          endDate: formatDateForAPI(endDate),
           siteUrl: value,
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch data for selected site');
+        throw new Error('Failed to fetch data for the new site.');
       }
 
       const data = await response.json();
       setSearchData(data.searchData);
       setCachedData({
         searchData: data.searchData,
-        selectedSite: value
+        selectedSite: value,
       });
-    } catch (error: any) {
-      console.error('Error fetching site data:', error);
-      toast.error(error.message);
-      setSearchData(null);
+
+    } catch (error) {
+      console.error('Error changing site:', error);
+      toast.error(error instanceof Error ? error.message : "Failed to load data for selected site.");
     } finally {
       setLoading(false);
     }
   };
 
   const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('en-US', {
-      notation: 'compact',
-      compactDisplay: 'short'
-    }).format(num);
+    if (num === null || num === undefined) return 'N/A';
+    return new Intl.NumberFormat('en-US').format(num);
   };
 
   const getDeviceIcon = (device: string) => {
-    switch (device.toLowerCase()) {
-      case 'mobile': return <Smartphone className="h-4 w-4" />;
-      case 'desktop': return <Monitor className="h-4 w-4" />;
-      case 'tablet': return <Tablet className="h-4 w-4" />;
-      default: return <Laptop className="h-4 w-4" />;
+    switch (device) {
+      case 'DESKTOP': return <Monitor className="h-5 w-5" />;
+      case 'MOBILE': return <Smartphone className="h-5 w-5" />;
+      case 'TABLET': return <Tablet className="h-5 w-5" />;
+      default: return <Laptop className="h-5 w-5" />;
     }
   };
 
   const handleShowEmailSettings = async () => {
+    setShowEmailSettings(true);
+    // Fetch existing settings when opening the modal
+    if (!session?.access_token) {
+      toast.error("Authentication required to fetch settings.");
+      return;
+    }
     try {
-      if (!selectedSite) {
-        toast.error('Please select a site first');
-        return;
+      const response = await fetch('/api/analytics/email-settings', {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      const cronResponse = await fetch('/api/analytics/cron-jobs', {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data) {
+          setEmailSettings({
+            enabled: data.enabled || false,
+            weeklyRecipients: data.weekly_recipients?.join(', ') || '',
+            testRecipients: data.test_recipients?.join(', ') || '',
+            manualRecipients: data.manual_recipients?.join(', ') || '',
+            frequency: data.frequency || 'weekly',
+            sendDay: data.send_day || 'monday',
+            sendTime: data.send_time || '09:00'
+          });
+        }
       }
-
-      // Load email settings and cron jobs in parallel
-      const [settingsResponse, cronResponse] = await Promise.all([
-        fetch(`/api/search-console/email-settings?siteUrl=${encodeURIComponent(selectedSite)}`),
-        fetch(`/api/search-console/cron-jobs?siteUrl=${encodeURIComponent(selectedSite)}`)
-      ]);
-
-      const [settingsData, cronData] = await Promise.all([
-        settingsResponse.json(),
-        cronResponse.json()
-      ]);
-
-      if (settingsResponse.ok && settingsData.data) {
-        setEmailSettings({
-          enabled: settingsData.data.enabled || false,
-          weeklyRecipients: (settingsData.data.recipients || []).join(', '),
-          testRecipients: '',
-          manualRecipients: '',
-          frequency: settingsData.data.frequency || 'weekly',
-          sendDay: settingsData.data.send_day || 'monday',
-          sendTime: settingsData.data.send_time || '09:00'
-        });
-      }
-
       if (cronResponse.ok) {
-        console.log('Loaded cron jobs:', cronData.jobs);
-        setCronJobs(cronData.jobs || []);
+        const data = await cronResponse.json();
+        setCronJobs(data);
       }
-
-      setShowEmailSettings(true);
     } catch (error) {
-      console.error('Error loading email settings:', error);
-      toast.error('Failed to load email settings');
+      toast.error("Failed to fetch email settings.");
+      console.error(error);
     }
   };
 
   const handleSaveEmailSettings = async () => {
+    if (!session?.access_token) {
+      toast.error("Authentication required to save settings.");
+      return;
+    }
+    const settingsToSave = {
+      ...emailSettings,
+      weeklyRecipients: emailSettings.weeklyRecipients.split(',').map(e => e.trim()).filter(e => e),
+      testRecipients: emailSettings.testRecipients.split(',').map(e => e.trim()).filter(e => e),
+      manualRecipients: emailSettings.manualRecipients.split(',').map(e => e.trim()).filter(e => e),
+    };
+
     try {
-      if (!selectedSite) {
-        toast.error('Please select a site first');
-        return;
-      }
-
-      const weeklyRecipients = emailSettings.weeklyRecipients.split(',').map(email => email.trim()).filter(Boolean);
-      if (emailSettings.enabled && weeklyRecipients.length === 0) {
-        toast.error('Please add at least one recipient email for weekly reports');
-        return;
-      }
-
-      const response = await fetch('/api/search-console/email-settings', {
+      const response = await fetch('/api/analytics/email-settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify({
-          siteUrl: selectedSite,
-          settings: {
-            enabled: emailSettings.enabled,
-            recipients: weeklyRecipients,
-            frequency: 'weekly',
-            send_day: emailSettings.sendDay,
-            send_time: emailSettings.sendTime
-          }
-        }),
+        body: JSON.stringify(settingsToSave),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to save settings');
+      if (response.ok) {
+        toast.success("Email settings saved successfully.");
+        setShowEmailSettings(false);
+      } else {
+        const data = await response.json();
+        toast.error(data.error || "Failed to save settings.");
       }
-
-      // Fetch updated cron jobs
-      const cronResponse = await fetch(`/api/search-console/cron-jobs?siteUrl=${encodeURIComponent(selectedSite)}`);
-      if (!cronResponse.ok) {
-        throw new Error('Failed to fetch updated cron jobs');
-      }
-      const cronData = await cronResponse.json();
-      setCronJobs(cronData.jobs || []);
-
-      toast.success('Email schedule saved successfully');
-      setShowEmailSettings(false);
     } catch (error) {
-      console.error('Error saving email settings:', error);
-      toast.error('Failed to save email settings');
+      toast.error("An error occurred while saving settings.");
+      console.error(error);
     }
   };
 
   const handleSendTestReport = async () => {
-    if (!selectedSite) {
-      toast.error('Please select a site first');
+    if (!session?.access_token) {
+      toast.error("Authentication required to send report.");
       return;
     }
-    if (!searchData) {
-      toast.error('No search data available');
-      return;
-    }
-
-    const testRecipients = emailSettings.testRecipients.split(',').map(email => email.trim()).filter(Boolean);
-    if (testRecipients.length === 0) {
-      toast.error('Please configure test recipients in Email Settings');
-      return;
-    }
-
     try {
-      const response = await fetch('/api/search-console/send-report', {
+      const response = await fetch('/api/analytics/send-report', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           siteUrl: selectedSite,
-          recipients: testRecipients,
-          searchData: searchData,
-          isTest: true,
-          dateRange: startDate
+          type: 'test',
         }),
       });
 
-      const data = await response.json();
-      if (data.success) {
-        toast.success('Test report sent successfully');
+      if (response.ok) {
+        toast.success("Test report sent successfully.");
       } else {
-        throw new Error(data.error || 'Failed to send test report');
+        const data = await response.json();
+        toast.error(data.error || "Failed to send test report.");
       }
     } catch (error) {
-      console.error('Error sending test report:', error);
-      toast.error('Failed to send test report');
+      toast.error("An error occurred while sending the test report.");
+      console.error(error);
     }
   };
 
   const handleSendManualReport = async () => {
-    if (!selectedSite) {
-      toast.error('Please select a site first');
+    if (!session?.access_token) {
+      toast.error("Authentication required to send report.");
       return;
     }
-    if (!searchData) {
-      toast.error('No search data available');
-      return;
-    }
-
-    const manualRecipients = emailSettings.manualRecipients.split(',').map(email => email.trim()).filter(Boolean);
-    if (manualRecipients.length === 0) {
-      toast.error('Please configure manual report recipients in Email Settings');
-      return;
-    }
-
     try {
-      const response = await fetch('/api/search-console/send-report', {
+      const response = await fetch('/api/analytics/send-report', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           siteUrl: selectedSite,
-          recipients: manualRecipients,
-          searchData: searchData,
-          isTest: false,
-          dateRange: startDate
+          type: 'manual',
         }),
       });
 
-      const data = await response.json();
-      if (data.success) {
-        toast.success('Report sent successfully');
+      if (response.ok) {
+        toast.success("Manual report sent successfully.");
       } else {
-        throw new Error(data.error || 'Failed to send report');
+        const data = await response.json();
+        toast.error(data.error || "Failed to send manual report.");
       }
     } catch (error) {
-      console.error('Error sending report:', error);
-      toast.error('Failed to send report');
+      toast.error("An error occurred while sending the manual report.");
+      console.error(error);
     }
   };
 
+  const verifyDomain = async () => {
+    if (!session?.access_token) {
+      toast.error("Authentication required to verify domain.");
+      return;
+    }
+    try {
+      toast.info("Verifying domain ownership...");
+      const response = await fetch('/api/search-console/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ siteUrl: selectedSite }),
+      });
+
+      if (response.ok) {
+        toast.success("Domain verification successful.");
+      } else {
+        const data = await response.json();
+        toast.error(data.error || "Failed to verify domain.");
+      }
+    } catch (error) {
+      toast.error("An error occurred while verifying the domain.");
+      console.error(error);
+    }
+  };
+
+  if (loading && !searchData) {
+    return (
+        <SidebarDemo>
+            <div className="flex items-center justify-center h-screen">
+                <RefreshCw className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+        </SidebarDemo>
+    );
+  }
+
   return (
     <SidebarDemo>
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold text-foreground">Search Console</h1>
-            <p className="text-sm text-muted-foreground">
-              View your website's search performance
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            {sites.length > 0 && selectedSite && (
-              <>
-                <button
-                  onClick={handleSendTestReport}
-                  className={cn(
-                    "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-blue-600 text-foreground hover:bg-blue-500 transition-colors"
-                  )}
-                >
-                  <Mail className="h-4 w-4" />
-                  Send Test Report
-                </button>
-                <button
-                  onClick={handleSendManualReport}
-                  className={cn(
-                    "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-green-600 text-foreground hover:bg-green-500 transition-colors"
-                  )}
-                >
-                  <Mail className="h-4 w-4" />
-                  Send Report Now
-                </button>
-                <button
-                  onClick={handleShowEmailSettings}
-                  className={cn(
-                    "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                    "bg-background text-foreground hover:bg-gray-200 dark:bg-muted transition-colors"
-                  )}
-                >
-                  <Settings2 className="h-4 w-4" />
-                  Email Settings
-                </button>
-              </>
-            )}
-            <button
-              onClick={handleRefresh}
-              className={cn(
-                "inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md",
-                "bg-background text-foreground hover:bg-gray-200 dark:bg-muted transition-colors",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
-              disabled={isRefreshing}
-            >
-              <RefreshCw className={cn("h-4 w-4", { "animate-spin": isRefreshing })} />
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        {/* Debug Info */}
-        <div className="text-xs text-foreground0">
-          Selected Site: {selectedSite || 'none'}<br />
-          Has Search Data: {searchData ? 'yes' : 'no'}
-        </div>
-
-        {/* Site Selection */}
-        <Card className="bg-background border-border text-foreground">
-          <div className="p-6 space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Search Console Site ({sites.length} available)</label>
-              <Select
-                value={selectedSite || ''}
-                onValueChange={handleSiteChange}
-              >
-                <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground">
+      <div className="min-h-screen bg-background text-foreground">
+        <main className="p-8">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl font-bold text-foreground">Marketing Analytics</h1>
+            <div className="flex items-center space-x-4">
+              {/* Date Range Picker */}
+              <div className="flex items-center space-x-2">
+                <DatePicker
+                  value={startDate}
+                  onChange={setStartDate}
+                  placeholder="Start date"
+                  className="w-[140px]"
+                />
+                <span className="text-muted-foreground">to</span>
+                <DatePicker
+                  value={endDate}
+                  onChange={setEndDate}
+                  placeholder="End date"
+                  className="w-[140px]"
+                />
+              </div>
+              <Select onValueChange={handleSiteChange} value={selectedSite || ''}>
+                <SelectTrigger className="w-[280px] bg-background border-border text-foreground rounded-md">
                   <SelectValue placeholder="Select a site" />
                 </SelectTrigger>
-                <SelectContent>
-                  {sites.map((site) => (
-                    <SelectItem key={site.url} value={site.url}>
-                      {site.url}
-                    </SelectItem>
+                <SelectContent className="bg-background border-border text-foreground rounded-md">
+                  {sites.map(site => (
+                    <SelectItem key={site.url} value={site.url}>{site.url}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            {/* Add Date Range Selector */}
-            <div className="space-y-2">
-              <label className="text-sm text-muted-foreground">Date Range</label>
-              <Select
-                value={startDate}
-                onValueChange={(value) => {
-                  setStartDate(value);
-                  // Trigger data refresh with new date range
-                  if (selectedSite) {
-                    loadData(true);
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full bg-background border-border dark:border-border text-foreground">
-                  <SelectValue placeholder="Select date range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="7days">Last 7 Days</SelectItem>
-                  <SelectItem value="14days">Last 14 Days</SelectItem>
-                  <SelectItem value="28days">Last 28 Days</SelectItem>
-                  <SelectItem value="30days">Last 30 Days</SelectItem>
-                </SelectContent>
-              </Select>
+              <Button onClick={handleRefresh} disabled={isRefreshing || loading} variant="outline" className="bg-background border-border text-foreground hover:bg-muted rounded-md">
+                <RefreshCw className={cn("w-4 h-4 mr-2", (isRefreshing || loading) && "animate-spin")} />
+                Refresh
+              </Button>
+              <Button onClick={handleShowEmailSettings} variant="outline" className="bg-background border-border text-foreground hover:bg-muted rounded-md">
+                <Mail className="w-4 h-4 mr-2" />
+                Email Reports
+              </Button>
             </div>
           </div>
-        </Card>
 
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-neutral-400 border-t-gray-900 dark:border-t-white" />
-          </div>
-        ) : (
-          <>
-            {/* Search Console Overview */}
-            {searchData && (
-              <Card className="bg-background border-border text-foreground">
-                <div className="p-6">
-                  <h2 className="text-lg font-medium text-foreground mb-4">Search Performance</h2>
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="p-4 rounded-lg bg-background/50">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                        <MousePointerClick className="h-4 w-4" />
-                        <span>Clicks</span>
-                      </div>
-                      <div className="text-2xl font-semibold text-foreground">
-                        {formatNumber(searchData.overview.clicks)}
-                      </div>
-                    </div>
-                    <div className="p-4 rounded-lg bg-background/50">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                        <Search className="h-4 w-4" />
-                        <span>Impressions</span>
-                      </div>
-                      <div className="text-2xl font-semibold text-foreground">
-                        {formatNumber(searchData.overview.impressions)}
-                      </div>
-                    </div>
-                    <div className="p-4 rounded-lg bg-background/50">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                        <ArrowUpRight className="h-4 w-4" />
-                        <span>CTR</span>
-                      </div>
-                      <div className="text-2xl font-semibold text-foreground">
-                        {searchData.overview.ctr.toFixed(1)}%
-                      </div>
-                    </div>
-                    <div className="p-4 rounded-lg bg-background/50">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                        <TrendingUp className="h-4 w-4" />
-                        <span>Avg. Position</span>
-                      </div>
-                      <div className="text-2xl font-semibold text-foreground">
-                        {searchData.overview.position.toFixed(1)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
+          {searchData ? (
+            <>
+              {/* Overview Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <Card className="bg-card border-border rounded-lg">
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Total Clicks</CardTitle>
+                    <MousePointerClick className="w-4 h-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-foreground">{formatNumber(searchData.overview.clicks)}</div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-card border-border rounded-lg">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Total Impressions</CardTitle>
+                        <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-foreground">{formatNumber(searchData.overview.impressions)}</div>
+                    </CardContent>
+                </Card>
+                <Card className="bg-card border-border rounded-lg">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Average CTR</CardTitle>
+                        <Search className="w-4 h-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-foreground">{searchData.overview.ctr.toFixed(2)}%</div>
+                    </CardContent>
+                </Card>
+                <Card className="bg-card border-border rounded-lg">
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Average Position</CardTitle>
+                        <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-foreground">{searchData.overview.position.toFixed(2)}</div>
+                    </CardContent>
+                </Card>
+              </div>
 
-            {/* Top Search Queries */}
-            {searchData?.topQueries && (
-              <Card className="bg-background border-border text-foreground">
-                <div className="p-6">
-                  <h2 className="text-lg font-medium text-foreground mb-4">Top Search Queries</h2>
-                  <div className="relative overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-gray-800 dark:text-foreground">Query</TableHead>
-                          <TableHead className="text-gray-800 dark:text-foreground">Page</TableHead>
-                          <TableHead className="text-right text-gray-800 dark:text-foreground">Clicks</TableHead>
-                          <TableHead className="text-right text-gray-800 dark:text-foreground">Impressions</TableHead>
-                          <TableHead className="text-right text-gray-800 dark:text-foreground">CTR</TableHead>
-                          <TableHead className="text-right text-gray-800 dark:text-foreground">Position</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+              {/* Main Content Area */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Top Queries Table */}
+                <div className="lg:col-span-2">
+                  <Card className="bg-card border-border rounded-lg">
+                    <CardHeader>
+                      <CardTitle className="text-foreground">Top Queries</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {/* Header Row */}
+                      <div className="grid grid-cols-5 gap-4 p-3 mb-4 bg-muted/20 rounded-md border border-border">
+                        <div className="text-sm font-medium text-muted-foreground">Query</div>
+                        <div className="text-sm font-medium text-muted-foreground text-center">Clicks</div>
+                        <div className="text-sm font-medium text-muted-foreground text-center">Impressions</div>
+                        <div className="text-sm font-medium text-muted-foreground text-center">CTR</div>
+                        <div className="text-sm font-medium text-muted-foreground text-center">Position</div>
+                      </div>
+                      
+                      {/* Query Rows as Cards */}
+                      <div className="space-y-2">
                         {searchData.topQueries.map((query: SearchQuery, index: number) => (
-                          <TableRow key={`${query.query}-${index}`} className="hover:bg-background">
-                            <TableCell className="text-gray-900 dark:text-neutral-100 font-medium">{query.query}</TableCell>
-                            <TableCell className="text-gray-900 dark:text-neutral-100 max-w-xs truncate">{query.page}</TableCell>
-                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.clicks}</TableCell>
-                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.impressions}</TableCell>
-                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.ctr}</TableCell>
-                            <TableCell className="text-right text-gray-900 dark:text-neutral-100">{query.position}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              </Card>
-            )}
-          </>
-        )}
-
-        {/* Email Settings Modal */}
-        {showEmailSettings && (
-          <div className="fixed inset-0 bg-gray-900/50 dark:bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-background p-8 rounded-lg w-full max-w-md border border-border">
-              <h2 className="text-xl font-semibold text-foreground mb-6">Email Report Settings</h2>
-              
-              <div className="space-y-6">
-                {/* Test Report Recipients */}
-                <div>
-                  <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Test Report Recipients</label>
-                  <input
-                    type="text"
-                    value={emailSettings.testRecipients}
-                    onChange={(e) => setEmailSettings(prev => ({ ...prev, testRecipients: e.target.value }))}
-                    className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm placeholder:text-foreground0"
-                    placeholder="email@example.com, another@example.com"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">Recipients for test reports when using "Send Test Report"</p>
-                </div>
-
-                {/* Manual Report Recipients */}
-                <div>
-                  <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Manual Report Recipients</label>
-                  <input
-                    type="text"
-                    value={emailSettings.manualRecipients}
-                    onChange={(e) => setEmailSettings(prev => ({ ...prev, manualRecipients: e.target.value }))}
-                    className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm placeholder:text-foreground0"
-                    placeholder="email@example.com, another@example.com"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">Recipients for manual reports when using "Send Report Now"</p>
-                </div>
-
-                <div className="p-4 bg-background rounded-md border border-border dark:border-border">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Switch
-                        checked={emailSettings.enabled}
-                        onCheckedChange={(checked: boolean) => setEmailSettings(prev => ({ ...prev, enabled: checked }))}
-                        className="data-[state=checked]:bg-blue-600"
-                      />
-                      <div>
-                        <label className="text-foreground text-sm font-medium">Enable Weekly Reports</label>
-                        <p className="text-xs text-muted-foreground">Turn on to schedule automated weekly reports</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {emailSettings.enabled && (
-                  <>
-                    <div>
-                      <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Weekly Report Recipients</label>
-                      <input
-                        type="text"
-                        value={emailSettings.weeklyRecipients}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, weeklyRecipients: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm placeholder:text-foreground0"
-                        placeholder="email@example.com, another@example.com"
-                      />
-                      <p className="mt-1 text-xs text-muted-foreground">Recipients for automated weekly reports</p>
-                    </div>
-
-                    <div>
-                      <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Send Day</label>
-                      <select
-                        value={emailSettings.sendDay}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, sendDay: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm"
-                      >
-                        <option value="monday">Monday</option>
-                        <option value="tuesday">Tuesday</option>
-                        <option value="wednesday">Wednesday</option>
-                        <option value="thursday">Thursday</option>
-                        <option value="friday">Friday</option>
-                        <option value="saturday">Saturday</option>
-                        <option value="sunday">Sunday</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block mb-2 text-sm font-medium text-gray-800 dark:text-foreground">Send Time</label>
-                      <input
-                        type="time"
-                        value={emailSettings.sendTime}
-                        onChange={(e) => setEmailSettings(prev => ({ ...prev, sendTime: e.target.value }))}
-                        className="w-full p-3 rounded-md bg-background border border-border dark:border-border text-foreground text-sm"
-                      />
-                    </div>
-
-                    {cronJobs.length > 0 && (
-                      <div className="pt-4 border-t border-border">
-                        <h3 className="text-sm font-medium text-gray-800 dark:text-foreground mb-3">Current Schedule</h3>
-                        {cronJobs.map((job) => (
-                          <div key={job.id} className="p-3 rounded-md bg-background border border-border dark:border-border">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-foreground">Weekly Report</span>
-                              <span className={cn(
-                                "text-xs px-2 py-1 rounded-full",
-                                job.status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-gray-200 dark:bg-muted text-muted-foreground'
-                              )}>
-                                {job.status}
-                              </span>
-                            </div>
-                            <div className="text-xs space-y-1 text-muted-foreground">
-                              <p>Every {job.settings.send_day} at {job.settings.send_time}</p>
-                              <p>Next run: {new Date(job.next_run).toLocaleString()}</p>
-                              <p>Recipients: {job.settings.recipients.join(', ')}</p>
-                            </div>
+                          <div key={index} className="grid grid-cols-5 gap-4 p-3 bg-card border border-border rounded-md hover:bg-muted/50 transition-colors">
+                            <div className="font-medium text-foreground truncate">{query.query}</div>
+                            <div className="text-foreground text-center">{formatNumber(query.clicks)}</div>
+                            <div className="text-foreground text-center">{formatNumber(query.impressions)}</div>
+                            <div className="text-foreground text-center">{query.ctr}%</div>
+                            <div className="text-foreground text-center">{query.position}</div>
                           </div>
                         ))}
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
+                    </CardContent>
+                  </Card>
+                </div>
 
-              <div className="mt-8 flex justify-end gap-3">
-                <button
-                  onClick={() => setShowEmailSettings(false)}
-                  className="px-4 py-2 text-sm font-medium rounded-md bg-background text-foreground hover:bg-gray-200 dark:bg-muted transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveEmailSettings}
-                  className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-foreground hover:bg-blue-500 transition-colors"
-                >
-                  Save Schedule
-                </button>
+                {/* Device & Country Breakdown */}
+                <div>
+                  <Card className="bg-card border-border rounded-lg mb-8">
+                    <CardHeader>
+                      <CardTitle className="text-foreground">Clicks by Device</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-4">
+                        {Object.entries(searchData.byDevice).map(([device, data]: [string, any]) => (
+                          <li key={device} className="flex items-center justify-between">
+                            <div className="flex items-center">
+                              {getDeviceIcon(device)}
+                              <span className="ml-2 capitalize text-foreground">{device.toLowerCase()}</span>
+                            </div>
+                            <span className="font-bold text-foreground">{formatNumber(data.clicks)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="bg-card border-border rounded-lg">
+                    <CardHeader>
+                      <CardTitle className="text-foreground">Top Countries by Clicks</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="space-y-4">
+                        {Object.entries(searchData.byCountry).sort(([,a]:[string, any], [,b]:[string, any]) => b.clicks - a.clicks).slice(0, 5).map(([country, data]: [string, any]) => (
+                          <li key={country} className="flex items-center justify-between">
+                            <div className="flex items-center">
+                                <Globe className="w-5 h-5 text-muted-foreground" />
+                                <span className="ml-2 text-foreground">{country}</span>
+                            </div>
+                            <span className="font-bold text-foreground">{formatNumber(data.clicks)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
+            </>
+          ) : (
+            <div className="text-center py-20">
+              <p className="text-muted-foreground">No data available. Please select a site and ensure you have Search Console access.</p>
+              {!selectedSite && sites.length === 0 && (
+                <div className="mt-4">
+                  <p className="text-muted-foreground">No sites found. Please connect your Google account in settings.</p>
+                  <Button className="mt-2" onClick={verifyDomain}>Verify Site Ownership</Button>
+                </div>
+              )}
             </div>
-          </div>
+          )}
+        </main>
+
+        {/* Email Settings Modal */}
+        {showEmailSettings && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <Card className="bg-card border-border rounded-lg w-full max-w-2xl">
+                    <CardHeader>
+                        <CardTitle className="flex items-center justify-between text-foreground">
+                            <span>Email Report Settings for {selectedSite}</span>
+                            <Button variant="ghost" size="sm" onClick={() => setShowEmailSettings(false)} className="text-foreground hover:bg-muted">X</Button>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <div>
+                            <label className="flex items-center justify-between">
+                                <span className="text-foreground">Enable Weekly Reports</span>
+                                <Switch
+                                    checked={emailSettings.enabled}
+                                    onCheckedChange={(checked) => setEmailSettings({...emailSettings, enabled: checked})}
+                                />
+                            </label>
+                            <p className="text-sm text-muted-foreground">Automatically send a weekly performance report.</p>
+                        </div>
+                        
+                        {emailSettings.enabled && (
+                             <div>
+                                <label htmlFor="weeklyRecipients" className="block text-sm font-medium mb-1 text-foreground">Weekly Report Recipients</label>
+                                <input
+                                    id="weeklyRecipients"
+                                    type="text"
+                                    value={emailSettings.weeklyRecipients}
+                                    onChange={(e) => setEmailSettings({...emailSettings, weeklyRecipients: e.target.value})}
+                                    placeholder="email1@example.com, email2@example.com"
+                                    className="w-full bg-background border-border text-foreground rounded-md p-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">Comma-separated email addresses.</p>
+                            </div>
+                        )}
+
+                        <div>
+                            <h3 className="text-lg font-semibold border-t border-border pt-4 mt-4 text-foreground">Scheduled Jobs</h3>
+                            {cronJobs.length > 0 ? (
+                                <ul className="text-sm text-muted-foreground mt-2 space-y-1">
+                                    {cronJobs.map(job => (
+                                        <li key={job.id} className="text-foreground">`{job.schedule}` - `{job.url}`</li>
+                                    ))}
+                                </ul>
+                            ) : <p className="text-sm text-muted-foreground mt-2">No scheduled jobs found.</p>}
+                        </div>
+
+                        <div className="border-t border-border pt-4">
+                            <h3 className="text-lg font-semibold text-foreground">Manual Reports</h3>
+                            <div>
+                                <label htmlFor="testRecipients" className="block text-sm font-medium mb-1 text-foreground">Test Report Recipients</label>
+                                <input
+                                    id="testRecipients"
+                                    type="text"
+                                    value={emailSettings.testRecipients}
+                                    onChange={(e) => setEmailSettings({...emailSettings, testRecipients: e.target.value})}
+                                    placeholder="test1@example.com"
+                                    className="w-full bg-background border-border text-foreground rounded-md p-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                                />
+                                <Button onClick={handleSendTestReport} className="mt-2 rounded-md">Send Test Report</Button>
+                            </div>
+                            <div className="mt-4">
+                                <label htmlFor="manualRecipients" className="block text-sm font-medium mb-1 text-foreground">Manual Report Recipients</label>
+                                <input
+                                    id="manualRecipients"
+                                    type="text"
+                                    value={emailSettings.manualRecipients}
+                                    onChange={(e) => setEmailSettings({...emailSettings, manualRecipients: e.target.value})}
+                                    placeholder="manual1@example.com"
+                                    className="w-full bg-background border-border text-foreground rounded-md p-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                                />
+                                <Button onClick={handleSendManualReport} className="mt-2">Send Manual Report</Button>
+                            </div>
+                        </div>
+
+                    </CardContent>
+                    <CardFooter className="flex justify-end space-x-2 border-t border-border pt-4">
+                        <Button variant="outline" onClick={() => setShowEmailSettings(false)} className="bg-background border-border text-foreground hover:bg-muted rounded-md">Cancel</Button>
+                        <Button onClick={handleSaveEmailSettings} className="rounded-md">Save Settings</Button>
+                    </CardFooter>
+                </Card>
+            </div>
         )}
       </div>
     </SidebarDemo>
   );
-} 
+}

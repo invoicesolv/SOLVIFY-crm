@@ -338,8 +338,11 @@ async function processJob(job: any) {
         bySource: []
       };
       
+      // Get the property name - extract from property ID or use a default
+      const propertyName = propertyId?.replace('properties/', '') || 'Your Property';
+      
       // Call the same API that's used for manual reports
-      const response = await fetch(`${process.env.NEXTAUTH_URL || 'https://crm.solvify.se'}/api/analytics/send-report`, {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/api/analytics/send-report`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -347,6 +350,7 @@ async function processJob(job: any) {
         },
         body: JSON.stringify({
           propertyId: propertyId,
+          propertyName: propertyName,
           recipients: recipients,
           analyticsData: mockAnalyticsData,
           isTest: false,
@@ -380,7 +384,7 @@ async function processJob(job: any) {
       };
       
       // Call the same API that's used for manual reports
-      const response = await fetch(`${process.env.NEXTAUTH_URL || 'https://crm.solvify.se'}/api/search-console/send-report`, {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://crm.solvify.se'}/api/search-console/send-report`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.redirect(new URL('/login?error=unauthorized', request.url));
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -37,7 +35,7 @@ export async function GET(request: NextRequest) {
       body: new URLSearchParams({
         client_id: process.env.FACEBOOK_APP_ID!,
         client_secret: process.env.FACEBOOK_APP_SECRET!,
-        redirect_uri: `${process.env.NEXTAUTH_URL}/api/oauth/instagram-business/callback`,
+        redirect_uri: `${process.env.NEXT_PUBLIC_SITE_URL}/api/oauth/instagram-business/callback`,
         code: code,
       }),
     });
@@ -235,7 +233,7 @@ export async function GET(request: NextRequest) {
     const { error: integrationError } = await supabase
       .from('integrations')
       .upsert({
-        user_id: session.user.id,
+        user_id: user.id,
         service_name: 'instagram-business',
         access_token: accessToken,
         refresh_token: null,

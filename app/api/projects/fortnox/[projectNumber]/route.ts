@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Create Supabase client
 function getSupabaseClient() {
@@ -17,20 +17,20 @@ function getSupabaseClient() {
 }
 
 export async function GET(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: { projectNumber: string } }
 ) {
   console.log(`\n=== Looking up project by Fortnox number: ${params.projectNumber} ===`);
   
-  // Get user session for RLS
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  
-  const projectNumber = params.projectNumber;
-  
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Use user.id instead of session?.user?.id
+    const userId = user.id;
+    
     const supabase = getSupabaseClient();
     if (!supabase) {
       return NextResponse.json({ error: 'Failed to initialize Supabase client' }, { status: 500 });
@@ -40,7 +40,7 @@ export async function GET(
     const { data: project, error } = await supabase
       .from('projects')
       .select('id, name, description, status, customer_name, workspace_id')
-      .eq('fortnox_project_number', projectNumber)
+      .eq('fortnox_project_number', params.projectNumber)
       .maybeSingle();
     
     if (error) {

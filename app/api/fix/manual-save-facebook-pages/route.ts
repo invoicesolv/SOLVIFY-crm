@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { getActiveWorkspaceId } from '@/lib/permission';
 import crypto from 'crypto';
 
@@ -9,9 +8,9 @@ import crypto from 'crypto';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
@@ -22,7 +21,7 @@ export async function GET(request: NextRequest) {
     const { data: personalAccount, error: dbError } = await supabase
       .from('social_accounts')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('platform', 'facebook')
       .not('account_name', 'like', '%(Page)')
       .single();
@@ -84,7 +83,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get workspace ID
-    const workspaceId = await getActiveWorkspaceId(session.user.id);
+    const workspaceId = await getActiveWorkspaceId(user.id);
     if (!workspaceId) {
       return NextResponse.json({ error: 'No active workspace found' }, { status: 400 });
     }
@@ -107,7 +106,7 @@ export async function GET(request: NextRequest) {
         const { error: pageError } = await supabase
           .from('social_accounts')
           .upsert({
-            user_id: session.user.id,
+            user_id: user.id,
             workspace_id: workspaceId,
             platform: 'facebook',
             access_token: page.access_token || personalAccount.access_token,

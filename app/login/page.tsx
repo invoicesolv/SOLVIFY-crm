@@ -1,9 +1,9 @@
 "use client"
 
-import { Suspense, useRef } from 'react'
+import { Suspense, useRef, useEffect } from 'react'
 import { useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { signIn } from "next-auth/react"
+import { useSession, signIn } from "next-auth/react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import ReCAPTCHA from 'react-google-recaptcha'
@@ -18,7 +18,51 @@ function LoginContent() {
   const recaptchaRef = useRef<ReCAPTCHA>(null)
   const searchParams = useSearchParams()
   const router = useRouter()
+  const { data: session, status } = useSession()
   let callbackUrl = searchParams.get("callbackUrl") || "/dashboard"
+
+  // Debug session status
+  useEffect(() => {
+    console.log('Login page - Session status:', status)
+    console.log('Login page - Session data:', session)
+    console.log('Login page - Callback URL:', callbackUrl)
+  }, [status, session, callbackUrl])
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (status === 'authenticated' && session) {
+      console.log('User is authenticated, redirecting to:', callbackUrl)
+      router.push(callbackUrl)
+    }
+  }, [status, session, callbackUrl, router])
+
+  // Show loading state while checking authentication
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0A0A0A]">
+        <div className="max-w-md w-full space-y-8 p-8">
+          <div className="text-center">
+            <h2 className="mt-6 text-3xl font-bold text-foreground">Checking authentication...</h2>
+            <div className="mt-4 animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // If user is authenticated, show redirecting message
+  if (status === 'authenticated' && session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0A0A0A]">
+        <div className="max-w-md w-full space-y-8 p-8">
+          <div className="text-center">
+            <h2 className="mt-6 text-3xl font-bold text-foreground">Redirecting to dashboard...</h2>
+            <div className="mt-4 animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto" />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const handleCaptchaChange = (token: string | null) => {
     setCaptchaToken(token);
@@ -29,94 +73,82 @@ function LoginContent() {
     setLoading(true)
     setError("")
 
-    if (!captchaToken) {
-      setError("Please complete the reCAPTCHA verification");
-      setLoading(false);
-      return;
+    const formData = new FormData(e.currentTarget)
+    const email = formData.get('email') as string
+    const password = formData.get('password') as string
+
+    if (!email || !password) {
+      setError('Please enter both email and password')
+      setLoading(false)
+      return
     }
 
-    const formData = new FormData(e.currentTarget)
-    const email = formData.get("email")
-    const password = formData.get("password")
+    // Skip reCAPTCHA for localhost development
+    if (process.env.NODE_ENV === 'production' && !captchaToken) {
+      setError('Please complete the reCAPTCHA verification')
+      setLoading(false)
+      return
+    }
 
     try {
-      // Verify reCAPTCHA token server-side
-      const verifyResponse = await fetch('/api/verify-recaptcha', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ token: captchaToken }),
-      });
-      
-      const verifyData = await verifyResponse.json();
-      
-      if (!verifyData.success) {
-        throw new Error('reCAPTCHA verification failed. Please try again.');
-      }
-    
-      console.log('Attempting to sign in with credentials:', { 
-        email,
-        timestamp: new Date().toISOString(),
-        origin: typeof window !== 'undefined' ? window.location.origin : null,
-        callbackUrl
-      });
-      
-      // Store the email in a cookie for debug purposes only
-      if (typeof document !== 'undefined' && email) {
-        document.cookie = `user_email=${email}; path=/; max-age=3600; SameSite=Lax`;
-      }
-      
-      console.log('Calling NextAuth signIn method...');
-      const result = await signIn("credentials", {
+      // Use NextAuth credentials provider
+      const result = await signIn('credentials', {
         email,
         password,
         redirect: false,
-        callbackUrl,
-      });
-
-      console.log('Sign in result:', JSON.stringify({
-        success: !result?.error,
-        error: result?.error || null,
-        url: result?.url || null,
-        status: result?.status,
-        ok: result?.ok,
-        timestamp: new Date().toISOString()
-      }, null, 2));
+      })
 
       if (result?.error) {
-        setError(result.error);
-        setLoading(false);
-      } else if (result?.url) {
-        // Successful login - use router instead of window.location for client-side navigation
-        router.push(result.url);
+        setError(result.error === 'CredentialsSignin' ? 'Invalid email or password' : result.error)
+      } else if (result?.ok) {
+        console.log('Login successful, redirecting to:', callbackUrl)
+        router.push(callbackUrl)
       } else {
-        // Something unexpected happened
-        setError("An unexpected error occurred");
-        setLoading(false);
+        setError('Login failed. Please try again.')
       }
     } catch (error) {
-      console.error("Sign in error:", error);
-      setError(error instanceof Error ? error.message : "An error occurred during sign in");
-      // Reset reCAPTCHA on error
-      recaptchaRef.current?.reset();
-      setCaptchaToken(null);
-      setLoading(false);
+      console.error('Login error:', error)
+      setError('An error occurred during login')
+    } finally {
+      setLoading(false)
+      // Reset captcha
+      if (recaptchaRef.current) {
+        recaptchaRef.current.reset()
+      }
+      setCaptchaToken(null)
     }
   }
 
   const handleGoogleSignIn = async () => {
+    console.log('Google sign-in button clicked')
     setLoading(true)
     setError("")
     
     try {
-      await signIn("google", { 
+      console.log('Calling signIn with callbackUrl:', callbackUrl)
+      
+      // Direct redirect to Google OAuth URL
+      const result = await signIn('google', { 
         callbackUrl,
-        redirect: true
+        redirect: false // Don't auto-redirect, handle manually
       })
+      
+      console.log('signIn result:', result)
+      
+      if (result?.url) {
+        console.log('Redirecting to:', result.url)
+        window.location.href = result.url
+      } else if (result?.error) {
+        console.error('SignIn error:', result.error)
+        setError('Failed to sign in: ' + result.error)
+        setLoading(false)
+      } else {
+        console.log('Success, redirecting to dashboard')
+        window.location.href = callbackUrl
+      }
     } catch (error) {
-      console.error("Google sign in error:", error)
-      setError("Failed to sign in with Google")
+      console.error('Google sign-in error:', error)
+      setError('Failed to sign in with Google: ' + (error as Error)?.message)
       setLoading(false)
     }
   }
@@ -140,7 +172,11 @@ function LoginContent() {
         )}
 
         <button
-          onClick={handleGoogleSignIn}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleGoogleSignIn();
+          }}
           disabled={loading}
           type="button"
           className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-lg border border-white/10 bg-background/5 text-foreground hover:bg-background/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -215,19 +251,22 @@ function LoginContent() {
             </div>
           </div>
 
-          <div className="mt-6 flex justify-center">
-            <ReCAPTCHA
-              ref={recaptchaRef}
-              sitekey={RECAPTCHA_SITE_KEY}
-              onChange={handleCaptchaChange}
-              theme="dark"
-            />
-          </div>
+          {/* Only show reCAPTCHA in production */}
+          {process.env.NODE_ENV === 'production' && (
+            <div className="mt-6 flex justify-center">
+              <ReCAPTCHA
+                ref={recaptchaRef}
+                sitekey={RECAPTCHA_SITE_KEY}
+                onChange={handleCaptchaChange}
+                theme="dark"
+              />
+            </div>
+          )}
 
           <div>
             <button
               type="submit"
-              disabled={loading || !captchaToken}
+              disabled={loading}
               className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-foreground bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Signing in..." : "Sign in"}

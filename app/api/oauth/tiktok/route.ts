@@ -13,11 +13,11 @@ export async function GET(request: NextRequest) {
   // Use production URL for TikTok OAuth to match app settings
   const redirectUri = process.env.NODE_ENV === 'development' 
     ? 'https://crm.solvify.se/api/oauth/tiktok/callback'
-    : `${process.env.NEXTAUTH_URL}/api/oauth/tiktok/callback`;
+    : `${process.env.NEXT_PUBLIC_SITE_URL}/api/oauth/tiktok/callback`;
   
   if (!clientKey) {
     console.error('TikTok OAuth error: Missing TIKTOK_CLIENT_KEY');
-    return NextResponse.redirect(new URL(`${process.env.NEXTAUTH_URL}/settings?error=tiktok_config_missing`));
+    return NextResponse.redirect(new URL(`${process.env.NEXT_PUBLIC_SITE_URL}/settings?error=tiktok_config_missing`));
   }
   
   // Generate CSRF state and code verifier for PKCE

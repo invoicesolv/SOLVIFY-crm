@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { 
   Plus, 
   Play, 
@@ -48,6 +48,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { cn } from '@/lib/utils';
+import { EmailMarketingNav } from '@/components/email-marketing/EmailMarketingNav';
 
 
 
@@ -117,7 +118,7 @@ const FLOW_CONTROL_TYPES = [
 ];
 
 export default function EmailAutomationPage() {
-  const { data: session } = useSession();
+  const { user, session } = useAuth();
   const [workflows, setWorkflows] = useState<AutomationWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedWorkflow, setSelectedWorkflow] = useState<AutomationWorkflow | null>(null);
@@ -126,8 +127,10 @@ export default function EmailAutomationPage() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   useEffect(() => {
-    fetchWorkflows();
-  }, []);
+    if (user?.id) {
+      fetchWorkflows();
+    }
+  }, [user?.id]);
 
   const fetchWorkflows = async () => {
     try {
@@ -963,6 +966,7 @@ export default function EmailAutomationPage() {
 
   return (
     <SidebarDemo>
+      <EmailMarketingNav />
       <div className="min-h-screen bg-background">
         {/* Header */}
         <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">

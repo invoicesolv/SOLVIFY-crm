@@ -20,6 +20,9 @@ interface DealFormProps {
     value: number;
     stage: "new" | "contacted" | "proposal" | "negotiation" | "closed_won" | "closed_lost";
     notes: string;
+    deal_type: "one_time" | "retainer";
+    retainer_duration_months?: number;
+    retainer_start_date?: string;
   };
 }
 
@@ -39,6 +42,9 @@ export function DealForm({
     value: initialData?.value || 0,
     stage: initialData?.stage || "new",
     notes: initialData?.notes || "",
+    deal_type: initialData?.deal_type || "one_time",
+    retainer_duration_months: initialData?.retainer_duration_months || 12,
+    retainer_start_date: initialData?.retainer_start_date || new Date().toISOString().split('T')[0],
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,6 +70,9 @@ export function DealForm({
             value: formData.value,
             stage: formData.stage,
             notes: formData.notes,
+            deal_type: formData.deal_type,
+            retainer_duration_months: formData.deal_type === 'retainer' ? formData.retainer_duration_months : null,
+            retainer_start_date: formData.deal_type === 'retainer' ? formData.retainer_start_date : null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", initialData.id);
@@ -80,6 +89,9 @@ export function DealForm({
           value: formData.value,
           stage: formData.stage,
           notes: formData.notes,
+          deal_type: formData.deal_type,
+          retainer_duration_months: formData.deal_type === 'retainer' ? formData.retainer_duration_months : null,
+          retainer_start_date: formData.deal_type === 'retainer' ? formData.retainer_start_date : null,
           workspace_id: workspaceId,
           user_id: userId,
         });
@@ -178,10 +190,33 @@ export function DealForm({
 
           <div>
             <label
+              htmlFor="deal_type"
+              className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
+            >
+              Deal Type
+            </label>
+            <select
+              id="deal_type"
+              value={formData.deal_type}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  deal_type: e.target.value as "one_time" | "retainer",
+                })
+              }
+              className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="one_time">One-time Deal</option>
+              <option value="retainer">Monthly Retainer</option>
+            </select>
+          </div>
+
+          <div>
+            <label
               htmlFor="value"
               className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
             >
-              Deal Value
+              {formData.deal_type === 'retainer' ? 'Monthly Retainer Amount' : 'Deal Value'}
             </label>
             <input
               type="number"
@@ -195,6 +230,51 @@ export function DealForm({
               step="0.01"
             />
           </div>
+
+          {formData.deal_type === 'retainer' && (
+            <>
+              <div>
+                <label
+                  htmlFor="retainer_duration_months"
+                  className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
+                >
+                  Retainer Duration (Months)
+                </label>
+                <input
+                  type="number"
+                  id="retainer_duration_months"
+                  value={formData.retainer_duration_months}
+                  onChange={(e) =>
+                    setFormData({ ...formData, retainer_duration_months: parseInt(e.target.value) })
+                  }
+                  className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  min="1"
+                  max="60"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Total value: ${(formData.value * formData.retainer_duration_months).toLocaleString()}
+                </p>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="retainer_start_date"
+                  className="block text-sm font-medium text-gray-800 dark:text-foreground mb-1"
+                >
+                  Retainer Start Date
+                </label>
+                <input
+                  type="date"
+                  id="retainer_start_date"
+                  value={formData.retainer_start_date}
+                  onChange={(e) =>
+                    setFormData({ ...formData, retainer_start_date: e.target.value })
+                  }
+                  className="w-full bg-background border border-border dark:border-border rounded-md px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          )}
 
           <div>
             <label

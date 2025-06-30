@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-client';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { SidebarDemo } from '@/components/ui/code.demo';
@@ -40,7 +40,7 @@ const planNames = {
 };
 
 export default function BillingPage() {
-  const { data: session, status } = useSession();
+  const { user, session } = useAuth();
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [upgradePlanLoading, setUpgradePlanLoading] = useState(false);
@@ -49,12 +49,12 @@ export default function BillingPage() {
   const [activeTab, setActiveTab] = useState('subscription');
 
   useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id) {
+    if (user?.id && session?.access_token) {
       fetchSubscription();
-    } else if (status === 'unauthenticated') {
+    } else if (!user) {
       setLoading(false);
     }
-  }, [session, status]);
+  }, [user?.id, session?.access_token]);
 
   const fetchSubscription = async () => {
     try {
@@ -62,7 +62,7 @@ export default function BillingPage() {
       const { data, error } = await supabase
         .from('user_preferences')
         .select('plan_id, trial_start_date, trial_end_date, stripe_customer_id, stripe_subscription_id, subscription_status')
-        .eq('user_id', session?.user?.id)
+        .eq('user_id', user?.id)
         .single();
 
       if (error) {
@@ -135,6 +135,11 @@ export default function BillingPage() {
   };
 
   const handleCancelSubscription = async () => {
+    if (!session?.access_token) {
+      toast.error('Authentication required');
+      return;
+    }
+
     try {
       setCancelLoading(true);
       
@@ -148,6 +153,7 @@ export default function BillingPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           subscriptionId: subscription.stripe_subscription_id,

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseClient } from '@/lib/supabase-client';
+import { supabaseAdmin } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { createClient } from '@supabase/supabase-js';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
 
 // Fortnox API URL
 const BASE_API_URL = 'https://api.fortnox.se/3/';
@@ -126,28 +127,33 @@ async function createProject(tokenData: any, projectData: any) {
 export async function POST(req: NextRequest) {
   console.log('\n=== Creating Fortnox Project ===');
   
-  // Get user ID from session or request header
-  let userId: string | null = null;
-  
-  // First try to get from the session
-  const session = await getServerSession(authOptions);
-  if (session?.user?.id) {
-    userId = session.user.id;
-    console.log('Using user ID from session:', userId);
-  } else {
-    // If no session, check for user-id header (for client-side API calls)
-    userId = req.headers.get('user-id');
-    console.log('Using user ID from header:', userId);
-  }
-  
-  if (!userId) {
-    console.error('No user ID found in session or header');
-    return NextResponse.json({ error: 'Unauthorized - No user ID' }, { status: 401 });
-  }
-  
-  const finalUserId = userId;
-  
   try {
+    const user = await getUserFromToken(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Get user ID from session or request header
+    let userId: string | null = null;
+    
+    // First try to get from the session
+    const session = await getUserFromToken(req);
+    if (session?.id) {
+      userId = session.id;
+      console.log('Using user ID from session:', userId);
+    } else {
+      // If no session, check for user-id header (for client-side API calls)
+      userId = req.headers.get('user-id');
+      console.log('Using user ID from header:', userId);
+    }
+    
+    if (!userId) {
+      console.error('No user ID found in session or header');
+      return NextResponse.json({ error: 'Unauthorized - No user ID' }, { status: 401 });
+    }
+    
+    const finalUserId = userId;
+    
     // Parse the request body
     const requestData = await req.json();
     console.log('Request data:', requestData);

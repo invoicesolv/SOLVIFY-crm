@@ -2,14 +2,13 @@
 
 import { SidebarDemo } from "@/components/ui/code.demo";
 import { WelcomeDialog } from "@/components/ui/welcome-dialog";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/lib/auth-client";
 import { Suspense } from 'react';
 import { SuccessMessage } from '@/components/ui/success-message';
 import { useSearchParams } from 'next/navigation';
 
 function DashboardContent() {
-  const { data: session, status } = useSession();
-  const isAuthenticated = status === "authenticated";
+  const { isAuthenticated, loading } = useAuth();
   const searchParams = useSearchParams();
   const showSuccess = searchParams?.get('success') === 'true';
 

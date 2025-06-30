@@ -1,9 +1,8 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from "uuid"
-import { supabaseAdmin } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
-import { getServerSession } from "next-auth/next"
-import authOptions from "@/lib/auth";
+import { getUserFromToken } from '@/lib/auth-utils';
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -19,9 +18,27 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// Create Supabase admin client
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing required environment variables: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+// Using imported getUserFromToken from auth-utils
+
 // Updated helper function to check if a user is an admin
 async function isAdmin(userId: string, workspaceId?: string): Promise<boolean> {
   if (!userId) return false;
+
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) return false;
 
   // If a specific workspace is provided, check admin status for that workspace
   if (workspaceId) {
@@ -112,16 +129,16 @@ async function sendInvitationEmail(email: string, inviterName: string, token: st
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
   try {
-    // Get the session to check if the user is authenticated
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
+    // Get user from JWT token
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Get invitation data from request
-    const { email, name, workspaceId, workspaceName, isAdmin: inviteeIsAdmin = false } = await req.json();
+    const { email, name, workspaceId, workspaceName, isAdmin: inviteeIsAdmin = false } = await request.json();
 
     // Validate required fields
     if (!email || !workspaceId || !workspaceName) {
@@ -131,7 +148,7 @@ export async function POST(req: Request) {
     }
 
     // Check if the user is an admin for the specific workspace
-    const userIsAdmin = await isAdmin(session.user.id, workspaceId);
+    const userIsAdmin = await isAdmin(user.id, workspaceId);
     if (!userIsAdmin) {
       return NextResponse.json({ error: 'Forbidden. Only admins can send invitations.' }, { status: 403 });
     }
@@ -143,12 +160,17 @@ export async function POST(req: Request) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // Create invitation record in database using admin client
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    }
+
     const { data: invitationData, error: inviteError } = await supabaseAdmin
       .from('invitations')
       .insert({
         token,
         email,
-        inviter_id: session.user.id,
+        inviter_id: user.id,
         workspace_id: workspaceId,
         is_admin: inviteeIsAdmin,
         expires_at: expiresAt.toISOString(),
@@ -166,7 +188,7 @@ export async function POST(req: Request) {
     // Send invitation email
     const emailSent = await sendInvitationEmail(
       email, 
-      session.user.name || 'Your colleague', 
+      user.user_metadata.name || 'Your colleague', 
       token, 
       workspaceName,
       inviteeIsAdmin

@@ -1,36 +1,26 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
+import { getUserFromToken } from '@/lib/auth-utils';
 
-// Define the Session user type with expected properties
-interface SessionUser {
-  id?: string;
-  name?: string;
-  email?: string;
-  image?: string;
-}
-
-// Extend the Session type
-declare module "next-auth" {
-  interface Session {
-    user: SessionUser;
-    access_token: string;
-    refresh_token: string;
-  }
-}
-
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    // Get the current user from NextAuth session
-    const session: any = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    // No userId, no events
-    if (!userId) {
-      console.log("[Calendar] No user ID found in session");
+    console.log('[Calendar Events API] Processing GET request for user:', user.id);
+
+    // Get user's workspace IDs for security
+    const { data: teamMemberships } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', user.id);
+
+    const userWorkspaceIds = teamMemberships?.map(tm => tm.workspace_id) || [];
+    
+    if (userWorkspaceIds.length === 0) {
+      console.log('[Calendar Events API] User has no workspace memberships');
       return NextResponse.json([]);
     }
 
@@ -38,7 +28,8 @@ export async function GET() {
     const { data: events, error } = await supabaseAdmin
       .from('calendar_events')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
+      .in('workspace_id', userWorkspaceIds)
       .order('start_time', { ascending: true });
 
     if (error) {
@@ -60,24 +51,29 @@ export async function POST(request: Request) {
     console.log('[Calendar Events API] Request body:', body);
     const { title, start, end } = body;
 
-    // Get the current user from NextAuth session
-    console.log('[Calendar Events API] Attempting to get session via getServerSession...');
-    let session: any = null;
-    let sessionError = null;
-    try {
-      session = await getServerSession(authOptions);
-      console.log('[Calendar Events API] getServerSession result:', session ? `User ID: ${session.user?.id}` : 'null or undefined session');
-    } catch (e: any) {
-      sessionError = e;
-      console.error('[Calendar Events API] Error calling getServerSession:', e);
-    }
-    
-    if (sessionError || !session?.user?.id) {
-      console.log(`[Calendar Events API] Unauthorized - No session user ID. Session: ${JSON.stringify(session)}, Error: ${sessionError}`);
+    // Get the current user from Supabase authentication
+    const user = await getUserFromToken(request as NextRequest);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const userId = session.user.id;
+    
+    const userId = user.id;
     console.log(`[Calendar Events API] User ID successfully retrieved: ${userId}`);
+
+    // Get user's primary workspace for new event
+    const { data: teamMemberships } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    const workspaceId = teamMemberships?.[0]?.workspace_id;
+    
+    if (!workspaceId) {
+      console.log('[Calendar Events API] User has no workspace memberships');
+      return NextResponse.json({ error: 'No workspace found' }, { status: 403 });
+    }
 
     // Prepare data for insertion
     const eventToInsert = {
@@ -85,6 +81,7 @@ export async function POST(request: Request) {
           start_time: start,
           end_time: end,
       user_id: userId,
+      workspace_id: workspaceId,
           is_synced: false
     };
     console.log('[Calendar Events API] Event data to insert:', eventToInsert);
@@ -120,12 +117,24 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Event ID is required' }, { status: 400 });
     }
     
-    // Get the current user from NextAuth session
-    const session: any = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-    
-    if (!userId) {
+    // Get the current user from Supabase authentication
+    const user = await getUserFromToken(request as NextRequest);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
+    const userId = user.id;
+    
+    // Get user's workspace IDs for security
+    const { data: teamMemberships } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', userId);
+
+    const userWorkspaceIds = teamMemberships?.map(tm => tm.workspace_id) || [];
+    
+    if (userWorkspaceIds.length === 0) {
+      return NextResponse.json({ error: 'No workspace found' }, { status: 403 });
     }
     
     // Use the admin client for direct database access
@@ -133,7 +142,8 @@ export async function DELETE(request: Request) {
       .from('calendar_events')
       .delete()
       .eq('id', eventId)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .in('workspace_id', userWorkspaceIds);
 
     if (error) throw error;
 

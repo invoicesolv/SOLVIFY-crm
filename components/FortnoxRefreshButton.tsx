@@ -4,14 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 
 export default function FortnoxRefreshButton() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [isCheckingFortnox, setIsCheckingFortnox] = useState(false);
   
   const fetchAllFortnoxCustomers = async () => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       toast.error("You must be logged in to refresh customers");
       return;
     }
@@ -20,7 +20,7 @@ export default function FortnoxRefreshButton() {
       setIsCheckingFortnox(true);
       const response = await fetch('/api/fortnox/customers/all', {
         headers: {
-          'user-id': session.user.id
+          'user-id': user.id
         }
       });
       

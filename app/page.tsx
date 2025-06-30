@@ -1,5 +1,8 @@
 "use client"
 
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 import { HeroCRM } from "@/components/ui/hero-crm";
 import { NavBarDemo } from "@/components/ui/navbar-demo";
 import { PricingSectionDemo } from "@/components/ui/pricing-demo";
@@ -19,6 +22,25 @@ import { IntegrationsSection } from "@/components/ui/integrations-section";
 import { ROISection } from "@/components/ui/roi-section";
 
 export default function HomePage() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (status === 'loading') return // Still loading
+    
+    if (session) {
+      router.push('/dashboard')
+      return
+    }
+  }, [session, status, router])
+
+  if (status === 'loading') {
+    return <div>Loading...</div>
+  }
+
+  if (session) {
+    return null // Will redirect
+  }
   return (
     <main className="min-h-screen bg-background text-foreground">
       <NavBarDemo lang="en" />

@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
+import { NextRequest, NextResponse } from 'next/server';
+import { getUserFromToken } from '@/lib/auth-utils';
 import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 
 // Simple AI-like scoring based on email content analysis
 function calculateLeadScore(email: any): number {
@@ -135,18 +135,18 @@ function suggestLeadStage(score: number, email: any): string {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { workspaceId } = await request.json();
 
     // Get OAuth tokens
-    const accessToken = (session as any).access_token;
-    const refreshToken = (session as any).refresh_token;
+    const accessToken = (user as any).access_token;
+    const refreshToken = (user as any).refresh_token;
 
     if (!accessToken) {
       return NextResponse.json({ 
@@ -156,10 +156,12 @@ export async function POST(request: Request) {
     }
 
     // Create OAuth2 client
-    const oauth2Client = new google.auth.OAuth2(
+    const oauth2Client = new OAuth2Client(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      process.env.NEXTAUTH_URL + '/api/auth/callback/google'
+      process.env.NODE_ENV === 'development' 
+        ? 'http://localhost:3000/api/oauth/google/callback'
+        : 'https://crm.solvify.se/api/oauth/google/callback'
     );
 
     oauth2Client.setCredentials({

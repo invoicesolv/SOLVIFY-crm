@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import crypto from 'crypto';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const user = await getUserFromToken(request);
   
-  if (!session?.user?.id) {
+  if (!user) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
@@ -21,7 +20,7 @@ export async function GET(request: NextRequest) {
     const { data: personalAccount, error: dbError } = await supabase
       .from('social_accounts')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('platform', 'facebook')
       .not('account_name', 'like', '%(Page)%')
       .single();
@@ -79,7 +78,7 @@ export async function GET(request: NextRequest) {
     const { error: deleteError } = await supabase
       .from('social_accounts')
       .delete()
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .eq('platform', 'facebook')
       .like('account_name', '%(Page)%');
 
@@ -91,7 +90,7 @@ export async function GET(request: NextRequest) {
     const savedPages: Array<{id: string, name: string, category?: string}> = [];
     for (const page of pages) {
       const pageData = {
-        user_id: session.user.id,
+        user_id: user.id,
         platform: 'facebook',
         account_id: page.id,
         account_name: `${page.name} (Page)`,

@@ -7,7 +7,7 @@ import { X, FileText, CheckCircle, AlertCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Task, ChecklistItem } from "@/types/project";
-import { useSession } from "next-auth/react";
+import { useAuth } from '@/lib/auth-client';
 import { Textarea } from "@/components/ui/textarea";
 import {
   Popover,
@@ -28,7 +28,7 @@ export function BulkTaskImport({
   onTasksAdded,
   onClose,
 }: BulkTaskImportProps) {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const [bulkText, setBulkText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [importSummary, setImportSummary] = useState<{
@@ -37,7 +37,7 @@ export function BulkTaskImport({
   } | null>(null);
 
   const processImport = async () => {
-    if (!bulkText.trim() || !session?.user?.id) {
+    if (!bulkText.trim() || !user?.id) {
       toast.error('Please enter some tasks');
       return;
     }
@@ -75,7 +75,7 @@ export function BulkTaskImport({
             progress: 0,
             checklist: [],
             project_id: projectId,
-            user_id: session.user.id,
+            user_id: user.id,
           };
         } else if (currentTask) {
           // This is a subtask
@@ -172,7 +172,7 @@ export function BulkTaskImport({
 
           <Textarea
             placeholder="Enter your tasks here..."
-            className="min-h-[200px] bg-background border-border dark:border-border text-foreground placeholder:text-foreground0 focus:border-gray-400 dark:border-border"
+            className="min-h-[200px] bg-background border-border text-foreground placeholder:text-muted-foreground focus:border-gray-400"
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
           />
@@ -181,7 +181,7 @@ export function BulkTaskImport({
             <Button
               variant="outline"
               onClick={onClose}
-              className="text-muted-foreground hover:text-foreground border-border dark:border-border hover:bg-background"
+              className="text-muted-foreground hover:text-foreground border-border hover:bg-background"
             >
               Cancel
             </Button>

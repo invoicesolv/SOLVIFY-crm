@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
+import { getUserFromToken } from '@/lib/auth-utils';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const user = await getUserFromToken(request);
     
-    if (!session?.user?.id) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     // Check Facebook environment variables
     const facebookConfig = {
       FACEBOOK_APP_ID: !!process.env.FACEBOOK_APP_ID,
-      FACEBOOK_APP_SECRET: !!process.env.FACEBOOK_APP_SECRET,
-      NEXTAUTH_URL: !!process.env.NEXTAUTH_URL
+      FACEBOOK_APP_SECRET: !!process.env.FACEBOOK_APP_SECRET
     };
 
     const missingFacebookVars = Object.entries(facebookConfig)
@@ -30,15 +28,12 @@ export async function GET(request: NextRequest) {
       required_actions: missingFacebookVars.length > 0 ? [
         'Add FACEBOOK_APP_ID to your environment variables',
         'Add FACEBOOK_APP_SECRET to your environment variables',
-        'Ensure NEXTAUTH_URL is properly configured',
         'Restart your application after adding the variables'
       ] : [
         'Facebook OAuth is properly configured',
         'Users can now authenticate with Facebook/Instagram/Threads'
       ],
-      facebook_oauth_url: process.env.NEXTAUTH_URL ? 
-        `${process.env.NEXTAUTH_URL}/api/auth/signin/facebook` : 
-        'NEXTAUTH_URL not configured',
+      facebook_oauth_url: '/api/oauth/facebook',
       environment_setup_guide: {
         development: 'Add to .env.local file',
         production: 'Add to your hosting platform environment variables',
@@ -58,9 +53,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
+    const user = await getUserFromToken(request);
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

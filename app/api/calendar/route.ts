@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { supabase, supabaseAdmin } from '@/lib/supabase';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
 import { v4 as uuidv4 } from 'uuid';
 import { getRefreshedGoogleToken, handleTokenRefreshOnError } from '@/lib/token-refresh';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 
 // Helper function to sync with Google Calendar
 async function syncWithGoogleCalendar(userId: string, event: any, accessToken: string) {
@@ -118,9 +118,13 @@ async function updateInGoogleCalendar(googleCalendarId: string, event: any, acce
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     console.log('[Calendar] Processing GET request');
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const userId = user.id;
 
     if (!userId) {
       console.log('[Calendar] No user found in session');
@@ -158,11 +162,27 @@ export async function GET(request: NextRequest) {
 
     // If user is authenticated, check for Google Calendar integration
     if (userId) {
+      // Get user's workspace IDs for security
+      const { data: teamMemberships } = await supabaseAdmin
+        .from('team_members')
+        .select('workspace_id')
+        .eq('user_id', userId);
+
+      const userWorkspaceIds = teamMemberships?.map(tm => tm.workspace_id) || [];
+      
+      if (userWorkspaceIds.length === 0) {
+        console.log('[Calendar] User has no workspace memberships');
+        return NextResponse.json({ items: events || [] });
+      }
+
       const { data: integration, error: integrationError } = await supabaseAdmin
         .from('integrations')
         .select('*')
         .eq('user_id', userId) 
         .eq('service_name', 'google-calendar')
+        .in('workspace_id', userWorkspaceIds)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single();
 
       if (integrationError && integrationError.code !== 'PGRST116') {
@@ -210,49 +230,46 @@ export async function GET(request: NextRequest) {
             const googleEvents = await response.json();
             console.log(`[Calendar] Fetched ${googleEvents.items?.length || 0} Google Calendar events for user:`, userId);
 
-            // Process Google Calendar events in batches to prevent timeout
-            const batchSize = 10;
-            const batches = Math.ceil((googleEvents.items?.length || 0) / batchSize);
-            
-            for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
-              const batchStart = batchIndex * batchSize;
-              const batchEnd = Math.min(batchStart + batchSize, googleEvents.items?.length || 0);
-              const batch = googleEvents.items?.slice(batchStart, batchEnd) || [];
-              
-              console.log(`[Calendar] Processing batch ${batchIndex + 1}/${batches} (${batch.length} events)`);
-              
-              // Process events in batch
-              for (const gEvent of batch) {
-              // Check if event exists based on google_calendar_id and workspace_id
-              const { data: existingGEvent, error: existingGEventError } = await supabaseAdmin
-                .from('calendar_events')
-                .select('id')
-                .eq('google_calendar_id', gEvent.id)
-                  .eq('workspace_id', workspaceId)
-                  .maybeSingle();
+            // Get all existing Google Calendar event IDs in one query for efficiency
+            const googleEventIds = (googleEvents.items || []).map(e => e.id);
+            const { data: existingEvents, error: existingError } = await supabaseAdmin
+              .from('calendar_events')
+              .select('google_calendar_id')
+              .eq('workspace_id', workspaceId)
+              .in('google_calendar_id', googleEventIds);
 
-              if (existingGEventError) {
-                 console.error('[Calendar] Error checking for existing Google event:', existingGEventError);
-                 continue; // Skip this event if check fails
-              }
-
-              if (!existingGEvent) {
-                console.log('[Calendar] Syncing new Google Calendar event to workspace:', gEvent.id, workspaceId);
-                await supabaseAdmin
-                  .from('calendar_events')
-                  .upsert({
-                      workspace_id: workspaceId,
-                      user_id: userId,
-                      title: gEvent.summary || gEvent.subject || 'Untitled Event',
-                    description: gEvent.description,
-                    location: gEvent.location,
-                      start_time: gEvent.start?.dateTime || gEvent.start?.date || new Date().toISOString(),
-                      end_time: gEvent.end?.dateTime || gEvent.end?.date || new Date().toISOString(),
-                    google_calendar_id: gEvent.id,
-                    is_synced: true
-                  });
-              }
+            if (existingError) {
+              console.error('[Calendar] Error fetching existing events:', existingError);
             }
+
+            const existingEventIds = new Set((existingEvents || []).map(e => e.google_calendar_id));
+            
+            // Prepare new events for bulk insert
+            const newEvents = (googleEvents.items || [])
+              .filter(gEvent => !existingEventIds.has(gEvent.id))
+              .map(gEvent => ({
+                id: uuidv4(), // Generate UUID for primary key
+                workspace_id: workspaceId,
+                user_id: userId,
+                title: gEvent.summary || gEvent.subject || 'Untitled Event',
+                description: gEvent.description,
+                location: gEvent.location,
+                start_time: gEvent.start?.dateTime || gEvent.start?.date || new Date().toISOString(),
+                end_time: gEvent.end?.dateTime || gEvent.end?.date || new Date().toISOString(),
+                google_calendar_id: gEvent.id,
+                is_synced: true
+              }));
+
+            // Bulk insert new events if any
+            if (newEvents.length > 0) {
+              console.log(`[Calendar] Bulk inserting ${newEvents.length} new Google Calendar events`);
+              const { error: insertError } = await supabaseAdmin
+                .from('calendar_events')
+                .insert(newEvents);
+              
+              if (insertError) {
+                console.error('[Calendar] Error bulk inserting events:', insertError);
+              }
             }
 
             // Just return the local events to avoid another potentially slow query
@@ -315,49 +332,46 @@ export async function GET(request: NextRequest) {
                   const googleEvents = await response.json();
                   console.log(`[Calendar] Fetched ${googleEvents.items?.length || 0} Google Calendar events for user:`, userId);
 
-                  // Process Google Calendar events in batches to prevent timeout
-                  const batchSize = 10;
-                  const batches = Math.ceil((googleEvents.items?.length || 0) / batchSize);
-                  
-                  for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
-                    const batchStart = batchIndex * batchSize;
-                    const batchEnd = Math.min(batchStart + batchSize, googleEvents.items?.length || 0);
-                    const batch = googleEvents.items?.slice(batchStart, batchEnd) || [];
-                    
-                    console.log(`[Calendar] Processing batch ${batchIndex + 1}/${batches} (${batch.length} events)`);
-                    
-                    // Process events in batch
-                    for (const gEvent of batch) {
-                    // Check if event exists based on google_calendar_id and workspace_id
-                    const { data: existingGEvent, error: existingGEventError } = await supabaseAdmin
-                      .from('calendar_events')
-                      .select('id')
-                      .eq('google_calendar_id', gEvent.id)
-                        .eq('workspace_id', workspaceId)
-                        .maybeSingle();
+                  // Get all existing Google Calendar event IDs in one query for efficiency
+                  const googleEventIds = (googleEvents.items || []).map(e => e.id);
+                  const { data: existingEvents, error: existingError } = await supabaseAdmin
+                    .from('calendar_events')
+                    .select('google_calendar_id')
+                    .eq('workspace_id', workspaceId)
+                    .in('google_calendar_id', googleEventIds);
 
-                    if (existingGEventError) {
-                       console.error('[Calendar] Error checking for existing Google event:', existingGEventError);
-                       continue; // Skip this event if check fails
-                    }
-
-                    if (!existingGEvent) {
-                      console.log('[Calendar] Syncing new Google Calendar event to workspace:', gEvent.id, workspaceId);
-                      await supabaseAdmin
-                        .from('calendar_events')
-                        .upsert({
-                            workspace_id: workspaceId,
-                            user_id: userId,
-                            title: gEvent.summary || gEvent.subject || 'Untitled Event',
-                          description: gEvent.description,
-                          location: gEvent.location,
-                            start_time: gEvent.start?.dateTime || gEvent.start?.date || new Date().toISOString(),
-                            end_time: gEvent.end?.dateTime || gEvent.end?.date || new Date().toISOString(),
-                          google_calendar_id: gEvent.id,
-                          is_synced: true
-                        });
-                    }
+                  if (existingError) {
+                    console.error('[Calendar] Error fetching existing events:', existingError);
                   }
+
+                  const existingEventIds = new Set((existingEvents || []).map(e => e.google_calendar_id));
+                  
+                  // Prepare new events for bulk insert
+                  const newEvents = (googleEvents.items || [])
+                    .filter(gEvent => !existingEventIds.has(gEvent.id))
+                    .map(gEvent => ({
+                      id: uuidv4(), // Generate UUID for primary key
+                      workspace_id: workspaceId,
+                      user_id: userId,
+                      title: gEvent.summary || gEvent.subject || 'Untitled Event',
+                      description: gEvent.description,
+                      location: gEvent.location,
+                      start_time: gEvent.start?.dateTime || gEvent.start?.date || new Date().toISOString(),
+                      end_time: gEvent.end?.dateTime || gEvent.end?.date || new Date().toISOString(),
+                      google_calendar_id: gEvent.id,
+                      is_synced: true
+                    }));
+
+                  // Bulk insert new events if any
+                  if (newEvents.length > 0) {
+                    console.log(`[Calendar] Bulk inserting ${newEvents.length} new Google Calendar events`);
+                    const { error: insertError } = await supabaseAdmin
+                      .from('calendar_events')
+                      .insert(newEvents);
+                    
+                    if (insertError) {
+                      console.error('[Calendar] Error bulk inserting events:', insertError);
+                    }
                   }
 
                   // Just return the local events to avoid another potentially slow query
@@ -380,7 +394,7 @@ export async function GET(request: NextRequest) {
                   const combinedEvents = [...events, ...syncedEvents];
                   console.log(`[Calendar] Returning ${combinedEvents.length} combined events for workspace ${workspaceId}`);
                   return NextResponse.json({ items: combinedEvents || [] });
-          } else {
+                } else {
                   console.error('[Calendar] Error response from Google Calendar API:', await response.text());
                 }
               }
@@ -407,18 +421,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   console.log('[POST /api/calendar] Received request'); // Log start
   try {
-    console.log('[POST /api/calendar] Attempting to get session...');
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-    console.log(`[POST /api/calendar] Session user ID: ${userId || 'Not found'}`);
-
-    if (!userId) {
-      console.log('[POST /api/calendar] No user found in session - returning 401');
-      return NextResponse.json(
-        { error: 'User not authenticated' },
-        { status: 401 }
-      );
+    console.log('[POST /api/calendar] Attempting to get user from token...');
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    
+    const userId = user.id;
+    console.log(`[POST /api/calendar] User ID: ${userId}`);
 
     console.log('[POST /api/calendar] Attempting to fetch profile for user:', userId);
     // Get workspace_id from the user's profile
@@ -590,8 +600,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Event ID is required' }, { status: 400 });
     }
     
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
+    const user = await getUserFromToken(request);
+    const userId = user?.id;
     
     if (!userId) {
       console.log('[DELETE /api/calendar] No user found in session - returning 401');
@@ -683,17 +693,13 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   console.log('[PATCH /api/calendar] Received request');
   try {
-    const session = await getServerSession(authOptions);
-    const userId = session?.user?.id;
-    console.log(`[PATCH /api/calendar] Session user ID: ${userId || 'Not found'}`);
-
-    if (!userId) {
-      console.log('[PATCH /api/calendar] No user found in session - returning 401');
-      return NextResponse.json(
-        { error: 'User not authenticated' },
-        { status: 401 }
-      );
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    
+    const userId = user.id;
+    console.log(`[PATCH /api/calendar] User ID: ${userId}`);
 
     // Get workspace_id from the user's profile
     const { data: profile, error: profileError } = await supabaseAdmin

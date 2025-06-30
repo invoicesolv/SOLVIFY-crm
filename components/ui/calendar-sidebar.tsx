@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar, Clock, Plus, ExternalLink, Users, MapPin } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from '@/lib/supabase';
+import { supabaseClient as supabase } from '@/lib/supabase-client';
 import { Tables } from '@/lib/database.types';
 
 type CalendarEvent = Tables<'calendar_events'>;

@@ -1,16 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { getServerSession } from 'next-auth';
+import { createClient } from '@supabase/supabase-js';
+
+// Create Supabase admin client for database operations only
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+// Helper function to get user from NextAuth session
+async function getUserFromSession() {
+  try {
+    const session = await getServerSession();
+    return session?.user || null;
+  } catch (error) {
+    console.error('Error getting user from session:', error);
+    return null;
+  }
+}
 
 // Re-export the GET function from the fetch route
 export { GET } from './fetch/route';
 
 // Optionally handle POST/DELETE/etc here or forward to the appropriate sub-route
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.id) {
+  // Get user from NextAuth session
+  const user = await getUserFromSession();
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized: No valid session' }, { status: 401 });
   }
 
@@ -24,6 +40,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': req.headers.get('authorization') || '',
       },
       body: JSON.stringify(body),
     });

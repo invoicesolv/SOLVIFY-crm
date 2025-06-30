@@ -1,5 +1,5 @@
 import { google } from 'googleapis';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase';
 
 /**
  * Helper function to get a refreshed Google OAuth token when needed
@@ -10,14 +10,30 @@ export async function getRefreshedGoogleToken(
   userId: string, 
   serviceName: string
 ): Promise<string | null> {
+  // Get user's workspace IDs for proper RLS filtering (outside try block for scope)
+  const { data: teamMemberships, error: teamError } = await supabaseAdmin
+    .from('team_members')
+    .select('workspace_id')
+    .eq('user_id', userId);
+
+  if (teamError || !teamMemberships || teamMemberships.length === 0) {
+    console.error(`[Token Refresh] Error fetching user workspace for ${serviceName}:`, teamError);
+    return null;
+  }
+
+  const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
+
   try {
-    // Get refresh token and current expiry info from integrations table
-    const { data: integration, error } = await supabase
+
+    // Get refresh token and current expiry info from integrations table WITH workspace filtering
+    const { data: integration, error } = await supabaseAdmin
       .from('integrations')
-      .select('refresh_token, expires_at, access_token')
+      .select('refresh_token, expires_at, access_token, workspace_id')
       .eq('user_id', userId)
       .eq('service_name', serviceName)
-      .single();
+      .in('workspace_id', userWorkspaceIds) // 🔒 CRITICAL: Workspace-based filtering
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     if (error || !integration?.refresh_token) {
       console.error(`[Token Refresh] No Google integration or refresh token found for ${serviceName}:`, userId, error);
@@ -57,8 +73,8 @@ export async function getRefreshedGoogleToken(
       ? new Date(credentials.expiry_date) 
       : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 2 months from now
     
-    // Update the database with the new token
-    const { error: updateError } = await supabase
+    // Update the database with the new token WITH workspace filtering
+    const { error: updateError } = await supabaseAdmin
       .from('integrations')
       .update({ 
         access_token: credentials.access_token,
@@ -66,7 +82,8 @@ export async function getRefreshedGoogleToken(
         updated_at: new Date().toISOString()
       })
       .eq('user_id', userId)
-      .eq('service_name', serviceName);
+      .eq('service_name', serviceName)
+      .in('workspace_id', userWorkspaceIds); // 🔒 CRITICAL: Workspace-based filtering
 
     if (updateError) {
       console.error(`[Token Refresh] Failed to update new ${serviceName} token in DB:`, updateError);
@@ -83,8 +100,8 @@ export async function getRefreshedGoogleToken(
     if (error?.message?.includes('invalid_grant') || error?.message?.includes('refresh_token')) {
       console.log(`[Token Refresh] Refresh token invalid for ${serviceName}, user needs to re-authenticate`);
       
-      // Mark the integration as needing re-authentication
-      await supabase
+      // Mark the integration as needing re-authentication WITH workspace filtering
+      await supabaseAdmin
         .from('integrations')
         .update({ 
           access_token: null,
@@ -94,7 +111,8 @@ export async function getRefreshedGoogleToken(
           status: 'needs_reauth'
         })
         .eq('user_id', userId)
-        .eq('service_name', serviceName);
+        .eq('service_name', serviceName)
+        .in('workspace_id', userWorkspaceIds); // 🔒 CRITICAL: Workspace-based filtering
     }
     
     return null;
@@ -153,15 +171,30 @@ export async function proactiveTokenRefresh(userId: string): Promise<void> {
     'youtube'
   ];
   
+  // Get user's workspace IDs for proper RLS filtering
+  const { data: teamMemberships, error: teamError } = await supabaseAdmin
+    .from('team_members')
+    .select('workspace_id')
+    .eq('user_id', userId);
+
+  if (teamError || !teamMemberships || teamMemberships.length === 0) {
+    console.error('[Proactive Refresh] Error fetching user workspace:', teamError);
+    return;
+  }
+
+  const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
+
   for (const service of services) {
     try {
-      // Check if user has this integration
-      const { data: integration } = await supabase
+      // Check if user has this integration WITH workspace filtering
+      const { data: integration } = await supabaseAdmin
         .from('integrations')
-        .select('expires_at, refresh_token')
+        .select('expires_at, refresh_token, workspace_id')
         .eq('user_id', userId)
         .eq('service_name', service)
-        .single();
+        .in('workspace_id', userWorkspaceIds) // 🔒 CRITICAL: Workspace-based filtering
+        .order('created_at', { ascending: false })
+        .limit(1);
       
       if (integration?.refresh_token) {
         const expiryDate = new Date(integration.expires_at);
@@ -188,13 +221,28 @@ export async function getValidGoogleToken(
   serviceName: string
 ): Promise<string | null> {
   try {
-    // First try to get existing token
-    const { data: integration, error } = await supabase
+    // Get user's workspace IDs for proper RLS filtering
+    const { data: teamMemberships, error: teamError } = await supabaseAdmin
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', userId);
+
+    if (teamError || !teamMemberships || teamMemberships.length === 0) {
+      console.error(`[Get Valid Token] Error fetching user workspace for ${serviceName}:`, teamError);
+      return null;
+    }
+
+    const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
+
+    // First try to get existing token WITH workspace filtering
+    const { data: integration, error } = await supabaseAdmin
       .from('integrations')
-      .select('access_token, expires_at, refresh_token, status')
+      .select('access_token, expires_at, refresh_token, status, workspace_id')
       .eq('user_id', userId)
       .eq('service_name', serviceName)
-      .single();
+      .in('workspace_id', userWorkspaceIds) // 🔒 CRITICAL: Workspace-based filtering
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     if (error || !integration) {
       console.log(`[Get Valid Token] No integration found for ${serviceName}`);
@@ -247,16 +295,32 @@ export async function validateAndRefreshAllGoogleTokens(userId: string): Promise
     services: [] as string[],
     errors: [] as string[]
   };
+
+  // Get user's workspace IDs for proper RLS filtering
+  const { data: teamMemberships, error: teamError } = await supabaseAdmin
+    .from('team_members')
+    .select('workspace_id')
+    .eq('user_id', userId);
+
+  if (teamError || !teamMemberships || teamMemberships.length === 0) {
+    results.errors.push('Error fetching user workspace');
+    results.success = false;
+    return results;
+  }
+
+  const userWorkspaceIds = teamMemberships.map(tm => tm.workspace_id);
   
   for (const service of allGoogleServices) {
     try {
-      // Check if user has this integration
-      const { data: integration, error } = await supabase
+      // Check if user has this integration WITH workspace filtering
+      const { data: integration, error } = await supabaseAdmin
         .from('integrations')
-        .select('access_token, refresh_token, expires_at, scopes')
+        .select('access_token, refresh_token, expires_at, scopes, workspace_id')
         .eq('user_id', userId)
         .eq('service_name', service)
-        .single();
+        .in('workspace_id', userWorkspaceIds) // 🔒 CRITICAL: Workspace-based filtering
+        .order('created_at', { ascending: false })
+        .limit(1);
       
       if (error && error.code !== 'PGRST116') {
         results.errors.push(`Error checking ${service}: ${error.message}`);
@@ -273,15 +337,16 @@ export async function validateAndRefreshAllGoogleTokens(userId: string): Promise
         results.errors.push(`${service}: Missing refresh token - needs re-authentication`);
         results.success = false;
         
-        // Mark as needing re-auth
-        await supabase
+        // Mark as needing re-auth WITH workspace filtering
+        await supabaseAdmin
           .from('integrations')
           .update({ 
             status: 'needs_reauth',
             updated_at: new Date().toISOString()
           })
           .eq('user_id', userId)
-          .eq('service_name', service);
+          .eq('service_name', service)
+          .in('workspace_id', userWorkspaceIds); // 🔒 CRITICAL: Workspace-based filtering
         continue;
       }
       
@@ -290,15 +355,16 @@ export async function validateAndRefreshAllGoogleTokens(userId: string): Promise
       if (token) {
         results.services.push(service);
         
-        // Ensure token has 2-month expiration
-        const { error: updateError } = await supabase
+        // Ensure token has 2-month expiration WITH workspace filtering
+        const { error: updateError } = await supabaseAdmin
           .from('integrations')
           .update({ 
             expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 2 months
             updated_at: new Date().toISOString()
           })
           .eq('user_id', userId)
-          .eq('service_name', service);
+          .eq('service_name', service)
+          .in('workspace_id', userWorkspaceIds); // 🔒 CRITICAL: Workspace-based filtering
           
         if (updateError) {
           results.errors.push(`${service}: Failed to update expiration - ${updateError.message}`);

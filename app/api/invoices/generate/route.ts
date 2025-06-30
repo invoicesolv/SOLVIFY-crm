@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import authOptions from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
+import { supabaseClient } from '@/lib/supabase-client';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Get JWT token from Authorization header
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json({ error: 'Authorization token required' }, { status: 401 });
+    }
+
+    // Create Supabase client with JWT token
+    const supabase = supabaseClient;
+
+    // Verify user authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
     }
 
     const body = await request.json();
@@ -20,26 +27,24 @@ export async function POST(request: NextRequest) {
       recurring_frequency = 'monthly'
     } = body;
 
-    // Get customer data
+    // Get customer data - RLS will automatically filter by user's workspace access
     const { data: customer, error: customerError } = await supabase
       .from('customers')
       .select('*')
       .eq('id', customer_id)
-      .eq('user_id', session.user.id)
       .single();
 
     if (customerError || !customer) {
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
     }
 
-    // Get project data if project_id is provided
+    // Get project data if project_id is provided - RLS will automatically filter
     let project = null;
     if (project_id) {
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('*')
         .eq('id', project_id)
-        .eq('user_id', session.user.id)
         .single();
 
       if (!projectError && projectData) {
@@ -47,11 +52,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Generate invoice number
+    // Generate invoice number - RLS will automatically filter
     const { data: lastInvoice } = await supabase
       .from('invoices')
       .select('invoice_number')
-      .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
       .limit(1);
 
@@ -82,7 +86,17 @@ export async function POST(request: NextRequest) {
       total = 1000; // Placeholder - implement your pricing logic
     }
 
-    // Create the invoice
+    // Get user's workspace ID for the invoice
+    const { data: membership } = await supabase
+      .from('team_members')
+      .select('workspace_id')
+      .eq('user_id', user.id)
+      .limit(1)
+      .single();
+
+    const workspaceId = membership?.workspace_id;
+
+    // Create the invoice - RLS will automatically enforce workspace access
     const { data: newInvoice, error: invoiceError } = await supabase
       .from('invoices')
       .insert({
@@ -98,8 +112,8 @@ export async function POST(request: NextRequest) {
         status: 'draft',
         source: 'automation',
         external_reference: (project as any)?.fortnox_project_number || null,
-        user_id: session.user.id,
-        workspace_id: (session.user as any).workspace_id
+        user_id: user.id,
+        workspace_id: workspaceId
       })
       .select()
       .single();
@@ -128,7 +142,7 @@ export async function POST(request: NextRequest) {
           next_invoice_date: nextDate.toISOString().split('T')[0],
           total: total,
           status: 'active',
-          user_id: session.user.id
+          user_id: user.id
         });
     }
 

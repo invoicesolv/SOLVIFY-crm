@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
-import { supabase } from '@/lib/supabase';
-import { getServerSession } from 'next-auth';
-import authOptions from "@/lib/auth";
+import { supabaseClient as supabase } from '@/lib/supabase-client';
+import { getUserFromToken } from '@/lib/auth-utils';
+import { supabaseClient } from '@/lib/supabase-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +21,11 @@ const transporter = nodemailer.createTransport({
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getUserFromToken(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { siteUrl, recipients, searchData, isTest, dateRange } = await request.json();
     console.log('Sending search console report:', { siteUrl, recipients, isTest, dateRange });
 
@@ -31,10 +36,8 @@ export async function POST(request: NextRequest) {
     
     // Only require authentication for non-test emails and when not authorized via cron secret
     if (!isTest && !isCronAuth) {
-      const session = await getServerSession(authOptions);
-      const userId = session?.user?.id;
-
-      if (!userId) {
+      // User is already authenticated via getUserFromToken above
+      if (!user) {
         return NextResponse.json(
           { error: 'User not authenticated' },
           { status: 401 }
